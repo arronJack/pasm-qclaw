@@ -3,7 +3,8 @@
 > **打开就能和它聊**：它会思考、会回答、会主动反问你；每一次相处都会沉淀成它的记忆与性格——
 > 你聊得越多，它越"懂你"，越像"只属于你的那个 AI"。
 
-## 它和普通聊天 AI 有什么不同
+## 无需任何 API Key：自动接入你本机已装的 Ollama（qwen/llama 模型），
+本机就是你的服务器。它和普通聊天 AI 有什么不同
 
 普通 AI 每轮对话都是"重新开始"，它不记得你、也没有"自己"。
 PASM Companion 是**双脑结构**：
@@ -21,9 +22,9 @@ PASM Companion 是**双脑结构**：
 
 ## 下载与安装
 
-最新版见仓库 **Releases**（v0.3.0 对话版）：
-1. 下载 `PASMStudio-Setup-0.3.0.exe.part_aa` 与 `…part_ab`（同一目录）
-2. Windows CMD 合并：`copy /b PASMStudio-Setup-0.3.0.exe.part_aa + PASMStudio-Setup-0.3.0.exe.part_ab PASMStudio-Setup-0.3.0.exe`
+最新版见仓库 **Releases**（v0.3.1 对话版）：
+1. 下载 `PASMStudio-Setup-0.3.1.exe.part_aa` 与 `…part_ab`（同一目录）
+2. Windows CMD 合并：`copy /b PASMStudio-Setup-0.3.1.exe.part_aa + PASMStudio-Setup-0.3.1.exe.part_ab PASMStudio-Setup-0.3.1.exe`
 3. 双击安装 → 打开 PASM Studio → 点右上「设置」填入你的 LLM Key 开始聊天
 
 > 系统要求：Windows 10/11 x64 · CPU 即可 · 首次安装解压约 1 分钟
