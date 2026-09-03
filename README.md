@@ -17,7 +17,11 @@ PASM Studio 是 [PASM](https://gitee.com/arronzheng/PASM)（零 token 认知智�
 ## 下载与安装
 
 最新版本见右侧 **Releases**（或本页下方"发行版"标签）：
-下载 `PASMStudio-Setup-x.y.z.exe` → 双击安装 → 打开"PASM Studio"。
+- **分卷下载**（Gitee 附件单文件限 100MB，故分两卷）：
+  1. 下载 `PASMStudio-Setup-0.2.0.exe.part_aa` 与 `PASMStudio-Setup-0.2.0.exe.part_ab`（同一目录）
+  2. 合并（Windows CMD）：`copy /b PASMStudio-Setup-0.2.0.exe.part_aa + PASMStudio-Setup-0.2.0.exe.part_ab PASMStudio-Setup-0.2.0.exe`
+  3. 双击合并后的 `PASMStudio-Setup-0.2.0.exe` 安装 → 打开"PASM Studio"
+- 网络好的话可直接用压缩更狠的整包（后续优化到 <100MB 后提供单文件直链）
 
 | 项目 | 值 |
 |---|---|
