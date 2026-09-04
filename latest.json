@@ -1,6 +1,6 @@
 {
-  "version": "0.11.1",
-  "download_url": "https://gitee.com/arronzheng/PASM/releases/download/pasmstudio-v0.2.0/PASMStudio-Setup-0.11.1.exe",
+  "version": "0.11.2",
+  "download_url": "https://gitee.com/arronzheng/PASM/releases/download/pasmstudio-v0.2.0/PASMStudio-Setup-0.11.2.exe",
   "notes": "首版公开发布：养一只会成长的 AI（安装版）",
   "released_at": "2026-09-02",
   "channel": "stable"
