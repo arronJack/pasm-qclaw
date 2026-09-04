@@ -1,7 +1,7 @@
 {
-  "version": "0.11.3",
-  "download_url": "https://gitee.com/arronzheng/PASM/releases/download/pasmstudio-v0.2.0/PASMStudio-Setup-0.11.3.exe",
-  "notes": "首版公开发布：养一只会成长的 AI（安装版）",
-  "released_at": "2026-09-02",
+  "version": "0.13.0",
+  "download_url": "https://gitee.com/arronzheng/pasm-qclaw/releases/tag/v0.13.0",
+  "notes": "工作能力大版本：文件生成（PPT/Word/Excel/任意文件落盘）、多语言全栈开发（前端+后端+数据库）、qclaw 式多面板界面（任务/工作台/自动化/资料库/记忆）、持续自学闭环（所学知识反哺聊天专业度）、双击小人开窗、回复完整性修复",
+  "released_at": "2026-09-04",
   "channel": "stable"
 }
