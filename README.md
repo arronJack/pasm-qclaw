@@ -51,3 +51,7 @@ PASM Companion 是**双脑结构**：
 
 PASM Companion 为闭源桌面产品（本地推理引擎 + 语言脑 API）；研究理念与
 教学代码见 PASM-Lite（开源）。问题/反馈/合作请提 issue。
+
+## 概念与生态文档
+- `docs/pasm_ecosystem.md` —— PASM 能做什么 / 效果 / 三仓库生态 / 文档地图
+- 其余：双脑总线 B3、知识库 v2、路线图等见 PASM-Lite 仓库 docs/（开源）
