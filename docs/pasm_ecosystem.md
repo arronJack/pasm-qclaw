@@ -12,7 +12,7 @@ PASM 已完成一次形态升级：从"科研引擎 + 聊天外皮"变成"**引�
   无 torch 环境自动降级 `pasm/light.py` 轻量认知体。
 - **认知执行皮层**（v0.4.0 新增，`pasm/cognitive/`，纯 Python）——会话状态机
   `cog.py` + 分层记忆 `memory_layers.py`，负责"开口前判断意图/心情、按话题想起该记得的事"。
-- **PASM Studio 桌面 v0.16.0**——"LLM 语言脑 + 认知皮层 + 引擎"的完整落地：
+- **PASM Studio 桌面 v0.16.3**——"LLM 语言脑 + 认知皮层 + 引擎"的完整落地：
   读文件/文件夹、打开应用与路径、写脚本自动修复重跑、生成 PPT/Word/Excel、
   全栈开发、分层记忆跨重启有效。
 
@@ -20,7 +20,7 @@ PASM 已完成一次形态升级：从"科研引擎 + 聊天外皮"变成"**引�
 | 层 | 名称 | 定位 |
 |---|---|---|
 | 内核 | PASM 认知引擎 | 零 token 认知循环 + 认知执行皮层（状态机/分层记忆/轻量体），v0.4.0（私有） |
-| 产品 | PASM Studio（桌面） | Windows 桌面"小人"：会聊、会成长、会干活，v0.16.0 界面与自主能力版（发行于 pasm-qclaw） |
+| 产品 | PASM Studio（桌面） | Windows 桌面"小人"：会聊、会成长、会干活，v0.16.3 打磨版（发行于 pasm-qclaw） |
 | 教学 | PASM-Lite | 同一理念的 ~260 行最小实现，供学习与验证（开源 MIT） |
 
 ## 二、能做什么（能力清单）
@@ -67,9 +67,9 @@ PASM 已完成一次形态升级：从"科研引擎 + 聊天外皮"变成"**引�
 ## 四、生态一览（仓库地图）
 | 仓库 | 可见性 | 内容 | 当前版本 |
 |---|---|---|---|
-| `arronzheng/PASM` | 私有 | 七层引擎 + 认知执行皮层 + 桌面全源码 + docs（权威，含 RELEASE_NOTES） | 引擎 v0.4.0 · 桌面 v0.16.0 |
+| `arronzheng/PASM` | 私有 | 七层引擎 + 认知执行皮层 + 桌面全源码 + docs（权威，含 RELEASE_NOTES） | 引擎 v0.4.0 · 桌面 v0.16.3 |
 | `arronzheng/PASM-Lite` | 开源 MIT | 教学最小实现 + 理念文档（本文件所在） | 教学版（定位不变） |
-| `arronzheng/pasm-qclaw` | 公开 | 产品发行：源码镜像 + Releases 安装包 + README/CHANGELOG/latest 升级源 | 桌面 v0.16.0 |
+| `arronzheng/pasm-qclaw` | 公开 | 产品发行：源码镜像 + Releases 安装包 + README/CHANGELOG/latest 升级源 | 桌面 v0.16.3 |
 
 **文档地图（docs/）**
 - `cognitive_brain.md`（认知大脑版：引擎+皮层+语言脑架构、桌面同频能力表）
