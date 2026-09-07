@@ -2,133 +2,27 @@
 
 **简体中文**（正文） · [🇬🇧 English（完整英文版见下方）](#english--英文完整版)
 
-> **v0.18.1 本地模型不再假死 · v0.18.0 边界更懂事、创作更专业：音量不越权 · 聊天不串岗 · 漫剧分步** —— 打开就能聊：它能思考、
-> 能分析你的文件、能帮你写脚本/做文档/开发项目、**能真出图、能生成图文短片和漫剧成片**，
-> 也会主动反问、记得你上次聊到哪。每一次相处都会沉淀成它的记忆与性格——你聊得越多，
-> 它越"懂你"，越像"只属于你的那个 AI"。
+> **v0.22.0 认知提速与规划升级：真流式回复 · 任务规划器 · 输出验证器 · 学以致用 · 真知识库** —— 打开就能聊：它能思考、
+> 能分析你的文件、能帮你写脚本/做文档/开发项目、**能真出图、能把图片真的变成会动的视频**，复杂任务先给计划、确认后逐步干，
+> 学过的本事（笑话/知识/技能）被点名时能真用出来；回复首字即出、边想边打。
+> 每一次相处都会沉淀成它的记忆与性格——你聊得越多，它越"懂你"，越像"只属于你的那个 AI"。
 
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.18.1（2026-09-07）
+## 最新：v0.22.0（2026-09-07）· 认知提速 + 规划/验证/学以致用
 
-- **🚀 本地模型不再假死**：真机实测 Ollama 冷加载 qwen2.5:7b 需 76~81 秒，旧版
-  25 秒心跳把它掐死在"加载中"、SDK 又整单重发 → 聊天卡"思考中"数分钟悄悄失败。
-  现本地端点预算放宽（聊天 600s）+ 流式接收（出字后不再被掐，点⏹仍即时中断）+
-  预热真正把模型装进内存，首条消息即答
-
-### 上一版 v0.18.0 重点
-
-- **🔊 音量不越权**：朗读/点小人绝不动你电脑的音量与静音（只做只读诊断；设置页新增
-  「允许自动调整系统音量」开关，默认关，明确同意才代调）
-- **💬 聊天不串岗**：删掉"要不要开工"提醒卡——明确指令（帮我写/做个/生成…）直接干活
-  不打扰，弱提及（只是聊到方案/PPT）安心聊天；切栏目/载入会话不再塞系统提示
-- **🛠 工作台见产出**：图片/短片/漫剧成品目录进入工作台（新增「创作」分类），
-  按最近修改排序、双击打开、与磁盘对账
-- **📚 知识进创作**：资料库自学知识注入出图提示词与漫剧企划，干活更专业
-- **🎨 图片微调分级**：轻改（亮度/柔光/稍微…）自动低重绘幅度保留构图，大改才放开；
-  精修失败不丢原图语境
-- **📖 漫剧分步流程**：企划→改镜→出图→配音→合成，每步可停可回改（story.json 断点续作）；
-  「一条龙」仍可一键
-
-### 上一版 v0.17.5 重点
-
-- **⏹ 思考中可随时停止**：等回复时出现「⏹ 停止」按钮，点一下界面立即恢复——不再出现
-  "问一句等 238 秒、还打断不了"的干等（模型等待改 25 秒心跳分片，点停止即时断开，
-  本地 Ollama 真中断生成）
-- **💬 思考中也能新建对话/切换**：提问进入独立回合线程（上下文已冻结），界面随时可用；
-  它答完若你已开新对话或切走，会把回复收进原会话并浮窗提示，不写进当前界面
-- **⏱ 等待设上限**：单轮响应预算收紧（聊天 240s→90s 等），超时给可读提示，不再无限等
-- 底层加固：PASM 成长小训练偶发 torch 报错不再拖垮整条回复（失败仅记日志）
-
-### 上一版 v0.17.4 重点
-
-- **🙏 不再误解你的话**：说"谢谢你提醒我下班"是道谢，不会再被当成"让我记待办"
-  （旧版会因话里带"提醒我"误判，还把内容记成变形句）；误记后说「撤销刚才那条」即可删除
-- **💬 质问会先认错**：你问它"你怎么写记住啦？"，它先道歉解释，不再答非所问地甩能力清单
-- **📄 会话标题不再切半句**：自动剥客套、按标点断成完整分句，告别"我还要再…"式标题
-
-### 上一版 v0.17.3 重点
-
-- **🔊 朗读/试听/点小人"还是没声音"的真正根因已修复**：不是音量设备，是代码 bug——
-  `speak_text` 后台线程里读了个没声明全局的冷却变量直接抛错崩溃，导致所有语音"无声
-  无日志"。现已修复；另兼容 edge-tts 新版返回字段；SAPI 发声失败时自动"合成 WAV 再用
-  与系统音相同的通道播放"，语音从此绑定在已验证可听的通道上
-- **左下角「模型」检测/切换 = 独立弹框**：点「📡 模型」或切「大脑」下拉，只弹框展示
-  （有哪些本地模型/当前大脑），不再往聊天框里写任何一行
-- **资料库「学一个新主题」彻底不占聊天会话**：学习走自主后台，不再把界面置成"思考中"、
-  不禁输入框、左侧会话随时可切换；开始浮窗提示、学完只弹结果框，学到的照常进知识库
-- **桌面小人按性格自己找乐子（回归+可见）**：调皮/活泼/外向会踢球蹦跶跳舞，温柔/内向
-  安静坐下看书，沉稳看书或散步——按性格能量随机出现、持续数秒并偶尔冒小气泡，不再
-  只有散步/睡觉/别打扰
-
-### 上一版（v0.17.2）重点
-
-- **🔊 声音从"能播"到"听得见"**：每次系统音/朗读前自动诊断并修复默认输出端——被静音
-  自动取消、音量过低自动拉回 60%；「🔔系统音」会告诉你输出到了哪个设备、音量多少，
-  不再只回一句"已播放"却听不见
-- **栏目各自独立对话**：每个栏目有自己的对话记录框，切换栏目互不残留；点开会话自动
-  跳回所属栏目并完整载入；空会话（没聊过）不进列表；右键可删除会话（二次确认）；
-  点开会话不再顶到第一位
-- **🎨 图像原地优化**：出图后说"光柔和些/加两只小动物"会基于上一张改——本地 SD WebUI
-  真实图生图，云端引擎延续风格同目录续画，编号递增不覆盖
-- **🖥 开发在原项目上改**：再次开发默认读原代码原地更新并自动归档旧版；说"另建一个/
-  新开/换个项目"才新建，不再凭空另起没关联的新项目
-- 底层：创作引擎懒接入、漫剧/视频成片、文案表格PPT/Word 防空壳等保持（见 v0.17.0/0.17.1）
-
-### 上一版（v0.17.1）重点
-
-- **🔊 系统音测试修好**：改为 Windows 原生通道直发提示音，不再误报"系统音错误"
-- **点会话 = 回到它所属栏目**：每条会话带工种图标；同会话创作不另起新项目（成片重做
-  自动归档旧版_时间）；漫剧/短片成片带推拉运镜与转场
-
-### 更早（v0.17.0）重点
-
-- **创作引擎正式接入——图像/视频/漫剧真出成品**：图像工种直接出 PNG 并聊天内预览；
-  视频/漫剧走"企划 → 每镜出图 → 逐镜配音 → 成片播放器"一条龙，对话里实时汇报进度
-- **引擎懒接入（用到才配，一次配置永久生效）**：首次用图像/视频/漫剧自动弹出接入框，
-  填一次自动保存进设置；支持硅基流动（OpenAI 兼容，推荐）/ OpenAI DALL·E / 自定义
-  兼容服务 / 本地 Stable Diffusion WebUI（免 Key）；带「测试连接」；设置页也可随时改
-- **取消接入不空手**：不想接时自动降级——图像给可直接出图的提示词包、视频/漫剧走
-  分镜脚本技能，绝不"假装已生成"
-- **成片双形态**：无任何额外工具也能用——自动生成可放映的「播放器.html」
-  （画面+字幕+配音）；检测到本机 ffmpeg 再额外合成真实 MP4 成片
-- **全工种体检**：文案/表格/PPT/Word 生成前剥掉模型外套代码块、校验正文与文件有效性，
-  拒绝"空壳假文件"；意图分流回归——写脚本/文案不会被误判成出图
-
-### 再上一版（v0.16.7）重点
-
-
-- **语音真修复**：点小人/试听终于出声——根因是 edge-tts 在你的网络下会卡死在 DNS 探测
-  （实测挂死 240s+），把系统语音兜底全堵死。现加秒级网络预检（约 0.2s 判定），连不上立即
-  落 Windows 自带语音，实测 6s 出声；不再"失败一次永久静音"，每次都重新尝试
-- **工种栏去组标题**：九个按钮（聊天 + 文案/表格/PPT/Word + 开发/视频/图像/漫剧）直接流式排列
-- **工作台更利落**：删除键收进分类胶囊右上角 ✕（可删分类才有），顶部按钮统一对齐；
-  列表自动对账磁盘——你手动删掉的文件/项目刷新即消失，不再留僵尸记录
-- **输入框圆角 + 斜杠快选**：输入框圆角 14px 聚焦蓝描边；输入 `/` 弹出 ⚡指令/🎯切工种/
-  🛠技能 快选窗，可过滤、键盘选择、Enter/点选立即执行、Esc 收起
-
-### 再上一版（v0.16.5）重点
-
-- **资料库 = 真知识库**：点「让它学一个新主题」→ 它会自己搜多个来源，**抓到即全文入库**，
-  不再因"提炼不出要点"被回绝（要点只是学完后的速记索引，不卡学习）
-- **双击即可读它真正学到的内容**：条目/书架双击打开全文阅读器（要点 + 原文全文），
-  早期只有要点的旧条目自动回填全文；支持关键词过滤；自动化动态只记真实结果
-- **工种分栏归位 + 分组**：工具条回到聊天内容下方/输入框上方，不再挡小人形象；
-  去「干活」切换栏，📄文档（文案/表格/PPT/Word）与 🚀开发与创作（开发/视频/图像/漫剧）分组
-- **语音全静音根因修复**：edge 在线不可用时兜底改系统自带引擎，离线照样出声；
-  改名后头顶气泡/称呼/品牌名即时刷新；工作台右键删条目/分类「−」删除带确认
-- **导航可回对话**：左侧首位新增「💬 对话」入口，点会话列表/新对话随时回到正在进行的对话
-
-### 再上一版（v0.16.3）重点
-
-- **会话列表更清爽**：去掉滚动条、长标题 `…` 单行省略、悬浮看全名
-- **工种分栏流式排布**：能一行排完就一行、排不完才换行；💬聊天/🔧干活 主蓝色，其余浅灰
-- **快捷命令**：`/clear` 清空重聊（内容先进长期记忆）、`/new` 新对话、`/mode 文案|表格|PPT|Word|开发|聊天|干活` 切工种、`/voice 开|关`、`/quiet`、`/help` 等
-- **语音人格化×情感**：真童声（幼儿/童年奶声奶气）+ 按性别/成长阶段选真声线 + 按情绪
-  （开心/委屈/生气/困倦）自动调语速音高音量；edge 失败 90s 冷却不再卡顿；设置页有「🔊 声线试听」
-- **技能 = 标准 SKILL.md**（与 WorkBuddy/QClaw 技能同构）+ **统一 LLM 网关**（错误可读中文/
-  任务路由/本地并发闸）+ **左侧三栏导航** + **「别打扰我」真安静**
+- **⚡ 回复提速**：普通对话改**真流式**（首 token 即上屏，边想边打）；工具轮按需触发
+  （只在"记得/上次/偏好"类话题回忆个人相关），修复"调优后回复明显变慢"
+- **📋 任务规划器**：复杂指令自动拆步（规则优先、LLM 分解兜底），先出计划、
+  你回「开始」后逐步干，每步完成即刷新
+- **✅ 输出验证器**：Python ast 语法树 / 括号配平 / JSON / 占位符自动检查，
+  不过就带错重写一次
+- **📝 结构化提示词 + 🧠 记忆 few-shot**：按任务类型（总结/推理/生成/代码）下发规格；
+  相似成功案例注入提示——不同底层模型表现趋于一致
+- **🎭 学以致用**：说"讲个笑话"它就真能把学过的笑话讲出来（自学原文整段注入）
+- **📚 真知识库**：`/查 关键词` 快速检索，阅读器双链跳转（Obsidian 式关联导航）
+- （v0.21.0：即梦 Seedance + ComfyUI 图生视频双引擎 / 朗读即停——详见 CHANGELOG）
 
 ## 它和普通聊天 AI 有什么不同
 
@@ -239,9 +133,27 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 # English · PASM Studio — A Desktop AI Companion That Thinks, Works, and Remembers You (Windows)
 
-> **v0.18.1 fixes local-model hangs · v0.18.0 made boundaries smarter and creation more professional** — Chat right out of the box: it thinks, analyzes your files, writes scripts/docs, develops projects, **generates real images, short videos, and manga episodes**, asks follow-up questions, and remembers where you left off. Every interaction feeds its memory and personality — the more you talk, the more it becomes *your* AI.
+> **v0.22.0 cognitive speedup & planning: true streaming replies · task planner · output validator · learned-skill application · real knowledge base** — Chat right out of the box: it thinks, analyzes your files, writes scripts/docs, develops projects, **generates real images and turns them into moving videos**, proposes a plan for complex tasks first and executes step by step after your confirmation, and can actually *use* what it learned (tell a real joke when asked). Replies start streaming at the first token. Every interaction feeds its memory and personality — the more you talk, the more it becomes *your* AI.
 
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
+
+## Latest: v0.22.0 (2026-09-07) · cognitive speedup + planning / validation / learned-skill application
+
+- **⚡ Faster replies**: normal chats are now **truly streamed** (first token on screen
+  immediately); the memory-tool round fires only when a message actually needs
+  personal recall — fixing the "slower after tuning" regression
+- **📋 Task planner**: complex requests auto-decompose into steps (rules first, LLM
+  fallback); shows the plan, executes step by step after you reply "start"
+- **✅ Output validator**: Python AST syntax check / brace balancing / JSON /
+  placeholder detection — regenerates once with the specific problems on failure
+- **📝 Structured prompts + 🧠 memory few-shot**: per-task-type specs
+  (summary/reasoning/generation/code); similar past successes guide the model —
+  different underlying LLMs behave consistently under the PASM framework
+- **🎭 Learned-skill application**: "tell me a joke" → it actually tells one from
+  what it self-studied (full original text injected, not just bullet summaries)
+- **📚 Real knowledge base**: `/查 keyword` in-chat search; related entries are
+  clickable in the reader (Obsidian-style linked navigation)
+- (v0.21.0: Jimeng Seedance + ComfyUI i2v dual engine / instant TTS stop — see CHANGELOG)
 
 ## What makes it different from a regular chatbot
 
