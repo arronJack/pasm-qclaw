@@ -1,7 +1,7 @@
 {
-  "version": "0.22.1",
-  "download_url": "https://gitee.com/arronzheng/pasm-qclaw/releases/tag/v0.22.1",
-  "notes": "v0.22.1 真机五修：①「讲讲心理学」不再误答能力清单、学科讲解不再照搬资料库原文（笑话等表演类仍完整讲）②ffmpeg/脚本运行全程无弹窗 ③朗读点关立即中断（MCI轮询可掐断长句）④图生视频引擎预检——ComfyUI没放workflow/方舟没填Key/服务没启会明确提示原因，不再静默出静态片 ⑤资料库排版：超长行折行/阅读器行距/学习弹窗富文本。v0.22.0 首发含真流式回复、任务规划器、输出验证器、结构化提示词、few-shot、学以致用、/查与双链。",
+  "version": "0.22.2",
+  "download_url": "https://gitee.com/arronzheng/pasm-qclaw/releases/tag/v0.22.2",
+  "notes": "v0.22.2 ComfyUI 一键配置向导：设置→视频引擎新增「🧰 一键配置向导」——①检测 ComfyUI 与已装模型 ②取出内置官方 Wan2.2 5B/LTX 图生视频示例（拖进 ComfyUI 即可跑）③导入 ComfyUI 导出的 workflow 并自动自检 ④引擎就绪度随时校验；不用自己搭工作流。另修复引擎识别遗漏的 Wan22ImageToVideoLatent/LTXVImgToVideo/SaveWEBM 节点。",
   "released_at": "2026-09-07",
   "channel": "stable"
 }
