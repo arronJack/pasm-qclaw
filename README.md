@@ -1,5 +1,7 @@
 # PASM Studio · 会思考、会干活、会记住你的 AI 伙伴（Windows 桌面版）
 
+**简体中文**（正文） · [🇬🇧 English（完整英文版见下方）](#english--英文完整版)
+
 > **v0.18.1 本地模型不再假死 · v0.18.0 边界更懂事、创作更专业：音量不越权 · 聊天不串岗 · 漫剧分步** —— 打开就能聊：它能思考、
 > 能分析你的文件、能帮你写脚本/做文档/开发项目、**能真出图、能生成图文短片和漫剧成片**，
 > 也会主动反问、记得你上次聊到哪。每一次相处都会沉淀成它的记忆与性格——你聊得越多，
@@ -7,13 +9,6 @@
 
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
-
-> **🇬🇧 English**: PASM Studio — a Windows desktop AI companion powered by the PASM
-> token-free cognitive engine. It chats, thinks out loud, reads files, writes
-> docs/slides/spreadsheets, develops projects, and generates images / short videos /
-> manga episodes. Runs fully offline with Ollama (no API key needed). **Private mirror
-> of the development repo** — the public documentation & release repo lives at
-> `pasm-qclaw`. Primary docs are in Chinese.
 
 ## 最新：v0.18.1（2026-09-07）
 
@@ -221,14 +216,109 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 ## 生态与说明
 
-| 仓库 | 定位 |
-|---|---|
-| **PASM**（私有） | 核心认知引擎 + 认知皮层 + 桌面全源码 + 文档（最权威，本次 v0.4.0） |
-| **pasm-qclaw**（本仓库，公开） | PASM Studio 桌面产品：源码镜像 + Releases 安装包 + 更新通道 |
-| **PASM-Lite**（公开） | 零 token 认知最小实现的教学版（约 260 行单文件，可读可改，MIT） |
+| 仓库 | Gitee | GitHub | 定位 |
+|---|---|---|---|
+| **PASM**（私有） | [gitee.com/arronzheng/PASM](https://gitee.com/arronzheng/PASM) | [github.com/arronJack/PASM](https://github.com/arronJack/PASM) | 核心认知引擎 + 认知皮层 + 桌面全源码 + 文档（开发主仓镜像） |
+| **pasm-qclaw**（本仓库，公开） | [gitee.com/arronzheng/pasm-qclaw](https://gitee.com/arronzheng/pasm-qclaw) | [github.com/arronJack/pasm-qclaw](https://github.com/arronJack/pasm-qclaw) | PASM Studio 产品发布：Releases 安装包 + 更新通道 + 文档 |
+| **PASM-Lite**（公开） | [gitee.com/arronzheng/PASM-Lite](https://gitee.com/arronzheng/PASM-Lite) | [github.com/arronJack/PASM-Lite](https://github.com/arronJack/PASM-Lite) | 零 token 认知最小实现的教学版（约 260 行单文件，可读可改，MIT） |
 
 产品当前为闭源发行（公开仓库分发编译产物与更新通道）。
 开源计划（2026-09 拟定）：**pasm-qclaw 开发主仓后续开源**，供大家一起研究
 桌面产品与双脑结合；**PASM 完整引擎 + 认知皮层暂不开源**，待进一步优化扩展后再议。
 研究理念与教学代码可先行阅读 [PASM-Lite](https://gitee.com/arronzheng/PASM-Lite)。
-问题 / 反馈 / 合作请提 issue。
+问题 / 反馈 / 合作请提 issue（Gitee / GitHub 均可）。
+
+---
+
+<a id="english--英文完整版"></a>
+
+# English · PASM Studio — A Desktop AI Companion That Thinks, Works, and Remembers You (Windows)
+
+> **v0.18.1 fixes local-model hangs · v0.18.0 made boundaries smarter and creation more professional** — Chat right out of the box: it thinks, analyzes your files, writes scripts/docs, develops projects, **generates real images, short videos, and manga episodes**, asks follow-up questions, and remembers where you left off. Every interaction feeds its memory and personality — the more you talk, the more it becomes *your* AI.
+
+**Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
+
+## What makes it different from a regular chatbot
+
+A normal chatbot starts over every turn — no memory of you, no sense of "self".
+PASM Studio is a **dual-brain architecture + cognitive execution cortex**:
+
+| Part | Role | Result |
+|---|---|---|
+| **Language brain** (DeepSeek / any OpenAI-compatible / local Ollama) | Understands you, composes replies, asks back | Conversations that feel human |
+| **PASM cognitive brain** (local, fully offline) | Every chat → emotional drift, personality shift, layered memory | It genuinely grows up and genuinely remembers you |
+| **Cognitive execution cortex** (since v0.15) | Judges intent & mood before speaking → picks stance and tone; recalls relevant experiences by topic | No more "one-size-fits-all"; it remembers how things got done last time |
+
+## Core capabilities (accumulated since v0.16)
+
+**A chat UI that stays out of the way**
+- **[💬 Chat] / [🔧 Work]** mode split: chat mode never starts working just because you *mentioned* "an app" or "a script" — you decide when it acts
+- Large multi-line input (Enter to send / Shift+Enter for newline); switch LLMs anytime (cloud DeepSeek / any local Ollama model — remembered)
+- **Session list** on the left: every message is saved in real time; switch sessions or restart freely
+
+**Learning that sticks (knowledge base v3 + self-evolution)**
+- Each knowledge entry = full text + key points + source; **what it learns, it keeps verbatim** — self-study searches multiple sources and stores full articles (since v0.16.5)
+- Double-click any entry to open the full-text reader; keyword filtering supported
+- Automatic self-study on by default, topics chosen by a built-in "curiosity selector"; after learning it quizzes itself and honestly tracks what it didn't understand
+
+**Extensible skills**
+- Drop new skills (name + description + procedure, standard `SKILL.md` format) into the data directory; they're auto-discovered and invoked when relevant
+- Built-in examples: video scripting / marketing copy / manga one-take pipeline
+
+**Layered memory**
+- *Working memory*: current topic + goals in flight (persisted on exit)
+- *Episodic memory*: experiences archived every 8 turns / per session, recalled by topic across sessions
+- *Procedural memory*: after each task it records "asked → used → worked? → lesson", and remembers next time
+
+**It actually works**
+- Reads and summarizes files on your computer (txt/md/docx/xlsx/pdf/code…)
+- Reads folders ("analyze the files in D:\some-folder"), opens apps (WeChat/Calculator/Notepad/PowerShell…)
+- Writes & runs scripts; on errors it **auto-repairs and re-runs once** (plan–execute–verify loop)
+- Generates PPT / Word / Excel documents; full-stack project development (frontend + backend + database)
+- Generates real images (local Stable Diffusion WebUI or cloud engines), short videos, and manga episodes with subtitles and voice-over (HTML player + real MP4 when ffmpeg is present)
+
+**It grows**
+- Emotions shift with interaction, personality drifts with experience, and it develops from infancy to adulthood (the desktop avatar changes with it)
+
+**Reliability**
+- Windows 10/11 x64 minimum (Win7/8 dropped); startup errors are readable messages + `crash.log` instead of a mysterious flash
+- ~55 MB installer; runs without torch (built-in lightweight cognitive core)
+
+## Download & install
+
+Grab the latest from **[Releases](https://github.com/arronJack/pasm-qclaw/releases)** (v0.18.1, single ~55 MB file):
+
+1. Download `PASMStudio-Setup-0.18.1.exe`
+2. Install → launch PASM Studio → open ⚙ Settings and enter an LLM key (or leave empty for local Ollama)
+3. Start chatting. For real image/video/manga output, connect an image engine on first use (~1 minute)
+
+> Requirements: **Windows 10/11 x64** · CPU is enough · ~1 minute to unpack on first install.
+> Works with no API key at all (local demo mode: still remembers and grows, plainer speech).
+> Full history in [CHANGELOG.md](CHANGELOG.md); the updater checks `latest.json` in this repo.
+
+## LLM setup (one line each)
+
+- **DeepSeek**: paste your API key; Base URL `https://api.deepseek.com/v1`, Model `deepseek-chat`
+- **Free & local**: install [Ollama](https://ollama.com), run `ollama run qwen2.5:7b`; Base URL `http://127.0.0.1:11434/v1`, Model `qwen2.5:7b` — fully offline
+
+## Data & privacy
+
+- Memory / config / growth archives live in `%APPDATA%\PASMStudio` (not removed on uninstall; wipe anytime)
+- Runs standalone; your conversations and files never leave your machine (only LLM API calls you configure go online)
+
+## Roadmap
+
+- [ ] **Self-reflection training loop**: distill real interactions into experience samples, feeding personality growth and light model fine-tuning
+- [ ] Voice conversation polish / cloud sync / personality report home page
+
+## Ecosystem
+
+| Repo | Visibility | Role |
+|---|---|---|
+| **PASM** (private) | Private mirror on Gitee & GitHub | Core cognitive engine + cortex + full desktop source (development main repo mirror) |
+| **pasm-qclaw** (this repo) | Public | PASM Studio releases: installers, update channel, docs |
+| **PASM-Lite** (public, MIT) | Public | Minimal token-free cognitive engine for teaching (~260 lines, readable & hackable) |
+
+The product is currently distributed as compiled binaries (public repos host builds and the update channel).
+Open-source plan (drafted 2026-09): the **pasm-qclaw development repo is planned to open up** so everyone can study the desktop product and the dual-brain integration; the **full PASM engine + cortex stay closed for now**, pending further refinement. In the meantime, read the research concepts and teaching code in [PASM-Lite](https://github.com/arronJack/PASM-Lite).
+Issues / feedback / collaboration: open an issue on Gitee or GitHub.
