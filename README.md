@@ -226,7 +226,12 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 开源计划（2026-09 拟定）：**pasm-qclaw 开发主仓后续开源**，供大家一起研究
 桌面产品与双脑结合；**PASM 完整引擎 + 认知皮层暂不开源**，待进一步优化扩展后再议。
 研究理念与教学代码可先行阅读 [PASM-Lite](https://gitee.com/arronzheng/PASM-Lite)。
-问题 / 反馈 / 合作请提 issue（Gitee / GitHub 均可）。
+问题 / 反馈 / 合作请提 issue——**主要归口 GitHub**（[issues](https://github.com/arronJack/PASM/issues)），Gitee 同步镜像也会看。
+
+> **商标说明 / Trademark**：「PASM Studio」名称与品牌标识归 arronZheng 所有。
+> MIT 许可授予的是代码版权而非商标权——Fork / 再分发请更换名称与标识。
+> The name and branding of "PASM Studio" belong to arronZheng; the MIT license covers
+> the code, not the trademark — please rename your forks.
 
 ---
 
@@ -321,4 +326,8 @@ Grab the latest from **[Releases](https://github.com/arronJack/pasm-qclaw/releas
 
 The product is currently distributed as compiled binaries (public repos host builds and the update channel).
 Open-source plan (drafted 2026-09): the **pasm-qclaw development repo is planned to open up** so everyone can study the desktop product and the dual-brain integration; the **full PASM engine + cortex stay closed for now**, pending further refinement. In the meantime, read the research concepts and teaching code in [PASM-Lite](https://github.com/arronJack/PASM-Lite).
-Issues / feedback / collaboration: open an issue on Gitee or GitHub.
+Issues / feedback / collaboration: open an issue on GitHub ([issues](https://github.com/arronJack/PASM/issues) — primary tracker); the Gitee mirror is monitored too.
+
+> **Trademark**: the name and branding of "PASM Studio" belong to arronZheng.
+> The MIT license grants code rights, not trademark rights — please rename your forks
+> and redistributions.
