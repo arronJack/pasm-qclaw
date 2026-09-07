@@ -1,6 +1,6 @@
 # PASM Studio · 会思考、会干活、会记住你的 AI 伙伴（Windows 桌面版）
 
-> **v0.18.0 边界更懂事、创作更专业：音量不越权 · 聊天不串岗 · 漫剧分步** —— 打开就能聊：它能思考、
+> **v0.18.1 本地模型不再假死 · v0.18.0 边界更懂事、创作更专业：音量不越权 · 聊天不串岗 · 漫剧分步** —— 打开就能聊：它能思考、
 > 能分析你的文件、能帮你写脚本/做文档/开发项目、**能真出图、能生成图文短片和漫剧成片**，
 > 也会主动反问、记得你上次聊到哪。每一次相处都会沉淀成它的记忆与性格——你聊得越多，
 > 它越"懂你"，越像"只属于你的那个 AI"。
@@ -8,33 +8,21 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
----
+> **🇬🇧 English**: PASM Studio — a Windows desktop AI companion powered by the PASM
+> token-free cognitive engine. It chats, thinks out loud, reads files, writes
+> docs/slides/spreadsheets, develops projects, and generates images / short videos /
+> manga episodes. Runs fully offline with Ollama (no API key needed). **Private mirror
+> of the development repo** — the public documentation & release repo lives at
+> `pasm-qclaw`. Primary docs are in Chinese.
 
-## 🇬🇧 English
+## 最新：v0.18.1（2026-09-07）
 
-**PASM Studio** is a Windows desktop AI companion built on the **PASM** cognitive-agent
-engine — it doesn't just chat, it *thinks, works, and remembers you*.
+- **🚀 本地模型不再假死**：真机实测 Ollama 冷加载 qwen2.5:7b 需 76~81 秒，旧版
+  25 秒心跳把它掐死在"加载中"、SDK 又整单重发 → 聊天卡"思考中"数分钟悄悄失败。
+  现本地端点预算放宽（聊天 600s）+ 流式接收（出字后不再被掐，点⏹仍即时中断）+
+  预热真正把模型装进内存，首条消息即答
 
-- **Thinks before it answers** — a token-free cognitive loop (perception → working memory →
-  episodic recall → world-model imagination → planning), with a visible "thinking" process
-  and proactive follow-up questions.
-- **Grows a personality** — emotions, memory, and character develop as you interact; the
-  desktop mascot acts by its own temperament (playful ones kick a ball, quiet ones read).
-- **Real work skills** — reads your files, writes docs/slides/spreadsheets, develops small
-  projects, generates **images, short videos, and step-by-step manga/comic episodes**
-  (plan → edit shots → render → voice → compose).
-- **Learns on its own** — point it at a topic, it browses the web, files knowledge into its
-  library, and applies that knowledge back into chats and creative work.
-- **Privacy-first** — runs fully offline with **Ollama** (qwen/llama …), no API key needed;
-  a DeepSeek key makes it stronger. All data stays in a local folder.
-
-**Download**: grab `PASMStudio-Setup-x.y.z.exe` from [Releases](../../releases) (installer,
-Windows 7/10 compatible). Chinese is the primary documentation language; this section is a
-summary. See [CHANGELOG.md](CHANGELOG.md) for version history.
-
----
-
-## 最新：v0.18.0（2026-09-07）
+### 上一版 v0.18.0 重点
 
 - **🔊 音量不越权**：朗读/点小人绝不动你电脑的音量与静音（只做只读诊断；设置页新增
   「允许自动调整系统音量」开关，默认关，明确同意才代调）
@@ -205,9 +193,9 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 ## 下载与安装
 
-最新版见仓库 **Releases**（v0.18.0，单文件约 55MB）：
+最新版见仓库 **Releases**（v0.18.1，单文件约 55MB）：
 
-1. 下载 `PASMStudio-Setup-0.18.0.exe`
+1. 下载 `PASMStudio-Setup-0.18.1.exe`
 2. 双击安装 → 打开 PASM Studio → 点右上「设置」填 LLM Key（或留空用本地 Ollama）
 3. 开始聊天；要用「图像/视频/漫剧」真出片时，首次使用按提示接入出图引擎（约 1 分钟）
 
