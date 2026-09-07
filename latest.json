@@ -1,7 +1,7 @@
 {
-  "version": "0.22.3",
-  "download_url": "https://gitee.com/arronzheng/pasm-qclaw/releases/tag/v0.22.3",
-  "notes": "v0.22.3 修复 ComfyUI 检测报错：Request() 不接受 timeout 参数导致「连不上 ComfyUI」误报（服务通不通都报错）。改为 urlopen 传超时，检测真实可用——服务在跑会显示版本与已装节点/模型，没启动给清晰提示。",
+  "version": "0.22.4",
+  "download_url": "https://gitee.com/arronzheng/pasm-qclaw/releases/tag/v0.22.4",
+  "notes": "v0.22.4 ①朗读/点小人语音延时修复：edge-tts 改\"分句块边合成边播+生产消费预合成\"——首音约0.5s出声、长回复不再整段合成完才开播(曾静默6秒+)，点朗读关仍≤0.2s掐断；②ComfyUI 随 PASM 托管：设置勾\"随PASM启动/退出ComfyUI\"后自动拉起/关闭本机已装的 ComfyUI，向导新增 ▶启动/🔎定位 main.py/⏹停止。",
   "released_at": "2026-09-07",
   "channel": "stable"
 }

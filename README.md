@@ -2,14 +2,14 @@
 
 **简体中文**（正文） · [🇬🇧 English（完整英文版见下方）](#english--英文完整版)
 
-> **v0.22.3 ComfyUI 一键配置向导（检测修复）** —— 打开就能聊：它能思考、
+> **v0.22.4 语音零等待开播 + ComfyUI 随 PASM 启动/退出托管** —— 打开就能聊：它能思考、
 > 学过的本事（笑话/知识/技能）被点名时能真用出来；回复首字即出、边想边打。
 > 每一次相处都会沉淀成它的记忆与性格——你聊得越多，它越"懂你"，越像"只属于你的那个 AI"。
 
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.22.3（2026-09-07）· 修复检测误报（向导 0.22.2 可用）
+## 最新：v0.22.4（2026-09-07）· 语音零等待开播 + ComfyUI 随 PASM 托管
 
 - **🧰 ComfyUI 一键配置向导**：设置→视频引擎 ①检测 ComfyUI 与已装模型 ②内置官方 Wan2.2 5B / LTX 图生视频示例（另存后拖进 ComfyUI 即可跑）③导入其导出的 workflow 并自动自检 ④随时自检——不用自己搭工作流
 - （v0.22.1：真机五修 / v0.22.0：真流式·规划器·验证器·few-shot·学以致用——详见 CHANGELOG）
@@ -123,10 +123,10 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 # English · PASM Studio — A Desktop AI Companion That Thinks, Works, and Remembers You (Windows)
 
-> **v0.22.3 ComfyUI one-click setup wizard (detection fix)** — Chat right out of the box: it thinks,
+> **v0.22.4 instant voice playback + ComfyUI managed alongside PASM (auto start/stop)** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.22.3 (2026-09-07) · wizard detection fix
+## Latest: v0.22.4 (2026-09-07) · instant voice + ComfyUI managed with PASM
 
 - **🧰 ComfyUI one-click setup wizard**: in Settings→Video engine: ① detect ComfyUI & installed models ② official Wan2.2 5B / LTX i2v samples (drag into ComfyUI to run) ③ import its exported API workflow with auto self-check ④ verify anytime — no manual workflow building
 - (v0.22.1: five real-device fixes / v0.22.0: streaming·planner·validator·few-shot — see CHANGELOG)
