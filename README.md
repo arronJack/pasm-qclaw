@@ -2,26 +2,17 @@
 
 **简体中文**（正文） · [🇬🇧 English（完整英文版见下方）](#english--英文完整版)
 
-> **v0.22.0 认知提速与规划升级：真流式回复 · 任务规划器 · 输出验证器 · 学以致用 · 真知识库** —— 打开就能聊：它能思考、
-> 能分析你的文件、能帮你写脚本/做文档/开发项目、**能真出图、能把图片真的变成会动的视频**，复杂任务先给计划、确认后逐步干，
+> **v0.22.1 真机五修：讲心理学正常聊 · 不照搬知识库 · ffmpeg无弹窗 · 朗读即停 · 资料库排版** —— 打开就能聊：它能思考、> 能分析你的文件、能帮你写脚本/做文档/开发项目、**能真出图、能把图片真的变成会动的视频**，复杂任务先给计划、确认后逐步干，
 > 学过的本事（笑话/知识/技能）被点名时能真用出来；回复首字即出、边想边打。
 > 每一次相处都会沉淀成它的记忆与性格——你聊得越多，它越"懂你"，越像"只属于你的那个 AI"。
 
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.22.0（2026-09-07）· 认知提速 + 规划/验证/学以致用
+## 最新：v0.22.1（2026-09-07）· 真机五修
 
-- **⚡ 回复提速**：普通对话改**真流式**（首 token 即上屏，边想边打）；工具轮按需触发
-  （只在"记得/上次/偏好"类话题回忆个人相关），修复"调优后回复明显变慢"
-- **📋 任务规划器**：复杂指令自动拆步（规则优先、LLM 分解兜底），先出计划、
-  你回「开始」后逐步干，每步完成即刷新
-- **✅ 输出验证器**：Python ast 语法树 / 括号配平 / JSON / 占位符自动检查，
-  不过就带错重写一次
-- **📝 结构化提示词 + 🧠 记忆 few-shot**：按任务类型（总结/推理/生成/代码）下发规格；
-  相似成功案例注入提示——不同底层模型表现趋于一致
-- **🎭 学以致用**：说"讲个笑话"它就真能把学过的笑话讲出来（自学原文整段注入）
-- **📚 真知识库**：`/查 关键词` 快速检索，阅读器双链跳转（Obsidian 式关联导航）
+- **真机反馈修复**：问「讲讲心理学」不再答能力清单、讲解不再整段照搬资料库；ffmpeg/脚本运行不弹黑窗；朗读点关立即中断；ComfyUI/方舟引擎未就绪会明确提示（不会静默出静态片）；资料库超长行折行、阅读器与弹窗排版优化
+- （v0.22.0：真流式提速 / 任务规划器 / 输出验证器 / few-shot / 学以致用 / `/查` 与双链——详见 CHANGELOG）
 - （v0.21.0：即梦 Seedance + ComfyUI 图生视频双引擎 / 朗读即停——详见 CHANGELOG）
 
 ## 它和普通聊天 AI 有什么不同
@@ -133,26 +124,13 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 # English · PASM Studio — A Desktop AI Companion That Thinks, Works, and Remembers You (Windows)
 
-> **v0.22.0 cognitive speedup & planning: true streaming replies · task planner · output validator · learned-skill application · real knowledge base** — Chat right out of the box: it thinks, analyzes your files, writes scripts/docs, develops projects, **generates real images and turns them into moving videos**, proposes a plan for complex tasks first and executes step by step after your confirmation, and can actually *use* what it learned (tell a real joke when asked). Replies start streaming at the first token. Every interaction feeds its memory and personality — the more you talk, the more it becomes *your* AI.
-
+> **v0.22.1 five real-device fixes: psychology chats properly · no KB copy-paste answers · no ffmpeg popups · instant TTS stop · tidy knowledge base** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.22.0 (2026-09-07) · cognitive speedup + planning / validation / learned-skill application
+## Latest: v0.22.1 (2026-09-07) · five real-device fixes
 
-- **⚡ Faster replies**: normal chats are now **truly streamed** (first token on screen
-  immediately); the memory-tool round fires only when a message actually needs
-  personal recall — fixing the "slower after tuning" regression
-- **📋 Task planner**: complex requests auto-decompose into steps (rules first, LLM
-  fallback); shows the plan, executes step by step after you reply "start"
-- **✅ Output validator**: Python AST syntax check / brace balancing / JSON /
-  placeholder detection — regenerates once with the specific problems on failure
-- **📝 Structured prompts + 🧠 memory few-shot**: per-task-type specs
-  (summary/reasoning/generation/code); similar past successes guide the model —
-  different underlying LLMs behave consistently under the PASM framework
-- **🎭 Learned-skill application**: "tell me a joke" → it actually tells one from
-  what it self-studied (full original text injected, not just bullet summaries)
-- **📚 Real knowledge base**: `/查 keyword` in-chat search; related entries are
-  clickable in the reader (Obsidian-style linked navigation)
+- "tell me about psychology" now chats properly instead of a capability list, and answers never dump the whole KB original text; ffmpeg/script runs never pop a console; voice-off stops instantly; image-to-video engines surface setup errors upfront instead of silently falling back to stills; knowledge-base text is wrapped and tidy
+- (v0.22.0: true streaming / task planner / output validator / few-shot / `/find` + linked notes — see CHANGELOG)
 - (v0.21.0: Jimeng Seedance + ComfyUI i2v dual engine / instant TTS stop — see CHANGELOG)
 
 ## What makes it different from a regular chatbot

@@ -1,7 +1,7 @@
 {
-  "version": "0.22.0",
-  "download_url": "https://gitee.com/arronzheng/pasm-qclaw/releases/tag/v0.22.0",
-  "notes": "认知提速与规划升级：回复改真流式（首字即出、边想边打）+ 工具轮按需触发（修复调优后变慢）；新增任务规划器（复杂指令先出计划、确认后逐步干）、输出验证器（语法/占位符自动检查不过重写）、分任务结构化提示词、记忆 few-shot（模仿干成过的事）、学以致用（学了笑话就能真讲出来）、/查 命令与资料库双链跳转。",
+  "version": "0.22.1",
+  "download_url": "https://gitee.com/arronzheng/pasm-qclaw/releases/tag/v0.22.1",
+  "notes": "v0.22.1 真机五修：①「讲讲心理学」不再误答能力清单、学科讲解不再照搬资料库原文（笑话等表演类仍完整讲）②ffmpeg/脚本运行全程无弹窗 ③朗读点关立即中断（MCI轮询可掐断长句）④图生视频引擎预检——ComfyUI没放workflow/方舟没填Key/服务没启会明确提示原因，不再静默出静态片 ⑤资料库排版：超长行折行/阅读器行距/学习弹窗富文本。v0.22.0 首发含真流式回复、任务规划器、输出验证器、结构化提示词、few-shot、学以致用、/查与双链。",
   "released_at": "2026-09-07",
   "channel": "stable"
 }
