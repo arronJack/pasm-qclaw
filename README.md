@@ -8,6 +8,32 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
+---
+
+## 🇬🇧 English
+
+**PASM Studio** is a Windows desktop AI companion built on the **PASM** cognitive-agent
+engine — it doesn't just chat, it *thinks, works, and remembers you*.
+
+- **Thinks before it answers** — a token-free cognitive loop (perception → working memory →
+  episodic recall → world-model imagination → planning), with a visible "thinking" process
+  and proactive follow-up questions.
+- **Grows a personality** — emotions, memory, and character develop as you interact; the
+  desktop mascot acts by its own temperament (playful ones kick a ball, quiet ones read).
+- **Real work skills** — reads your files, writes docs/slides/spreadsheets, develops small
+  projects, generates **images, short videos, and step-by-step manga/comic episodes**
+  (plan → edit shots → render → voice → compose).
+- **Learns on its own** — point it at a topic, it browses the web, files knowledge into its
+  library, and applies that knowledge back into chats and creative work.
+- **Privacy-first** — runs fully offline with **Ollama** (qwen/llama …), no API key needed;
+  a DeepSeek key makes it stronger. All data stays in a local folder.
+
+**Download**: grab `PASMStudio-Setup-x.y.z.exe` from [Releases](../../releases) (installer,
+Windows 7/10 compatible). Chinese is the primary documentation language; this section is a
+summary. See [CHANGELOG.md](CHANGELOG.md) for version history.
+
+---
+
 ## 最新：v0.18.0（2026-09-07）
 
 - **🔊 音量不越权**：朗读/点小人绝不动你电脑的音量与静音（只做只读诊断；设置页新增
