@@ -1,7 +1,7 @@
 {
-  "version": "0.22.2",
-  "download_url": "https://gitee.com/arronzheng/pasm-qclaw/releases/tag/v0.22.2",
-  "notes": "v0.22.2 ComfyUI 一键配置向导：设置→视频引擎新增「🧰 一键配置向导」——①检测 ComfyUI 与已装模型 ②取出内置官方 Wan2.2 5B/LTX 图生视频示例（拖进 ComfyUI 即可跑）③导入 ComfyUI 导出的 workflow 并自动自检 ④引擎就绪度随时校验；不用自己搭工作流。另修复引擎识别遗漏的 Wan22ImageToVideoLatent/LTXVImgToVideo/SaveWEBM 节点。",
+  "version": "0.22.3",
+  "download_url": "https://gitee.com/arronzheng/pasm-qclaw/releases/tag/v0.22.3",
+  "notes": "v0.22.3 修复 ComfyUI 检测报错：Request() 不接受 timeout 参数导致「连不上 ComfyUI」误报（服务通不通都报错）。改为 urlopen 传超时，检测真实可用——服务在跑会显示版本与已装节点/模型，没启动给清晰提示。",
   "released_at": "2026-09-07",
   "channel": "stable"
 }
