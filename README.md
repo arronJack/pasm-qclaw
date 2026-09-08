@@ -9,9 +9,10 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.26.3（2026-09-08）· 能力提示去串符 / @引用补齐 / 团队升级真公司项目组
+## 最新：v0.26.4（2026-09-08）· @引用升级 WorkBuddy 式：候选弹层 + 输入框上方引用条
 
-- **✂️ 能力提示不再一坨串符**："能给出教程吗/能教我吗"这类要内容的句子不再误弹能力清单；问"你会做什么"只回两三行 + 开工引导，快捷入口串移除
+- **📎 @引用真正可视化**：输入框打 `@` 弹出可引用文件快选（最近产物/资料库/本地文件，↑↓+Enter 选择、继续打字过滤），选中后消息里落成 `@路径`、**输入框上方出现 📎引用条**（点 ✕ 移除，输入框里的引用写法同步清掉）；支持 `@“含空格路径”` 引号写法；引用正文只进模型上下文，"你"气泡保持干净
+- **🐛 修复 "@小U 被瞎聊"**：找不到的引用不再原样丢给模型（旧版模型见到 `@小U` 就当打招呼），纯引用消息找不到会明确提示并剥除标记；长文本/代码里的 `@` 不受影响
 - **📎 @引用补齐**：@完整路径 / @文件名（按名在常用目录搜索兜底）/ @资料词条 → 读进上下文；找不到会提示怎么用
 - **🏢 团队=真公司项目组**：新项目=空白（成员与流程亲手组建）；每项目独立编制、可编入/移出成员（人才库保留）；切换项目呈现各自 成员/流程/任务状态✅⚠️○/历次效果档案；跑完状态自动回写；聊天"让团队做X"仍一键开工
 - 冒烟：全系回归绿（v0261 26 · v0262 22 · v0260 39 · v0250 33+33 · v0240 57+15 · v0231 26 · v022x/v0190）
@@ -165,13 +166,13 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 # English · PASM Studio — A Desktop AI Companion That Thinks, Works, and Remembers You (Windows)
 
-> **v0.26.3 capability prompts slimmed, @references completed, teams become real per-project crews — v0.26.2 tool-error fix & emotion/memory shaping replies & same-file edits** — Chat right out of the box: it thinks,
+> **v0.26.4 @references become WorkBuddy-style (picker popup + chips above the input) — v0.26.3 capability prompts slimmed, teams become real per-project crews, v0.26.2 tool-error fix & emotion/memory shaping replies & same-file edits** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.26.3 (2026-09-08) · lean capability prompts / @references / company-style project crews
+## Latest: v0.26.4 (2026-09-08) · @references now WorkBuddy-style: picker popup + reference chips above the input
 
-- **✂️ No more one-fat-banner capability menus**: "能给出教程吗/能教我吗" now replies normally (no capability list); a real "你能做什么" gets 2-3 lines + one prompt to start working — the 8 quick-link strip is gone
-- **📎 @references completed**: @full-path / @file-name (auto name-search in workspace/Desktop/Documents/Downloads) / @knowledge entry all load into context; failures now say how to write it
+- **📎 Visible @references**: typing `@` pops a file picker (recent artifacts / knowledge entries / local text files; ↑↓+Enter pick, keep typing to filter). Choosing one inserts `@path` and shows a 📎 chip above the input — click ✕ to drop it (also cleans the text). `@“paths with spaces”` supported. File bodies go into the model context only; your bubble stays clean
+- **🐛 "@小U got chit-chat" fixed**: unresolvable references are no longer sent verbatim to the model (it used to treat `@小U` as a greeting); pure-reference messages now explain and strip the mark. `@` in pasted code is never touched
 - **🏢 Teams = real per-project crews**: a new project starts **blank** (crew & flow are built by you); each project has its own members — hire in (🌐 / 🎓 / ＋ / 🧑‍💼 pool), move out anytime (pool record kept); switching projects shows that project's own members / flow / **step status ✅⚠️○** / **run archive with outcomes**; runs write step status back automatically; "让团队做 X" still boots a built-in crew
 - Smoke: full regression green (v0261 26 · v0262 22 · v0260 39 · v0250 33+33 · v0240 57+15 · v0231 26 · v022x/v0190)
 
