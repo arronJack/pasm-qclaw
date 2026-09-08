@@ -9,7 +9,16 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.26.0（2026-09-08）· 项目台账精准重调 / 真实文件开发 / @引用与/指令
+## 最新：v0.26.1（2026-09-08）· 五连真机修复（体验/打开软件/任务并发）
+
+- **🩺 健康状态不再占屏**：自检自愈收成底部一条小卡，自动动态区回归主位
+- **👥 团队页卡片化**：项目条 → 成员/流程两卡 → 开工区；成员行带 ★评分，单击员工卡打分、右键辞退
+- **🎓 技能三层落地**：新增 🎯专家2（内容导演/数据分析师）+ 🔌连接器3（联网/本地文件/办公文档）；添加向导可选类型
+- **📂 打开软件真启动**：修复"说打开了其实没有"——称谓前缀剥离+品牌安装路径真实探测+启动后进程真验证，绝不口嗨（"小U，帮我打开网易云音乐"现在真能开）
+- **⏳ 任务不丢回复**：真机"只有提问没回复"根因修复——重活开工有提示、切走再回来结果当场显示、收尾全程兜底写回原会话
+- 冒烟：v0261 新增 25 项全过；v0260/v0250/v0240/v0231/v0230 全回归绿
+
+## v0.26.0（2026-09-08）· 项目台账精准重调 / 真实文件开发 / @引用与/指令
 
 - **📒 项目级台账**：文案/表格/PPT/开发每个项目都有记录（需求史+每轮改了什么+冒烟+你的规则）；
   续写时自动把台账带进上下文精准修改——不再"牛头不对马嘴"
@@ -142,10 +151,19 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 # English · PASM Studio — A Desktop AI Companion That Thinks, Works, and Remembers You (Windows)
 
-> **v0.26.0 project ledger for precise re-editing, real multi-language file development, @references & / commands** — Chat right out of the box: it thinks,
+> **v0.26.1 five real-machine fixes (health card, team-page cards, 3-tier skills, true app-launch, no lost replies), v0.26.0 project ledger & multi-language file dev** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.26.0 (2026-09-08) · project ledger / real file development / @refs & slash commands
+## Latest: v0.26.1 (2026-09-08) · five real-machine fixes
+
+- **🩺 Health card compacted** to a small footer strip — the auto-activity feed is the main area again
+- **👥 Team page redesigned into cards**: project bar → members / flow cards → run area; member rows show ★ rating, single-click opens the employee card (⭐ manual rating), right-click fires
+- **🎓 3-tier skills now real**: built-in 🎯 experts ×2 (content director / data analyst) and 🔌 connectors ×3 (web search / local files & apps / office documents); the add-skill wizard asks for the tier
+- **📂 App launching truly works**: "小U，帮我打开网易云音乐" now really opens it — name-prefix stripping + brand install-path probing across all drives + real process verification after launch (never fake "opened")
+- **⏳ Long tasks never lose their reply**: real-machine root cause fixed — heavy work shows a "working…" notice, returning to the conversation shows the finished reply immediately, and turn-finalization has a hard fallback that always writes the reply back into its session file
+- Smoke: v0261 adds 25 checks (UI offscreen + turn lifecycle + brand probing) all green; v0260/v0250/v0240/v0231/v0230 full regression green
+
+## v0.26.0 (2026-09-08) · project ledger / real file development / @refs & slash commands
 
 - **📒 Project ledger**: every project (copy/table/PPT/dev) keeps a working ledger — request history, what changed each round, smoke results, your standing rules; follow-up edits auto-inject the digest for precise changes, never "lost in the weeds"
 - **🛠 Real file development**: `/开发 <spec>` or "用php/java/vue/go/c#/c++ 开发…" → pick a target folder and write a real project (8-language scaffolds, per-file generation, per-language static smoke); every round is recorded, "改这个项目" continues precisely
