@@ -1,7 +1,7 @@
 {
-  "version": "0.22.4",
-  "download_url": "https://gitee.com/arronzheng/pasm-qclaw/releases/tag/v0.22.4",
-  "notes": "v0.22.4 ①朗读/点小人语音延时修复：edge-tts 改\"分句块边合成边播+生产消费预合成\"——首音约0.5s出声、长回复不再整段合成完才开播(曾静默6秒+)，点朗读关仍≤0.2s掐断；②ComfyUI 随 PASM 托管：设置勾\"随PASM启动/退出ComfyUI\"后自动拉起/关闭本机已装的 ComfyUI，向导新增 ▶启动/🔎定位 main.py/⏹停止。",
+  "version": "0.23.0",
+  "download_url": "https://gitee.com/arronzheng/pasm-qclaw/releases/tag/v0.23.0",
+  "notes": "v0.23.0 ①闲聊不再蹦干活入口（DeepSeek式：含 觉不觉得/像不像/比喻/为什么 等一律正常聊天；只有\"你会写代码吗\"这类明确问能力才答能力，锚点改可点按钮不再漏HTML串符）②并发：同栏忙时新消息自动排队、上一条完成自动接续；切会话不互相杀；本地模型并发放开到2路 ③主题：无论系统深浅色都强制亮色，聊天框/会话列表文字不再隐身 ④PASM×LLM真协同（非伪）：复杂任务每步=LLM起草→PASM规则+历史教训评审→LLM修正→PASM采纳并回写记忆，结果带可见协同标记。另附 docs/roadmap：多智能体团队与自检自愈方向设计。",
   "released_at": "2026-09-07",
   "channel": "stable"
 }
