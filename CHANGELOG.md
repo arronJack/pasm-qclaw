@@ -1,5 +1,21 @@
 # 版本历史
 
+## 0.24.1（2026-09-08）· 安装器 MoveFile 错误 5 修复 / PASM 核心引擎同频 0.5.0
+
+- **🔧 升级安装 "MoveFile 失败，错误代码 5" 根因修复**：
+  · 根因：旧版 PASM Studio 是托盘常驻程序，安装器原先只「发出 taskkill」就继续装——
+    进程尚未真正退出、exe/DLL 句柄未释放，Inno 重命名替换目标文件时被系统拒绝（错误 5）
+  · 修复：安装前改为 **「杀进程 → 重命名探锁 → 未释放自动重试（最长 15s）→ 仍占用则弹窗
+    明确提示先退出再装」**；`CloseApplications` 升级为 force
+- **🧬 PASM 核心引擎与 Studio 同频（引擎 0.4.0 → 0.5.0）**：
+  · v0.24 两大能力的**真身移入引擎执行皮层**：`pasm/cognitive/agent_team.py`（多智能体
+    技能团队）与 `pasm/cognitive/selfheal.py`（自检·自定位·自修复）
+  · 桌面端 `desktop/agent_team.py`、`desktop/selfheal.py` 变为兼容门面（re-export）——
+    Studio 与引擎共用同一实现，此后增改只在引擎层做，天然不再分叉
+  · 引擎数据目录与记忆层 memory_layers 同一约定（PASM_STUDIO_DIR → 桌面 DATA_DIR →
+    %APPDATA%/PASMStudio），团队流程产物与故障案例库落位与桌面完全一致
+- 冒烟：v0.24.0 引擎 57 项 + UI 离屏 16 项经门面回归全过（验证同频无感）
+
 ## 0.24.0（2026-09-08）· 多智能体技能团队 / 系统自检自愈 / 方舟404修复 / 主题加固
 
 - **👥 多智能体技能团队（方向一 P1-P3 落地）**：
