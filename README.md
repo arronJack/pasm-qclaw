@@ -9,7 +9,14 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.26.2（2026-09-08）· 干活报错修复 / PASM 记忆情感真正调制 / 表格同文件精准续改
+## 最新：v0.26.3（2026-09-08）· 能力提示去串符 / @引用补齐 / 团队升级真公司项目组
+
+- **✂️ 能力提示不再一坨串符**："能给出教程吗/能教我吗"这类要内容的句子不再误弹能力清单；问"你会做什么"只回两三行 + 开工引导，快捷入口串移除
+- **📎 @引用补齐**：@完整路径 / @文件名（按名在常用目录搜索兜底）/ @资料词条 → 读进上下文；找不到会提示怎么用
+- **🏢 团队=真公司项目组**：新项目=空白（成员与流程亲手组建）；每项目独立编制、可编入/移出成员（人才库保留）；切换项目呈现各自 成员/流程/任务状态✅⚠️○/历次效果档案；跑完状态自动回写；聊天"让团队做X"仍一键开工
+- 冒烟：全系回归绿（v0261 26 · v0262 22 · v0260 39 · v0250 33+33 · v0240 57+15 · v0231 26 · v022x/v0190）
+
+## v0.26.2（2026-09-08）· 干活报错修复 / PASM 记忆情感真正调制 / 表格同文件精准续改
 
 - **🐛 修复干活报错**：能力问答 8 个快捷锚点漏包列表导致的 `str.join()` 崩溃（一句话修复）
 - **❤️ PASM 记忆情感真正可感知**：情绪词表扩到 40+（口语/抱怨/报错都会拉动心情）；情绪反馈不再被随机步稀释、撞顶；心情翻译成「此刻口吻」注入每条回复（开心→轻快、低落→放轻、急→直给重点）；做表格/方案/PPT/开发时自动带上与你相关的记忆与偏好
@@ -158,10 +165,17 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 # English · PASM Studio — A Desktop AI Companion That Thinks, Works, and Remembers You (Windows)
 
-> **v0.26.2 tool-error fix, PASM memory/emotion now really shapes the LLM, same-file precise re-edits for tables/docs/PPT — v0.26.1 five real-machine fixes, v0.26.0 project ledger & multi-language dev** — Chat right out of the box: it thinks,
+> **v0.26.3 capability prompts slimmed, @references completed, teams become real per-project crews — v0.26.2 tool-error fix & emotion/memory shaping replies & same-file edits** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.26.2 (2026-09-08) · tool-error fix / PASM emotion & memory really shaping replies / same-file edits
+## Latest: v0.26.3 (2026-09-08) · lean capability prompts / @references / company-style project crews
+
+- **✂️ No more one-fat-banner capability menus**: "能给出教程吗/能教我吗" now replies normally (no capability list); a real "你能做什么" gets 2-3 lines + one prompt to start working — the 8 quick-link strip is gone
+- **📎 @references completed**: @full-path / @file-name (auto name-search in workspace/Desktop/Documents/Downloads) / @knowledge entry all load into context; failures now say how to write it
+- **🏢 Teams = real per-project crews**: a new project starts **blank** (crew & flow are built by you); each project has its own members — hire in (🌐 / 🎓 / ＋ / 🧑‍💼 pool), move out anytime (pool record kept); switching projects shows that project's own members / flow / **step status ✅⚠️○** / **run archive with outcomes**; runs write step status back automatically; "让团队做 X" still boots a built-in crew
+- Smoke: full regression green (v0261 26 · v0262 22 · v0260 39 · v0250 33+33 · v0240 57+15 · v0231 26 · v022x/v0190)
+
+## v0.26.2 (2026-09-08) · tool-error fix / PASM emotion & memory really shaping replies / same-file edits
 
 - **🐛 Tool error fixed**: the capability menu's 8 quick-action anchors were missing a list wrapper → `str.join() takes exactly one argument (8 given)` crash is gone
 - **❤️ PASM emotion & memory are now felt**: sentiment lexicon widened to 40+ spoken phrases (complaints, errors, "卡死" all move the mood); mood feedback is applied in one decisive step (no more dilution/clamping); mood is translated into a "此刻口吻 / tone-now" instruction injected into every reply (happy → light & playful, down → softer & shorter, urgent → straight to the point); tables/plans/PPT/dev now auto-carry your related memories & preferences
