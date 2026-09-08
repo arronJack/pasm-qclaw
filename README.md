@@ -9,14 +9,15 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.24.0（2026-09-08）· 多智能体团队 / 自检自愈 / 方舟404修复
+## 最新：v0.24.1（2026-09-08）· 安装器修复 / PASM 引擎同频 0.5.0
 
+- **🔧 修复升级安装 MoveFile 错误 5**：托盘旧进程未真正退出导致文件占用——安装前探锁重试，仍占用则明确提示
+- **🧬 PASM 核心引擎同频（0.5.0）**：多智能体团队与自检自愈真身移入引擎执行皮层 `pasm.cognitive`，桌面端为兼容门面，二者共用同一实现
 - **👥 多智能体技能团队**：内置 PM/策划/调度/开发/审查/调试 六角色卡，可自添加"员工卡"组成自定义流程；
   聊天说「让我的团队做 X」自动开工，审查不过自动返工、失败自动重试，过程全程可视
 - **🩺 自检·自定位·自修复**：启动静默巡检日志崩溃栈记入故障案例库；可出文件+行号级诊断报告；
   建议/自动修两档——自动修=补丁→冒烟回归→不过自动回滚（安全阀把守，安装版强制建议档）
-- **🔥 火山方舟 404 修复**：已下线模型自动迁移到在售 doubao-seedance-1-5-pro，模型改下拉可手填
-- （v0.23.0：DeepSeek式闲聊门·排队并发·亮色主题·PASM×LLM真协同 / v0.22.x：ComfyUI向导·语音分句流式——详见 CHANGELOG）
+- （v0.24.0：方舟404修复·主题加固 / v0.23.0：DeepSeek式闲聊门·排队并发·PASM×LLM真协同——详见 CHANGELOG）
 
 ## 它和普通聊天 AI 有什么不同
 
@@ -127,15 +128,16 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 # English · PASM Studio — A Desktop AI Companion That Thinks, Works, and Remembers You (Windows)
 
-> **v0.24.0 multi-agent skill team ("let my team do X" starts the flow), self-check & self-heal, Ark 404 fix** — Chat right out of the box: it thinks,
+> **v0.24.1 installer fix (MoveFile error 5), PASM core engine parity 0.5.0, multi-agent skill team ("let my team do X" starts the flow), self-heal** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.24.0 (2026-09-08) · multi-agent team / self-heal / Ark 404 fix
+## Latest: v0.24.1 (2026-09-08) · installer fix / engine parity 0.5.0
 
+- **🔧 Fixed "MoveFile error 5" during upgrade**: tray-resident old process hadn't fully exited — installer now probes the file lock, retries, and prompts clearly if still busy
+- **🧬 PASM core engine parity (0.5.0)**: multi-agent team & self-heal moved into the engine executive cortex (`pasm.cognitive`); desktop side is now a thin facade — one shared implementation
 - **👥 Multi-agent skill team**: built-in role cards (PM/Planner/Dispatcher/Developer/Reviewer/Debugger), add your own "employee cards" and compose custom flows; say "let my team do X" in chat — review-fail auto-rework, auto-retry, fully visible steps
 - **🩺 Self-check · self-diagnose · self-heal**: silent log sentinel records crash cases; file+line level diagnosis reports; report/auto-fix modes (auto-fix = patch → smoke regression → auto-rollback on failure; frozen builds forced to report-only)
-- **🔥 Volcano Ark 404 fix**: retired model IDs auto-migrate to on-sale doubao-seedance-1-5-pro; model picker with manual entry
-- (v0.23.0: chat-only gate · queued concurrency · light theme · true PASM×LLM synergy — see CHANGELOG)
+- (v0.24.0: Ark 404 fix · theme hardening / v0.23.0: chat-only gate · queued concurrency · true PASM×LLM synergy — see CHANGELOG)
 
 ## What makes it different from a regular chatbot
 
