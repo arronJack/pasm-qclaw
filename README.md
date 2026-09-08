@@ -2,17 +2,21 @@
 
 **简体中文**（正文） · [🇬🇧 English（完整英文版见下方）](#english--英文完整版)
 
-> **v0.23.0 DeepSeek式闲聊门（聊系统/代码绝不蹦入口）+ 排队并发 + 亮色主题 + PASM×LLM 真协同** —— 打开就能聊：它能思考、
+> **v0.24.0 多智能体技能团队（说"让我的团队做X"就开工）+ 系统自检自愈 + 方舟404修复** —— 打开就能聊：它能思考、
 > 学过的本事（笑话/知识/技能）被点名时能真用出来；回复首字即出、边想边打。
 > 每一次相处都会沉淀成它的记忆与性格——你聊得越多，它越"懂你"，越像"只属于你的那个 AI"。
 
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.23.0（2026-09-08）· DeepSeek式闲聊门 / 排队并发 / 亮色主题 / 双脑真协同
+## 最新：v0.24.0（2026-09-08）· 多智能体团队 / 自检自愈 / 方舟404修复
 
-- **🧰 ComfyUI 一键配置向导**：设置→视频引擎 ①检测 ComfyUI 与已装模型 ②内置官方 Wan2.2 5B / LTX 图生视频示例（另存后拖进 ComfyUI 即可跑）③导入其导出的 workflow 并自动自检 ④随时自检——不用自己搭工作流
-- （v0.22.1：真机五修 / v0.22.0：真流式·规划器·验证器·few-shot·学以致用——详见 CHANGELOG）
+- **👥 多智能体技能团队**：内置 PM/策划/调度/开发/审查/调试 六角色卡，可自添加"员工卡"组成自定义流程；
+  聊天说「让我的团队做 X」自动开工，审查不过自动返工、失败自动重试，过程全程可视
+- **🩺 自检·自定位·自修复**：启动静默巡检日志崩溃栈记入故障案例库；可出文件+行号级诊断报告；
+  建议/自动修两档——自动修=补丁→冒烟回归→不过自动回滚（安全阀把守，安装版强制建议档）
+- **🔥 火山方舟 404 修复**：已下线模型自动迁移到在售 doubao-seedance-1-5-pro，模型改下拉可手填
+- （v0.23.0：DeepSeek式闲聊门·排队并发·亮色主题·PASM×LLM真协同 / v0.22.x：ComfyUI向导·语音分句流式——详见 CHANGELOG）
 
 ## 它和普通聊天 AI 有什么不同
 
@@ -123,13 +127,15 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 # English · PASM Studio — A Desktop AI Companion That Thinks, Works, and Remembers You (Windows)
 
-> **v0.23.0 chat-only mode (never pops work actions), queued concurrency, forced light theme, true PASM×LLM synergy** — Chat right out of the box: it thinks,
+> **v0.24.0 multi-agent skill team ("let my team do X" starts the flow), self-check & self-heal, Ark 404 fix** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.23.0 (2026-09-08) · chat-only gate / queued concurrency / light theme / true PASM×LLM synergy
+## Latest: v0.24.0 (2026-09-08) · multi-agent team / self-heal / Ark 404 fix
 
-- **🧰 ComfyUI one-click setup wizard**: in Settings→Video engine: ① detect ComfyUI & installed models ② official Wan2.2 5B / LTX i2v samples (drag into ComfyUI to run) ③ import its exported API workflow with auto self-check ④ verify anytime — no manual workflow building
-- (v0.22.1: five real-device fixes / v0.22.0: streaming·planner·validator·few-shot — see CHANGELOG)
+- **👥 Multi-agent skill team**: built-in role cards (PM/Planner/Dispatcher/Developer/Reviewer/Debugger), add your own "employee cards" and compose custom flows; say "let my team do X" in chat — review-fail auto-rework, auto-retry, fully visible steps
+- **🩺 Self-check · self-diagnose · self-heal**: silent log sentinel records crash cases; file+line level diagnosis reports; report/auto-fix modes (auto-fix = patch → smoke regression → auto-rollback on failure; frozen builds forced to report-only)
+- **🔥 Volcano Ark 404 fix**: retired model IDs auto-migrate to on-sale doubao-seedance-1-5-pro; model picker with manual entry
+- (v0.23.0: chat-only gate · queued concurrency · light theme · true PASM×LLM synergy — see CHANGELOG)
 
 ## What makes it different from a regular chatbot
 
