@@ -9,7 +9,15 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.25.0（2026-09-08）· 公司式项目组 / 聊天提速 / 自愈纯后台
+## 最新：v0.26.0（2026-09-08）· 项目台账精准重调 / 真实文件开发 / @引用与/指令
+
+- **📒 项目级台账**：文案/表格/PPT/开发每个项目都有记录（需求史+每轮改了什么+冒烟+你的规则）；
+  续写时自动把台账带进上下文精准修改——不再"牛头不对马嘴"
+- **🛠 真实文件开发**：`/开发 需求` 或"用php/java/vue/go/c#/c++ 开发…"→ 选目标目录真实落盘
+  （8 种语言脚手架 + 逐文件生成 + 按语言静态冒烟），产出自动记台账，"改这个项目"精准续改
+- **📎 @引用**：消息里 `@文件路径` / `@资料词条`，自动把内容带进上下文
+- **/️⃣ 指令**：`/开发 需求` · `/技能 技能名 需求` · `/项目`（看台账）
+- （v0.25.0：公司式项目组·聊天提速·自愈纯后台 · 见 CHANGELOG）
 
 - **👥 公司式项目组**：项目空间保存目标+流程+历次产物；成员=点开看职责与评分的智能体员工卡；
   流程拖拽排序、双击改任务；🌐网上招聘（抓岗位资料自动提炼员工卡）、🎓技能库选才；
@@ -134,16 +142,16 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 # English · PASM Studio — A Desktop AI Companion That Thinks, Works, and Remembers You (Windows)
 
-> **v0.25.0 company-style project teams (project workspace, drag-and-drop flows, agent ratings, web recruiting), faster chat, background self-heal, installer fixes MoveFile error 5 at the root** — Chat right out of the box: it thinks,
+> **v0.26.0 project ledger for precise re-editing, real multi-language file development, @references & / commands** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.25.0 (2026-09-08) · company-style project teams / faster chat / background self-heal
+## Latest: v0.26.0 (2026-09-08) · project ledger / real file development / @refs & slash commands
 
-- **👥 Company-style project teams**: project workspace keeps goal + flow + run history; members are agent employee-cards with duties and ratings (★); drag to reorder flow steps, double-click to edit tasks; 🌐 web recruiting auto-builds role cards from online sources; 🎓 hire directly from the skill library; every step auto-scores its member — swap in better ones when scores drop
-- **⚡ Faster chat**: dual-brain review now only runs on heavy work (code/writing); casual chat answers in a single call — first-token latency way down
-- **🩺 Background self-heal**: fully silent automation; the auto page keeps only a "view health status" button
-- **🎓 Three-tier skills**: 🎯 expert / 🎓 skill / 🔌 connector typing with filters
-- **🔧 MoveFile error 5 eliminated at the root**: upgrades wipe the program dir (keeping `data`) then copy fresh — no more replace-in-place
+- **📒 Project ledger**: every project (copy/table/PPT/dev) keeps a working ledger — request history, what changed each round, smoke results, your standing rules; follow-up edits auto-inject the digest for precise changes, never "lost in the weeds"
+- **🛠 Real file development**: `/开发 <spec>` or "用php/java/vue/go/c#/c++ 开发…" → pick a target folder and write a real project (8-language scaffolds, per-file generation, per-language static smoke); every round is recorded, "改这个项目" continues precisely
+- **📎 @references**: `@file` or `@knowledge entry` in a message pulls the content into context
+- **/️⃣ Commands**: `/开发 <spec>` · `/技能 <skill> <task>` · `/项目` (view ledger)
+- (v0.25.0: company-style teams · faster chat · background self-heal — see CHANGELOG)
 - **🧬 PASM core engine parity (0.5.0)**: multi-agent team & self-heal moved into the engine executive cortex (`pasm.cognitive`); desktop side is now a thin facade — one shared implementation
 - **👥 Multi-agent skill team**: built-in role cards (PM/Planner/Dispatcher/Developer/Reviewer/Debugger), add your own "employee cards" and compose custom flows; say "let my team do X" in chat — review-fail auto-rework, auto-retry, fully visible steps
 - **🩺 Self-check · self-diagnose · self-heal**: silent log sentinel records crash cases; file+line level diagnosis reports; report/auto-fix modes (auto-fix = patch → smoke regression → auto-rollback on failure; frozen builds forced to report-only)
