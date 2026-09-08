@@ -128,12 +128,12 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 # English · PASM Studio — A Desktop AI Companion That Thinks, Works, and Remembers You (Windows)
 
-> **v0.24.1 installer fix (MoveFile error 5), PASM core engine parity 0.5.0, multi-agent skill team ("let my team do X" starts the flow), self-heal** — Chat right out of the box: it thinks,
+> **v0.24.2 real fix for MoveFile error 5 (v0.24.1 lock probe had false negatives), PASM core engine parity 0.5.0, multi-agent skill team ("let my team do X" starts the flow), self-heal** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.24.1 (2026-09-08) · installer fix / engine parity 0.5.0
+## Latest: v0.24.2 (2026-09-08) · MoveFile error 5 truly fixed
 
-- **🔧 Fixed "MoveFile error 5" during upgrade**: tray-resident old process hadn't fully exited — installer now probes the file lock, retries, and prompts clearly if still busy
+- **🔧 v0.24.1's rename-based lock probe had false negatives** (Windows allows renaming a running exe but NOT loaded DLLs). Now probes via kernel32 `CreateFileW` exclusive open on the exe + key runtime DLLs; install proceeds only after handles are truly released, with clear 3-step guidance on timeout
 - **🧬 PASM core engine parity (0.5.0)**: multi-agent team & self-heal moved into the engine executive cortex (`pasm.cognitive`); desktop side is now a thin facade — one shared implementation
 - **👥 Multi-agent skill team**: built-in role cards (PM/Planner/Dispatcher/Developer/Reviewer/Debugger), add your own "employee cards" and compose custom flows; say "let my team do X" in chat — review-fail auto-rework, auto-retry, fully visible steps
 - **🩺 Self-check · self-diagnose · self-heal**: silent log sentinel records crash cases; file+line level diagnosis reports; report/auto-fix modes (auto-fix = patch → smoke regression → auto-rollback on failure; frozen builds forced to report-only)
