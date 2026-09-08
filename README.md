@@ -9,9 +9,15 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.24.1（2026-09-08）· 安装器修复 / PASM 引擎同频 0.5.0
+## 最新：v0.25.0（2026-09-08）· 公司式项目组 / 聊天提速 / 自愈纯后台
 
-- **🔧 修复升级安装 MoveFile 错误 5**：托盘旧进程未真正退出导致文件占用——安装前探锁重试，仍占用则明确提示
+- **👥 公司式项目组**：项目空间保存目标+流程+历次产物；成员=点开看职责与评分的智能体员工卡；
+  流程拖拽排序、双击改任务；🌐网上招聘（抓岗位资料自动提炼员工卡）、🎓技能库选才；
+  每步表现自动评分——分低就换更好的成员
+- **⚡ 聊天提速**：双脑协同只在写代码/写作等重活时启用，闲聊问答单次直出，首字延迟大幅回落
+- **🩺 自检自愈纯后台**：静默自动运行不打扰，自动化页只留「查看健康状态」按钮
+- **🎓 技能三层化**：🎯专家 / 🎓技能 / 🔌连接器 类型标注与筛选
+- **🔧 安装器根除 MoveFile 错误 5**：升级先清空程序目录（保留 data）再全新复制，不再替换旧文件
 - **🧬 PASM 核心引擎同频（0.5.0）**：多智能体团队与自检自愈真身移入引擎执行皮层 `pasm.cognitive`，桌面端为兼容门面，二者共用同一实现
 - **👥 多智能体技能团队**：内置 PM/策划/调度/开发/审查/调试 六角色卡，可自添加"员工卡"组成自定义流程；
   聊天说「让我的团队做 X」自动开工，审查不过自动返工、失败自动重试，过程全程可视
@@ -128,12 +134,16 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 # English · PASM Studio — A Desktop AI Companion That Thinks, Works, and Remembers You (Windows)
 
-> **v0.24.2 real fix for MoveFile error 5 (v0.24.1 lock probe had false negatives), PASM core engine parity 0.5.0, multi-agent skill team ("let my team do X" starts the flow), self-heal** — Chat right out of the box: it thinks,
+> **v0.25.0 company-style project teams (project workspace, drag-and-drop flows, agent ratings, web recruiting), faster chat, background self-heal, installer fixes MoveFile error 5 at the root** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.24.2 (2026-09-08) · MoveFile error 5 truly fixed
+## Latest: v0.25.0 (2026-09-08) · company-style project teams / faster chat / background self-heal
 
-- **🔧 v0.24.1's rename-based lock probe had false negatives** (Windows allows renaming a running exe but NOT loaded DLLs). Now probes via kernel32 `CreateFileW` exclusive open on the exe + key runtime DLLs; install proceeds only after handles are truly released, with clear 3-step guidance on timeout
+- **👥 Company-style project teams**: project workspace keeps goal + flow + run history; members are agent employee-cards with duties and ratings (★); drag to reorder flow steps, double-click to edit tasks; 🌐 web recruiting auto-builds role cards from online sources; 🎓 hire directly from the skill library; every step auto-scores its member — swap in better ones when scores drop
+- **⚡ Faster chat**: dual-brain review now only runs on heavy work (code/writing); casual chat answers in a single call — first-token latency way down
+- **🩺 Background self-heal**: fully silent automation; the auto page keeps only a "view health status" button
+- **🎓 Three-tier skills**: 🎯 expert / 🎓 skill / 🔌 connector typing with filters
+- **🔧 MoveFile error 5 eliminated at the root**: upgrades wipe the program dir (keeping `data`) then copy fresh — no more replace-in-place
 - **🧬 PASM core engine parity (0.5.0)**: multi-agent team & self-heal moved into the engine executive cortex (`pasm.cognitive`); desktop side is now a thin facade — one shared implementation
 - **👥 Multi-agent skill team**: built-in role cards (PM/Planner/Dispatcher/Developer/Reviewer/Debugger), add your own "employee cards" and compose custom flows; say "let my team do X" in chat — review-fail auto-rework, auto-retry, fully visible steps
 - **🩺 Self-check · self-diagnose · self-heal**: silent log sentinel records crash cases; file+line level diagnosis reports; report/auto-fix modes (auto-fix = patch → smoke regression → auto-rollback on failure; frozen builds forced to report-only)
