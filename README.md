@@ -2,14 +2,27 @@
 
 **简体中文**（正文） · [🇬🇧 English（完整英文版见下方）](#english--英文完整版)
 
-> **v0.27.0 三方向全落地：数学脑 + 多模态感知（看图/听写）+ 量子策略 + 四大趋势** —— 打开就能聊：它能思考、
+> **v0.27.1 真实系统操作 + 能力判定 broker（说得出就做得到，做不到说真话）** —— 打开就能聊：它能思考、
 > 学过的本事（笑话/知识/技能）被点名时能真用出来；回复首字即出、边想边打。
 > 每一次相处都会沉淀成它的记忆与性格——你聊得越多，它越"懂你"，越像"只属于你的那个 AI"。
 
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.27.0（2026-09-09）· 数学脑 + 多模态 + 量子策略 + 四大趋势
+## 最新：v0.27.1（2026-09-09）· 真实系统操作 + 能力判定 + 难度自适应分裂
+
+- **🛠 真实系统操作**："删掉桌面上截图文件夹"→ 真删（**移入回收站**可恢复）；
+  "清理电脑垃圾"→ 先扫描只读报告 → 弹窗确认 → 只清白名单临时目录里 2 天以上的旧文件，
+  正在用的跳过并如实计数。Windows/程序目录/盘根硬拒（怎么问都不删）
+- **🧭 能力判定（非预设机制）**：需求先判定——有工具直接做 / 学过就用学到的真做 /
+  不会但可学就先上网学再真做 / 真做不了说明真实原因（如"关机需要物理动作"）。
+  **绝不再编造"清理完了"这种没执行的话**
+- **🧬 难度自适应分裂**：简单任务主体直接干；复杂任务拆子步骤逐个执行+台账+主体复核；
+  破坏性操作主体亲自执行且必须用户确认
+- **📋 执行台账**：每个真实操作记录 时间/对象/原因/结果；问"你真的删了吗？怎么验证"→ 直接亮台账
+- **🛡 防幻觉兜底**：系统提示诚实守则——没有真实执行成功，绝不允许说"已完成"
+
+### v0.27.0（2026-09-09）· 数学脑 + 多模态 + 量子策略 + 四大趋势
 
 - **🧮 数学脑 mathlab**："帮我分析这个表格"→ 真算：回归(R²)/描述统计+离群/相关性/方程组/拓扑排序/最短路/连通分量/马尔可夫稳态，结论一句话中文给出
 - **👁 多模态感知（Phase B）**：图片拖进聊天框/直贴截图 → 本机视觉模型看图（不上云零成本），下条消息带着图理解；语音转写 faster-whisper→Vosk 降级链
@@ -174,10 +187,18 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 # English · PASM Studio — A Desktop AI Companion That Thinks, Works, and Remembers You (Windows)
 
-> **v0.27.0 All three directions landed: math brain + multimodal perception (vision/ASR) + quantum strategy + four trend items** — Chat right out of the box: it thinks,
+> **v0.27.1 Real system operations + capability broker (says it → does it; can't → says why)** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.27.0 (2026-09-09) · Math brain + multimodal + quantum strategy + four trend items
+## Latest: v0.27.1 (2026-09-09) · Real system ops + capability broker + adaptive delegation
+
+- **🛠 Real system operations**: "delete the Screenshots folder on my desktop" → actually deleted (**moved to Recycle Bin**, recoverable); "clean up junk" → scan-only report first → confirm dialog → cleans only whitelisted temp dirs, files older than 2 days; locked files skipped and counted honestly. Windows / Program Files / drive roots are hard-refused
+- **🧭 Capability broker (non-prescriptive)**: every request is assessed — direct tool (DO) / learned knowledge applied to really do it (LEARNED) / learn online first then really do it (LEARN) / honestly cannot with the real reason (NO, e.g. shutdown needs physical action). **It never fabricates "done" anymore**
+- **🧬 Adaptive delegation**: easy tasks done by the main agent directly; complex ones split into sub-steps with a per-step ledger and main-agent review; destructive actions executed by the main agent only, always with user confirmation
+- **📋 Operation ledger**: every real action logged (time / target / why / result); ask "did you really delete it? how do I verify" → it shows the ledger
+- **🛡 Anti-hallucination**: honesty rule injected into system prompt — no claiming "done" without a real executed result
+
+### v0.27.0 (2026-09-09) · Math brain + multimodal + quantum strategy + four trend items
 
 - **🧮 Math brain mathlab**: "analyze this table" → real computation: regression (R²) / descriptive stats + outliers / correlation / linear equations / topo sort / shortest path / connected components / Markov steady state — with a one-line Chinese conclusion
 - **👁 Multimodal perception (Phase B)**: drop an image or paste a screenshot into the chat → a local Ollama vision model describes it (no cloud, zero cost); the next message understands the image. Speech-to-text chain: faster-whisper → Vosk fallback
