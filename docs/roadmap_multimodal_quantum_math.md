@@ -80,3 +80,22 @@ Phase C1..C5（C3 依赖 A 的图分析；C4 依赖 memvec 向量记忆）
 ```
 
 每步交付标准：模块 + 冒烟全绿 + 回归不破 + 记入 CHANGELOG。
+
+---
+
+## 落地进度（2026-09-09 更新）
+
+| 阶段 | 状态 | 落点 |
+|---|---|---|
+| A1+A2 数学脑 mathlab | ✅ 已落地（v0.27.0） | `pasm/cognitive/mathlab.py` + 桌面 tableana 路线 |
+| A3 团队拓扑校验 | ✅ 已落地（v0.27.0） | `agent_team.validate_flow_steps`（deps 依赖 + mathlab 环检测 + 拓扑序执行） |
+| B1 看图 describe_image | ✅ 已落地（v0.27.0） | `pasm/cognitive/percept.py` + 聊天框拖图/贴图 → 本地视觉模型 |
+| B2 听写 transcribe | ✅ 已落地（v0.27.0） | faster-whisper → Vosk 降级链（语音输入按钮后续版本接） |
+| B3/B4 屏幕理解/视频理解 | ⏳ 排期 | 依赖视觉模型真机验证 |
+| C1 叠加决策 QStrategy | ✅ 已落地（v0.27.0，命名 `quantum.py`） | 玻尔兹曼退火 + 同族干涉 + 情绪外场 + 成败回灌 |
+| C2 模糊区接 plan_gate | ✅ 已落地（v0.27.0） | 复杂任务模糊区「拆解 vs 直出」由叠加态测量 |
+| C3 退火排程 | ⏳ 部分落地 | deps 拓扑已做；能量函数退火排程排期 |
+| C4 Grover 记忆检索 | ⏳ 排期 | 依赖 memvec 向量记忆（v0.18.2 规划） |
+| C5 情绪多频叠加 | ⏳ 排期 | 右侧内心面板升级 |
+
+冒烟：`.smoke_q/smoke_v0270_bc.py` 29 项（量子 10 + 感知 7 + 拓扑 12）全绿。

@@ -2,21 +2,22 @@
 
 **简体中文**（正文） · [🇬🇧 English（完整英文版见下方）](#english--英文完整版)
 
-> **v0.27.0 数学脑 + 四大趋势（模型路由/自检重试/经验沉淀/项目记忆）** —— 打开就能聊：它能思考、
+> **v0.27.0 三方向全落地：数学脑 + 多模态感知（看图/听写）+ 量子策略 + 四大趋势** —— 打开就能聊：它能思考、
 > 学过的本事（笑话/知识/技能）被点名时能真用出来；回复首字即出、边想边打。
 > 每一次相处都会沉淀成它的记忆与性格——你聊得越多，它越"懂你"，越像"只属于你的那个 AI"。
 
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.27.0（2026-09-09）· 数学脑 mathlab + 四大趋势落地
+## 最新：v0.27.0（2026-09-09）· 数学脑 + 多模态 + 量子策略 + 四大趋势
 
 - **🧮 数学脑 mathlab**："帮我分析这个表格"→ 真算：回归(R²)/描述统计+离群/相关性/方程组/拓扑排序/最短路/连通分量/马尔可夫稳态，结论一句话中文给出
+- **👁 多模态感知（Phase B）**：图片拖进聊天框/直贴截图 → 本机视觉模型看图（不上云零成本），下条消息带着图理解；语音转写 faster-whisper→Vosk 降级链
+- **⚛ 量子策略（Phase C）**：候选策略=叠加态，退火测量选路——早期多探索、随经验收敛最优；同族干涉让经验泛化；情绪作外场偏置（急躁→直给）；成败回灌形成决策闭环
 - **🔀 多模型路由**：闲聊走本地 Ollama（快）、干活走 DeepSeek（强）、评审走本地交叉校验，本地不可用自动回落
-- **🔁 团队自检重试**：单步异常/空壳/过短 → 自动重试 + 质量自检，状态如实回写
-- **🏗 经验沉淀**：项目跑完自动沉淀流程模板，同类项目一键套用
-- **🧠 项目级跨会话记忆**：团队执行自动注入项目档案，跨会话不丢上下文
-- 冒烟：mathlab 29 · phaseA 22 · trends 29 · v0264 18 = **98 项全绿**
+- **🔁 团队自检重试 + 🕸 拓扑校验**：单步异常/空壳/过短 → 自动重试 + 质量自检；流程支持 deps 依赖，环依赖/越界/自环校验不过不准跑
+- **🏗 经验沉淀 + 🧠 项目级跨会话记忆**：项目跑完沉淀流程模板一键复用；团队执行自动注入项目档案
+- 冒烟：mathlab 29 · phaseA 22 · trends 29 · bc+拓扑 29 · UI 回归 105 = **全绿**
 
 - **📎 @引用真正可视化**：输入框打 `@` 弹出可引用文件快选（最近产物/资料库/本地文件，↑↓+Enter 选择、继续打字过滤），选中后消息里落成 `@路径`、**输入框上方出现 📎引用条**（点 ✕ 移除，输入框里的引用写法同步清掉）；支持 `@“含空格路径”` 引号写法；引用正文只进模型上下文，"你"气泡保持干净
 - **🐛 修复 "@小U 被瞎聊"**：找不到的引用不再原样丢给模型（旧版模型见到 `@小U` 就当打招呼），纯引用消息找不到会明确提示并剥除标记；长文本/代码里的 `@` 不受影响
@@ -173,17 +174,18 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 # English · PASM Studio — A Desktop AI Companion That Thinks, Works, and Remembers You (Windows)
 
-> **v0.27.0 Math brain (mathlab) + four trend items (model router / self-check retry / experience sedimentation / project-level memory)** — Chat right out of the box: it thinks,
+> **v0.27.0 All three directions landed: math brain + multimodal perception (vision/ASR) + quantum strategy + four trend items** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.27.0 (2026-09-09) · Math brain mathlab + four trend items landed
+## Latest: v0.27.0 (2026-09-09) · Math brain + multimodal + quantum strategy + four trend items
 
 - **🧮 Math brain mathlab**: "analyze this table" → real computation: regression (R²) / descriptive stats + outliers / correlation / linear equations / topo sort / shortest path / connected components / Markov steady state — with a one-line Chinese conclusion
+- **👁 Multimodal perception (Phase B)**: drop an image or paste a screenshot into the chat → a local Ollama vision model describes it (no cloud, zero cost); the next message understands the image. Speech-to-text chain: faster-whisper → Vosk fallback
+- **⚛ Quantum strategy (Phase C)**: candidate strategies form a superposition; Boltzmann-annealed measurement picks the route — exploratory early, converging to the best path with experience; intra-family interference generalizes lessons; mood (PAD) acts as an external field; outcomes feed back into amplitudes
 - **🔀 Model router**: chat → local Ollama (fast), work → DeepSeek (strong), review → local cross-check; auto-fallback to cloud when local is down
-- **🔁 Team self-check retry**: a failed/empty/short step auto-retries once with a quality self-check; status written back honestly
-- **🏗 Experience sedimentation**: finished projects auto-save flow templates; reuse them in one click for similar projects
-- **🧠 Project-level cross-session memory**: team runs auto-inject the project archive (members / flow / past outcomes) so context never drops across sessions
-- Smoke: mathlab 29 · phaseA 22 · trends 29 · v0264 18 = **98 green**
+- **🔁 Team self-check retry + 🕸 topo validation**: a failed/empty/short step auto-retries with a quality self-check; flows support `deps` dependencies — cycles / out-of-range / self-loops are rejected before running
+- **🏗 Experience sedimentation + 🧠 project-level memory**: finished projects auto-save flow templates for one-click reuse; team runs auto-inject the project archive
+- Smoke: mathlab 29 · phaseA 22 · trends 29 · bc+topo 29 · UI regressions 105 = **all green**
 
 - **📎 Visible @references**: typing `@` pops a file picker (recent artifacts / knowledge entries / local text files; ↑↓+Enter pick, keep typing to filter). Choosing one inserts `@path` and shows a 📎 chip above the input — click ✕ to drop it (also cleans the text). `@“paths with spaces”` supported. File bodies go into the model context only; your bubble stays clean
 - **🐛 "@小U got chit-chat" fixed**: unresolvable references are no longer sent verbatim to the model (it used to treat `@小U` as a greeting); pure-reference messages now explain and strip the mark. `@` in pasted code is never touched
