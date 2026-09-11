@@ -2,14 +2,30 @@
 
 **简体中文**（正文） · [🇬🇧 English（完整英文版见下方）](#english--英文完整版)
 
-> **v0.27.1 真实系统操作 + 能力判定 broker（说得出就做得到，做不到说真话）** —— 打开就能聊：它能思考、
-> 学过的本事（笑话/知识/技能）被点名时能真用出来；回复首字即出、边想边打。
+> **v0.28.2 小人行为「自我设计 + 自我优化」+ 工作状态呈现 + 七地方言全量升级** —— 打开就能聊：它能思考、
+> 学过的本事（笑话/知识/技能）被点名时能真用出来；回复首字即出、边想边打；桌面小人的动作由性格自我设计、
+> 随你的反馈自我优化，工作时显示真实工作状态，四川/河南/东北/山东/北京方言与粤语、台湾腔一样能听会说。
 > 每一次相处都会沉淀成它的记忆与性格——你聊得越多，它越"懂你"，越像"只属于你的那个 AI"。
 
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.27.1（2026-09-09）· 真实系统操作 + 能力判定 + 难度自适应分裂
+## 最新：v0.28.2（2026-09-11）· 小人行为自我设计 + 工作状态 + 方言全量升级
+
+- **🧠 小人行为「自我设计 + 自我优化」引擎**：桌面小人的动作**不再预设**——按成长阶段解锁
+  （0 级 挥手/蹦跶/探头 → 1 级 踢球 → 2 级 跳舞/转圈 → 3 级 思考），基础偏好由九宫格性格
+  （脾气×能量×爱玩）**自我设计**；你夸它、戳它、训它都会让它**自我优化**动作权重（ε-贪心探索防僵化），
+  持久化到 `pet_behavior.json`，重启不丢、升级/换性格也不清
+- **💼 工作状态呈现**：小人干活时头像下方显示真实工作标签（📖 读书自习 / 🌐 上网自学 / 💬 陪你聊天 /
+  或任务台账里的真实任务名），工作时一抹"专注"表情、娱乐动作自动让位——不再"一边陪你干活一边自顾自蹦跶"
+- **🗣 方言全量升级**：四川 / 河南 / 东北 / 山东 / 北京 提升至与粤语、台湾腔**同权**——各自独立识别正则 +
+  特征词 + 真人方言神经语音（edge-tts）；北京无独立方言音优雅回落普通话。你回复里的方言词会驱动 TTS 自动切对口音
+- **🧮（v0.28.0）神经符号混合推理层 + 记忆路由器**：数学应用题按语义选脑——百分数/绳长/涨跌链等由符号层精算，
+  不再"算错还强行纠正"；记忆按问题语义路由注入，越聊越准
+- **🔍（v0.28.1）全面复查修复**：粤语同音字（宜家/既/吾/系）识别修复（答非所问根治）、
+  "变笨/方言失效/朗读退化"逐条查清修掉，11 条普通话负样本守零误判
+
+### v0.27.1（2026-09-09）· 真实系统操作 + 能力判定 + 难度自适应分裂
 
 - **🛠 真实系统操作**："删掉桌面上截图文件夹"→ 真删（**移入回收站**可恢复）；
   "清理电脑垃圾"→ 先扫描只读报告 → 弹窗确认 → 只清白名单临时目录里 2 天以上的旧文件，
@@ -187,10 +203,18 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 # English · PASM Studio — A Desktop AI Companion That Thinks, Works, and Remembers You (Windows)
 
-> **v0.27.1 Real system operations + capability broker (says it → does it; can't → says why)** — Chat right out of the box: it thinks,
+> **v0.28.2 Self-designed pet behavior + live work status + full 7-dialect upgrade** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.27.1 (2026-09-09) · Real system ops + capability broker + adaptive delegation
+## Latest: v0.28.2 (2026-09-11) · Self-designed pet behavior + work status + dialects for all
+
+- **🧠 Self-designed, self-optimized pet behavior**: the desktop pet's actions are **no longer hard-coded** — unlocked by growth stage (lvl 0: wave/hop/peek → lvl 1: ball → lvl 2: dance/spin → lvl 3: think), with base preferences **designed from its personality grid** (temper × energy × play). Praise it, poke it, or scold it and it **optimizes its own action weights** (ε-greedy exploration against rigidity), persisted to `pet_behavior.json` — survives restarts, upgrades, and personality changes
+- **💼 Live work status**: while busy, the pet shows a real work label under its avatar (📖 reading / 🌐 web self-study / 💬 chatting with you / or the actual task from the work ledger), with a focused look — fun actions yield to work automatically
+- **🗣 Dialects upgraded to full parity**: Sichuan / Henan / Northeastern / Shandong / Beijing now equal to Cantonese & Taiwanese — dedicated detection regexes, signature words, and real neural dialect voices (edge-tts); Beijing falls back gracefully to Mandarin. Dialect words in your replies drive automatic TTS accent switching
+- **🧮 (v0.28.0) Neural-symbolic reasoning layer + memory router**: math word problems routed by semantics — percentages / rope folds / rise-fall chains computed exactly by the symbolic layer, no more "wrong corrections"; memories injected by question meaning
+- **🔍 (v0.28.1) Full regression review**: Cantonese homophone input (宜家/既/吾/系) recognition fixed (root cause of "it got dumber"); "dumber / dialects broken / TTS degraded" investigated and fixed one by one, guarded by 11 Mandarin negative samples (zero false positives)
+
+### v0.27.1 (2026-09-09) · Real system ops + capability broker + adaptive delegation
 
 - **🛠 Real system operations**: "delete the Screenshots folder on my desktop" → actually deleted (**moved to Recycle Bin**, recoverable); "clean up junk" → scan-only report first → confirm dialog → cleans only whitelisted temp dirs, files older than 2 days; locked files skipped and counted honestly. Windows / Program Files / drive roots are hard-refused
 - **🧭 Capability broker (non-prescriptive)**: every request is assessed — direct tool (DO) / learned knowledge applied to really do it (LEARNED) / learn online first then really do it (LEARN) / honestly cannot with the real reason (NO, e.g. shutdown needs physical action). **It never fabricates "done" anymore**
