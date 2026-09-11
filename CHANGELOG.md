@@ -1,5 +1,55 @@
 # 版本历史
 
+## 0.28.3（2026-09-11）· 真机三修：回复丢字根治 + DeepSeek 式灰度思考 + 方言串味 + 头顶工作气泡
+
+反馈："①文字有部分丢失，能否做到像 DeepSeek 那样带思考显示（灰度），最后出内容；
+②方言有时乱串，先说粤语，再聊有时带东北味；③小人工作提示应在小人上方，提示框改冒泡式。"
+
+### 一、回复丢字根治 + 思考灰度显示（llm_gateway.py + pasm_companion.py）
+- **丢字根因**：DeepSeek 等云端模型有时把思考以内嵌 `<think>…</think>` 混在正文里返回，
+  聊天窗的 HTML 渲染把 `<think>` 当**未知 HTML 标签连同内容一起吞掉**——这就是"部分文字丢失"；
+  另外独立的 `reasoning_content` 思考字段一直被静默丢弃。
+- **修复**：网关新增流式思考拆分器 `_ThinkSplitter`（跨 chunk 安全，标签被切碎也能拼回），
+  把内嵌思考剥到独立通道；`reasoning_content` 同样接出；非流式路径 `_strip_think` 兜底。
+- **DeepSeek 式体验**：新增 `on_think` 回调一路穿到 UI——思考以**灰度小字实时上屏**
+  （💭 前缀，正文在下方流出），最终态保留"灰度思考 + Markdown 正文"，与 DeepSeek 一致。
+- 冒烟：拆分器 5 组用例（整段/跨chunk切碎/未闭合/无思考/strip）全过。
+
+### 二、方言串味修复（accent.py）
+- **串味根因**：soft 词表全是普通话高频单字——东北 soft 有「整/贼/老/啥/咋」、粤语有「啦」、
+  北京有「儿」、河南 markers 有裸「中」（中午/中间全中招）。普通话每聊几句就给东北/河南
+  偷偷 +0.5~2 分，攒过 6 分阈值整条风格+口音就被带歪（真机"先粤语后东北味"）。
+- **修复**：全部 soft 词表收紧为 ≥2 字且普通话语境罕见的词；markers 删「您/甭/回头/丫/
+  多谢/瞎/裸中」；切音词表 `_VOICE_SCAN` 只留方言独有强词（删「晓得/安逸/俺/恁/得劲/
+  木有/甭/得嘞/伙计/噻/咯」）；切音判定由"顺序首中即切"改为**计数取最大**。
+- 回归：`_selftest()` 新增 7 条带弱字的普通话负样本（你说咋办/干啥去/中午吃什么/您说/
+  回头再说/好啦/多谢老板），修复前全误判、修复后全 0 分，正样本 7 方言照常识别。
+
+### 三、小人工作提示 → 头顶气泡（pet_avatar.py + pasm_pet.py）
+- 工作提示（如「与XX聊天」）从头像**下方**的蓝底矩形改到**头顶上方**的冒泡气泡：
+  白底圆角 + 青色描边 + 向下小尾巴 + 柔和投影，深色文字。
+- 头像窗口扩高至 1.40×（顶部留给气泡），头像整体下移、逐像素与旧版一致；
+  桌面宠物窗与伴学窗布局自适应。离屏渲染验证：气泡/尾巴/头像绘制正常。
+
+### 四、团队功能无反应 + 技能库为空 根治（PASMStudio.spec，装测反馈）
+- **技能库为空**：0.28.2/0.28.3 的安装包构建漏掉了 spec 里的 `skills/` 数据目录
+  （CLI 参数构建只带了 assets）→ 内置技能 8 篇全部缺失。修复后恢复按 spec 构建，
+  内置技能与用户技能（DATA_DIR/skills）双层齐全。
+- **团队功能无反应（历史遗留，v0.24 门面改造起所有发行版中招）**：`agent_team` 门面的
+  真身在仓库根 `pasm/cognitive/agent_team.py`，而打包入口在 `desktop/`、spec 的
+  `pathex=[]` 使 PyInstaller **根本找不到 pasm 包** → frozen 版 `import agent_team`
+  静默失败（companion 里 try/except 后 TEAM=None），团队所有按钮无反应；
+  数学脑 mathlab、感知 percept、自修复 selfheal 等同链路模块也一并缺失。
+- **修复**：spec 增加 `pathex=[SPECPATH]` + 显式 hiddenimports
+  （pasm.cognitive.agent_team/mathlab/cog/memory_layers/percept/quantum/selfheal/coder），
+  团队/数学脑/自修复在安装版全面恢复。
+
+### 验证
+- py_compile 全过；accent._selftest / pet_behavior._selftest 双 PASS；
+  `_ThinkSplitter` 5 用例全过；PetAvatar 离屏渲染（带气泡/无气泡）正常。
+- 打包校验（PyInstaller 官方 archive reader 读 PYZ TOC）：
+  `_internal/skills` 8 篇齐全；`pasm.cognitive.*` 全部在包；关键模块对 0.28.1 基线为超集。
+
 ## 0.28.2（2026-09-11）· 小人行为"自我设计 + 自我优化" + 工作状态呈现 + 方言全量升级
 
 反馈："语言方言不应该只有粤语、台湾腔，还应该有四川腔、河南腔等等；小人的状态和动作

@@ -2,21 +2,37 @@
 
 **简体中文**（正文） · [🇬🇧 English（完整英文版见下方）](#english--英文完整版)
 
-> **v0.28.2 小人行为「自我设计 + 自我优化」+ 工作状态呈现 + 七地方言全量升级** —— 打开就能聊：它能思考、
-> 学过的本事（笑话/知识/技能）被点名时能真用出来；回复首字即出、边想边打；桌面小人的动作由性格自我设计、
-> 随你的反馈自我优化，工作时显示真实工作状态，四川/河南/东北/山东/北京方言与粤语、台湾腔一样能听会说。
-> 每一次相处都会沉淀成它的记忆与性格——你聊得越多，它越"懂你"，越像"只属于你的那个 AI"。
+> **v0.28.3 真机四修：灰度思考显示 + 方言串味根治 + 头顶工作气泡 + 团队/技能库修复** —— 打开就能聊：它能思考、
+> 学过的本事（笑话/知识/技能）被点名时能真用出来；回复像 DeepSeek 一样思考灰度实时显示、随后正文流出；
+> 桌面小人的动作由性格自我设计、随你的反馈自我优化，工作提示变成头顶冒泡气泡，
+> 四川/河南/东北/山东/北京方言与粤语、台湾腔一样能听会说。每一次相处都会沉淀成它的记忆与性格——
+> 你聊得越多，它越"懂你"，越像"只属于你的那个 AI"。
 
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.28.2（2026-09-11）· 小人行为自我设计 + 工作状态 + 方言全量升级
+## 最新：v0.28.3（2026-09-11）· 真机四修
+
+- **💭 回复丢字根治 + DeepSeek 式灰度思考**：云端模型把思考混在正文里返回时，聊天窗会把
+  `<think>` 当未知 HTML 标签**连同内容一起吞掉**（这就是"部分文字丢失"）——新增流式思考拆分器根治；
+  `reasoning_content` 独立思考字段不再被丢弃。现在思考以**灰度小字实时上屏**（💭 前缀），
+  正文随后流出，最终态保留"灰度思考 + Markdown 正文"，与 DeepSeek 官方一致
+- **🗣 方言串味根治**：soft 词表全是普通话高频单字（整/贼/老/啥/咋/啦/儿…）、河南 markers 有裸"中"——
+  普通话聊几句就被偷偷攒分带成东北/河南腔。收紧为方言独有强词 + 切音计数取最大后，
+  普通话归普通话、七地方言照常识别与朗读
+- **🎈 工作提示 → 头顶冒泡气泡**：小人工作提示（如「与XX聊天」）从头像下方的矩形改到**头顶上方**的
+  冒泡气泡：白底圆角 + 青色描边 + 向下小尾巴 + 柔和投影
+- **🛠 团队功能无反应 + 技能库为空 根治（历史遗留）**：打包缺陷致 `pasm` 引擎包从未进安装包——
+  团队/数学脑/自修复等**自 v0.24 起在安装版静默失效**；0.28.2 起内置技能库数据又丢失。
+  本版按修复后的 spec 重建，团队功能首次在安装版全面可用、内置技能 8 篇恢复
+
+### v0.28.2（2026-09-11）· 小人行为自我设计 + 工作状态 + 方言全量升级
 
 - **🧠 小人行为「自我设计 + 自我优化」引擎**：桌面小人的动作**不再预设**——按成长阶段解锁
   （0 级 挥手/蹦跶/探头 → 1 级 踢球 → 2 级 跳舞/转圈 → 3 级 思考），基础偏好由九宫格性格
   （脾气×能量×爱玩）**自我设计**；你夸它、戳它、训它都会让它**自我优化**动作权重（ε-贪心探索防僵化），
   持久化到 `pet_behavior.json`，重启不丢、升级/换性格也不清
-- **💼 工作状态呈现**：小人干活时头像下方显示真实工作标签（📖 读书自习 / 🌐 上网自学 / 💬 陪你聊天 /
+- **💼 工作状态呈现**：小人干活时显示真实工作标签（📖 读书自习 / 🌐 上网自学 / 💬 陪你聊天 /
   或任务台账里的真实任务名），工作时一抹"专注"表情、娱乐动作自动让位——不再"一边陪你干活一边自顾自蹦跶"
 - **🗣 方言全量升级**：四川 / 河南 / 东北 / 山东 / 北京 提升至与粤语、台湾腔**同权**——各自独立识别正则 +
   特征词 + 真人方言神经语音（edge-tts）；北京无独立方言音优雅回落普通话。你回复里的方言词会驱动 TTS 自动切对口音
@@ -203,13 +219,20 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 # English · PASM Studio — A Desktop AI Companion That Thinks, Works, and Remembers You (Windows)
 
-> **v0.28.2 Self-designed pet behavior + live work status + full 7-dialect upgrade** — Chat right out of the box: it thinks,
+> **v0.28.3 Four real-device fixes: grayed-out thinking + dialect bleed root-caused + bubble work badge + team/skills restored** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.28.2 (2026-09-11) · Self-designed pet behavior + work status + dialects for all
+## Latest: v0.28.3 (2026-09-11) · Four real-device fixes
+
+- **💭 Lost-text root-caused + DeepSeek-style grayed-out thinking**: when a cloud model embeds its chain of thought inside the reply, the chat window used to swallow `<think>` as an unknown HTML tag **along with its content** (that was the "missing text"). A new streaming think-splitter fixes it at the source; the separate `reasoning_content` field is no longer dropped. Thinking now streams in as **grayed-out small text (💭 prefix)** followed by the answer — final state keeps "gray thinking + Markdown body", just like DeepSeek
+- **🗣 Dialect bleed root-caused**: the soft-word tables were full of everyday Mandarin characters (整/贼/老/啥/咋/啦/儿…) and Henan's marker list had the bare "中" — a few Mandarin sentences were enough to drift the pet into a Northeastern/Henan accent. Tables now hold only dialect-exclusive strong words + accent switching picks the best count, so Mandarin stays Mandarin while all 7 dialects still detect & speak
+- **🎈 Work badge → overhead bubble**: the pet's work badge (e.g. "chatting with XX") moved from a rectangle **below** the avatar to a **speech bubble above its head**: white rounded body + teal outline + little tail + soft shadow
+- **🛠 Unresponsive team features + empty skill library fixed (long-standing)**: a packaging flaw meant the `pasm` engine package was **never bundled** — team / math brain / self-repair had been **silently dead in every installer since v0.24**; and since 0.28.2 the built-in skill library data went missing too. Rebuilt from the fixed spec: team features fully work in installers for the first time, and all 8 built-in skills are back
+
+### v0.28.2 (2026-09-11) · Self-designed pet behavior + work status + dialects for all
 
 - **🧠 Self-designed, self-optimized pet behavior**: the desktop pet's actions are **no longer hard-coded** — unlocked by growth stage (lvl 0: wave/hop/peek → lvl 1: ball → lvl 2: dance/spin → lvl 3: think), with base preferences **designed from its personality grid** (temper × energy × play). Praise it, poke it, or scold it and it **optimizes its own action weights** (ε-greedy exploration against rigidity), persisted to `pet_behavior.json` — survives restarts, upgrades, and personality changes
-- **💼 Live work status**: while busy, the pet shows a real work label under its avatar (📖 reading / 🌐 web self-study / 💬 chatting with you / or the actual task from the work ledger), with a focused look — fun actions yield to work automatically
+- **💼 Live work status**: while busy, the pet shows a real work label (📖 reading / 🌐 web self-study / 💬 chatting with you / or the actual task from the work ledger), with a focused look — fun actions yield to work automatically
 - **🗣 Dialects upgraded to full parity**: Sichuan / Henan / Northeastern / Shandong / Beijing now equal to Cantonese & Taiwanese — dedicated detection regexes, signature words, and real neural dialect voices (edge-tts); Beijing falls back gracefully to Mandarin. Dialect words in your replies drive automatic TTS accent switching
 - **🧮 (v0.28.0) Neural-symbolic reasoning layer + memory router**: math word problems routed by semantics — percentages / rope folds / rise-fall chains computed exactly by the symbolic layer, no more "wrong corrections"; memories injected by question meaning
 - **🔍 (v0.28.1) Full regression review**: Cantonese homophone input (宜家/既/吾/系) recognition fixed (root cause of "it got dumber"); "dumber / dialects broken / TTS degraded" investigated and fixed one by one, guarded by 11 Mandarin negative samples (zero false positives)
