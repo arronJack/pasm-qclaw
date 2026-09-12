@@ -1,8 +1,119 @@
 # 版本历史
 
+## 0.28.5（2026-09-12）· 认知核心层落盘 + 引擎/环境/学习三层契约收敛 + 文档补全
+
+反馈："看看 PASM 有没有落盘，还是只有在 pasm-qclaw 中实现了，我需要整体均实现了；
+另外慢慢把 pasm-lite 的学习层优化实现。"
+
+### 一、认知核心层从 desktop 提升为 pasm 包单一真相源
+- **问题**：`symbolic / memrouter / memvec` 只存在于 `desktop/`，`pasm/cognitive/` 核心包从未包含，
+  导致"只有 pasm-qclaw 实现了、PASM 核心没落盘"，且核心引擎与桌面端版本分裂。
+- **修复**：把 `symbolic.py / memrouter.py / memvec.py / learning.py` 提升为
+  `pasm.cognitive.*` 核心包（唯一实现）；`desktop/` 下三份改为**再导出薄壳**
+  （`sys.modules[__name__] = core_module`），旧 `import symbolic as SY` 调用零改动。
+- 新增 `pasm.cognitive.learning.LearningEngine`：把桌面小人"自我设计+自我优化"
+  （`pet_behavior`）抽象成可挂载到任意智能体的通用引擎（design/pick/feedback/redesign + 落盘）。
+
+### 二、符号推理层 ↔ 向量记忆 双向闭环接通（缺口修复）
+- 之前"向量→符号"已在用，但**验证过的确定性事实未回写向量循环**（闭环断点）。
+- 新增 `symbolic.writeback(text, candidate)`：仅当 `verify` 一致且带 `constraints`（高置信）
+  才回写，避免污染记忆；companion 在 `_symbolic_guard` 注册 `_sink`，把已验证解
+  同时 `episode_push` 进分层记忆 + 追加 `symbolic_solutions.jsonl` 结构化解库。
+
+### 三、PASM 镜像仓同步
+- `E:/AI/PASM/pasm/cognitive/` 已与 pasm_qclaw 对齐（含本次 4 个新层 + coder/mathlab/
+  percept/quantum/workctx 的后续演进），核心实现 now 在 PASM 也完整。
+
+### 四、pasm-lite 学习层起步（教学版）
+- 新增 `PASM_LITE/learning.py`：与核心 `LearningEngine` 同源思想的轻量关联式（Hebbian-like）
+  学习层——状态→动作偏好矩阵 + 技能记忆召回。
+- `pasm_lite.py` 主循环接入：探索分支保留、规划器选择加学习层偏好偏置（有把握时）、
+  `learn()` 调用 `learner.update(z,a,r)` 做正强化/负削弱；进度打印新增"学习层技能"条数。
+- `learning.recall_action` 修复：余弦相似度误取 `[0]` 致 topk 报错，已去掉。
+
+### 五、引擎接口契约升级 api 1.0 → 1.1（`pasm/engine_api.py`）
+- **`create_best(candidates)` 择优创建**：按优先级挑第一个"能跑"的引擎，返回 `(engine, report)`，
+  report 含 `used / degraded / tried / gap / gap_vs` —— 上层从此不必自己写降级判断。
+- **`capability_gap(engine, reference)`**：算出当前引擎相对参考引擎缺哪些能力（参考名不认识时返回空，不臆测）。
+- **`_adapt_cfg()` 扁平参数适配**：支持 `create("pasm", seed=1, plan_samples=8, personality_seed=[...])`。
+- **新增环境插件注册表**：`Env` Protocol / `EnvRegistry` / `ENV_REGISTRY` / `register_env` /
+  `make_env` / `env_names` / `env_registry` / `env_conforms` —— 换环境 = 换注册表里的名字。
+- **环境契约**：必需 `reset()` / `step()`，可选 `observe()` / `close()` / `spec()` / `obs_dim` / `n_actions`。
+  **刻意不规定 `step` 返回形状**（教学版三元组、完整引擎四元组），由引擎自己适配它要跑的环境。
+- 自检从 12 项扩至 **20 项**（含 create_best / capability_gap / 环境注册表全覆盖）。
+
+### 六、桌面端改用 engine_api 统一调用（"换引擎不改代码"在桌面端真正生效）
+- 新增 `desktop/engine_factory.py`（桌面引擎工厂）：对外只暴露 `make_engine / make_env /
+  full_available / summary / LAST_REPORT`，内核用 `create_best` 择优 + 降级报告 + 直连保命兜底。
+- `desktop/pasm_companion.py`：**删除直连 `PASMAgent / PASMConfig / GridWorld` 的整段**，
+  改为经 `engine_factory` 获取引擎与环境 —— **26 处 `self.agent.*` 调用点一行未改**，
+  这正是"上层只依赖接口"的直接证明。
+- `PASMStudio.spec`：`hiddenimports` 补 `engine_factory` / `pasm.engine_api`（保证打包不丢）。
+
+### 七、学习层收敛为"同一接口两档实现"（契约 `pasm.learning/1.0`）
+- 新增学习层契约：`LearningLayer` Protocol + `learning_conforms()` + `LearningInfo` +
+  `LEARNING_API_VERSION`；**必需五件套** `info / capabilities / learn / bias / state`
+  （另 `apply_state()` 支持跨档状态恢复）。
+- **两档实现**：full 档 = `pasm.cognitive.learning.LearningEngine`（离散动作标签 + 性格设计 +
+  反馈微调），teaching 档 = `PASM_LITE/learning.py`（连续向量关联式）。**同接口、可互换**。
+- **踩到并修正的真坑**：两档 `learn()` 签名语义原本不一致（核心档 `learn("praise")` vs
+  教学档 `learn(z, a, r)`）。教学引擎换上核心档后跑 40 步 **`skills=0`——学习完全没落进去，
+  且不报任何错**。已统一为 `learn(z, action, reward)` + 适配器做整数动作→离散标签映射。
+- `LiteEngine.attach_learning()`：**运行时热插拔学习层**（契约 + 潜维 + 动作数三项校验，
+  校验不过则拒绝且**不动原实现**），内层 `_LearningAdapter` 抹平两档差异。
+
+### 八、PASM-Lite 引擎化补齐（v0.2.0 → v0.2.1）
+- `envs.py`（新）：环境插件 —— `grid-10x10`（网格）与 `toy-vector`（**非网格世界**，
+  obs_dim=3 / n_actions=2），`register_builtin_envs()` 幂等注册。
+- `engine.py`：读环境申报的 `obs_dim`/`n_actions` **自适应**调整感知、世界模型与规划器；
+  `freeze_vae()` / `unfreeze_vae()` 对齐完整引擎语义；`attach_learning()` 学习层热插拔；
+  `save/load` 改走契约 `state()` / `apply_state()`，**档位不符明确报错不串档**。
+- `verify_swap.py`（新）：跨档互换一键验证（19 项，含维度不符被拒、档位不符存档报错等边界）。
+- 实证：非网格世界 `toy-vector` 实跑奖励 **-185.04 → -141.02**（真的在学）。
+
+### 九、文档补全与契约镜像机制
+- `docs/CORE.md`（新）：**PASM 核心知识总览** —— 三层大脑体系 / 七层仿生认知架构 /
+  认知执行皮层 / 引擎接口契约 / 学习层契约 / 目录地图 / 三种用法 / 常见问题。
+- `docs/FEATURES.md`（新）：**PASM Studio 全部功能总览** —— 16 章 + 完整 desktop 模块索引表。
+- `tools/sync_engine_api_mirror.py`（新）：核心 ↔ LITE 契约**同源镜像同步与漂移检测**
+  （`--check` 报漂移，无参同步）。
+- 补齐 qclaw 侧此前缺失的 engine_api 环境插件章节（约 138 行）——
+  两仓 `pasm/` 下 **37 个文件恢复逐字一致**；核心包版本 `0.7.0 → 0.7.1`。
+
 ## 0.28.4（2026-09-12）· 语音接收修复 + 方言/普通话精准识别
-> 与代码仓 CHANGELOG 同步：详见 `E:\AI\pasm_qclaw\CHANGELOG.md` 的 0.28.4 条目
-> （语音接收"听不懂"三处根因修复 + 单句方言即识别/切音色/用方言回 + 新增云南方言 + 语音自检增强）。
+
+反馈："语音输出正常，但接收的语音不正确、小U 回复提示听不懂；希望粤语/河南/四川/云南/北京等
+方言都能被准确接收并回应。"
+
+### 一、语音接收"听不懂"根因与修复（asr.py + pasm_companion.py）
+- **根因①语种被卡死**：旧逻辑只在检测到"粤语/台湾腔"时调用 `prefer_culture` 切换识别器，
+  **从不复位回普通话**。一旦用户说过/打过粤语，识别器被永久锁在 `zh-HK`，之后说普通话或
+  四川/河南/北京话，粤语引擎听不懂 → 空或乱码 → 显示"听不懂"。
+- **根因②默认识别器不一定是普通话**：旧逻辑"取第一个 `zh*` 识别器"。装了粤语/台湾语音包时，
+  列表顺序可能把 `zh-HK` 排前面 → 默认就用粤语引擎听普通话，整段失败。
+- **根因③无容错回落**：专业语种识别不到内容时，不会回退用普通话再听，普通话那句直接丢。
+- **修复**：
+  1. 启动**强制优先 `zh-CN`** 作默认识别器（覆盖普通话 + 所有官话方言：
+     四川/河南/北京/云南/东北/山东），只在系统无 zh-CN 时才退而求其次。
+  2. 每按一次🎤**显式定语种**并加"当前=目标则跳过切换"守卫（不破坏 v0.28 的 0.2 秒热聆听）；
+     粤/台用户主用对应引擎、**识别空或置信度<0.5 时自动回落 `zh-CN` 再听一次**，取更可信结果。
+  3. 引入 `Result.Confidence` 置信度：低置信度才触发回落（避免误判）。
+  4. 新增 `supported_cultures()` 探测系统是否装有 zh-HK/zh-TW 识别包，供界面与回落判断。
+
+### 二、单句方言即识别、即切音色、即用方言回（accent.py + pasm_companion.py）
+- `_observe_speech`：单句没攒够 6 次特征也先用 `detect()` 判定方言，让本轮回读直接切对应口音
+  （四川/河南/北京等单句即识别，不再漏口音回读）。
+- 提示词注入扩展：除粤语（含同音字对照表）、台湾腔外，**四川/河南/东北/山东/北京**单句即让模型
+  用对应口语回复（点到为止，正事/结论先说清）。
+- 新增**云南方言**条目（西南官话）：接收走 `zh-CN`；识别后用云南味回（edge-tts 无云南神经音，
+  TTS 回落普通话音但文字带云南口语）；`detect` 正样本已纳入 `_selftest` 守卫。
+
+### 三、语音自检增强（asr.py `diagnose()`）
+- 一次说清"方言能听不能听"：SAPI 只支持 zh-CN/zh-TW/zh-HK 三种；普通话+官话方言统走 zh-CN；
+  粤语/台湾腔取决于是否装了对应识别包；并说明"方言先识别文字再反推，不能凭声音判断"。
+
+> 验证：`accent._selftest()` 通过（7 方言正样本全识别、普通话负样本 0 误判）；
+> asr PowerShell 脚本语法解析通过。真机语音需用 Windows + 麦克风实测（本环境无 SAPI）。
 
 ## 0.28.3（2026-09-11）· 真机三修：回复丢字根治 + DeepSeek 式灰度思考 + 方言串味 + 头顶工作气泡
 

@@ -4,7 +4,7 @@
 
 📚 **文档导航**：[**全部功能总览**](docs/FEATURES.md) · [**PASM 核心知识总览**](docs/CORE.md) · [更新日志](CHANGELOG.md)
 
-> **v0.28.4 语音接收修复：方言/普通话精准识别 + 单句方言即切音色回读 + 新增云南方言** —— 打开就能聊：它能思考、
+> **v0.28.5 架构收敛：引擎 / 环境 / 学习三层契约统一，换引擎不再改代码** —— 打开就能聊：它能思考、
 > 学过的本事（笑话/知识/技能）被点名时能真用出来；回复像 DeepSeek 一样思考灰度实时显示、随后正文流出；
 > 桌面小人的动作由性格自我设计、随你的反馈自我优化，工作提示变成头顶冒泡气泡，
 > 四川/河南/东北/山东/北京方言与粤语、台湾腔一样能听会说。每一次相处都会沉淀成它的记忆与性格——
@@ -13,7 +13,23 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.28.4（2026-09-12）· 语音接收修复 + 方言/普通话精准识别
+## 最新：v0.28.5（2026-09-12）· 三层契约收敛 + 认知核心层落盘 + 文档补全
+
+- **🧠 认知核心层落盘 PASM 核心包**：符号推理 / 记忆路由 / 向量记忆 / 学习层从桌面端提升为
+  `pasm.cognitive.*` 单一真相源，桌面端改为再导出薄壳——跨版本行为更一致，也为多端复用打好地基
+- **🔌 桌面端改用引擎接口统一调用**：新增桌面引擎工厂，按契约「择优创建」并给出**降级报告**
+  （如实告知当前跑的是完整引擎还是内置轻量链路）；**换引擎 = 换注册表里的名字，调用方一行不改**
+- **🧩 引擎接口契约 api 1.1**：新增**环境插件注册表**（可换非网格世界）、`create_best()` 择优创建、
+  `capability_gap()` 能力缺口报告；契约自检 12 → 20 项
+- **🎓 学习层「同一接口两档实现」**：核心档（离散动作 + 性格设计）与教学档（连续向量关联式）
+  同接口可互换，并支持**运行时热插拔**；修正两档 `learn()` 签名不一致导致「学习静默失效」的隐患
+- **📚 文档补全**：《PASM 核心知识总览》《PASM Studio 全部功能总览》《PASM-Lite 全部功能总览》
+- **📦 安装包瘦身**：清理构建残留，体积 63MB → **51MB**
+
+> 含 0.28.4 全部能力：语音接收方言识别修复、八种方言（粤语/台湾腔/四川/河南/东北/山东/北京/云南）、
+> 神经符号混合推理、记忆路由器、小人行为自我设计/自我优化、工作状态显示、灰度思考显示。
+
+### v0.28.4（2026-09-12）· 语音接收修复 + 方言/普通话精准识别
 
 - **🎤 语音接收「听不懂」三处根因修复**：①**语种被永久锁死**——旧逻辑只在检测到粤语/台湾腔时
   切换识别器，**从不复位回普通话**，一旦说过粤语就被锁在 `zh-HK`，之后说普通话或川/豫/京话全部
@@ -182,13 +198,13 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 **更稳**
 - 移除 Win7/8 与 PyQt5 向下兼容（最低 Windows 10）：旧系统在**安装阶段**即被
   明确提示；启动错误改为可读中文说明并落 crash.log，不再"双击后只闪一个谜之错误"
-- 正常退出不再误弹"错误 0"；安装包约 55MB（无 torch 环境自动用内置轻量认知体）
+- 正常退出不再误弹"错误 0"；安装包约 51MB（无 torch 环境自动用内置轻量认知体）
 
 ## 下载与安装
 
-最新版见仓库 **Releases**（v0.18.1，单文件约 55MB）：
+最新版见仓库 **Releases**（v0.28.5，单文件约 51MB）：
 
-1. 下载 `PASMStudio-Setup-0.18.1.exe`
+1. 下载 `PASMStudio-Setup-0.28.5.exe`
 2. 双击安装 → 打开 PASM Studio → 点右上「设置」填 LLM Key（或留空用本地 Ollama）
 3. 开始聊天；要用「图像/视频/漫剧」真出片时，首次使用按提示接入出图引擎（约 1 分钟）
 
@@ -237,10 +253,30 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 # English · PASM Studio — A Desktop AI Companion That Thinks, Works, and Remembers You (Windows)
 
-> **v0.28.4 Speech-input fixes: accurate dialect/Mandarin recognition + instant voice switch + Yunnan dialect added** — Chat right out of the box: it thinks,
+> **v0.28.5 Architecture convergence: unified engine / environment / learning contracts — swap engines without touching code** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.28.4 (2026-09-12) · Speech-input fixes + accurate dialect/Mandarin recognition
+## Latest: v0.28.5 (2026-09-12) · Three-layer contract convergence + cognitive core persisted + docs
+
+- **🧠 Cognitive core now lives in the PASM package** — symbolic reasoning / memory router /
+  vector memory / learning layer promoted from the desktop app to `pasm.cognitive.*` as the single
+  source of truth (desktop keeps thin re-export shims). More consistent across versions, ready for reuse.
+- **🔌 Desktop goes through the engine interface** — a new desktop engine factory uses the contract's
+  "pick the best" creation and returns a **degradation report** (honestly telling whether the full engine
+  or the built-in lightweight core is running). **Swapping engines = changing a name in the registry;
+  call sites stay untouched.**
+- **🧩 Engine contract api 1.1** — environment plugin registry (swap in non-grid worlds),
+  `create_best()`, `capability_gap()`; contract self-test 12 → 20 checks.
+- **🎓 Learning layer: one interface, two tiers** — full tier (discrete actions + persona design) and
+  teaching tier (continuous-vector associative) are interchangeable and **hot-swappable at runtime**;
+  a silent-failure trap caused by mismatched `learn()` signatures was fixed.
+- **📚 Docs added** — PASM Core Overview, PASM Studio Full Feature Guide, PASM-Lite Feature Guide.
+- **📦 Smaller installer** — build leftovers cleaned: 63 MB → **51 MB**.
+
+> Includes everything from 0.28.4: speech-input dialect recognition fixes, eight dialects, neuro-symbolic
+> hybrid reasoning, memory router, self-designed pet behaviour, work-state display, gray thinking stream.
+
+### v0.28.4 (2026-09-12) · Speech-input fixes + accurate dialect/Mandarin recognition
 
 - **🎤 Three root causes of speech input "not understanding you" fixed**: ① **the recognizer was
   locked forever** — the old logic only switched to Cantonese/Taiwanese when it detected them and
@@ -373,13 +409,13 @@ PASM Studio is a **dual-brain architecture + cognitive execution cortex**:
 
 **Reliability**
 - Windows 10/11 x64 minimum (Win7/8 dropped); startup errors are readable messages + `crash.log` instead of a mysterious flash
-- ~55 MB installer; runs without torch (built-in lightweight cognitive core)
+- ~51 MB installer; runs without torch (built-in lightweight cognitive core)
 
 ## Download & install
 
-Grab the latest from **[Releases](https://github.com/arronJack/pasm-qclaw/releases)** (v0.18.1, single ~55 MB file):
+Grab the latest from **[Releases](https://github.com/arronJack/pasm-qclaw/releases)** (v0.28.5, single ~51 MB file):
 
-1. Download `PASMStudio-Setup-0.18.1.exe`
+1. Download `PASMStudio-Setup-0.28.5.exe`
 2. Install → launch PASM Studio → open ⚙ Settings and enter an LLM key (or leave empty for local Ollama)
 3. Start chatting. For real image/video/manga output, connect an image engine on first use (~1 minute)
 
