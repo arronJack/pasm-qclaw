@@ -4,7 +4,7 @@
 
 📚 **文档导航**：[**全部功能总览**](docs/FEATURES.md) · [**PASM 核心知识总览**](docs/CORE.md) · [更新日志](CHANGELOG.md)
 
-> **v0.28.3 真机四修：灰度思考显示 + 方言串味根治 + 头顶工作气泡 + 团队/技能库修复** —— 打开就能聊：它能思考、
+> **v0.28.4 语音接收修复：方言/普通话精准识别 + 单句方言即切音色回读 + 新增云南方言** —— 打开就能聊：它能思考、
 > 学过的本事（笑话/知识/技能）被点名时能真用出来；回复像 DeepSeek 一样思考灰度实时显示、随后正文流出；
 > 桌面小人的动作由性格自我设计、随你的反馈自我优化，工作提示变成头顶冒泡气泡，
 > 四川/河南/东北/山东/北京方言与粤语、台湾腔一样能听会说。每一次相处都会沉淀成它的记忆与性格——
@@ -13,7 +13,23 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.28.3（2026-09-11）· 真机四修
+## 最新：v0.28.4（2026-09-12）· 语音接收修复 + 方言/普通话精准识别
+
+- **🎤 语音接收「听不懂」三处根因修复**：①**语种被永久锁死**——旧逻辑只在检测到粤语/台湾腔时
+  切换识别器，**从不复位回普通话**，一旦说过粤语就被锁在 `zh-HK`，之后说普通话或川/豫/京话全部
+  听不懂；②**默认识别器不一定是普通话**——装了方言语音包时列表顺序可能把 `zh-HK` 排前面；
+  ③**无容错回落**——专业语种识别不到时不会退回普通话再听。现已：启动强制优先 `zh-CN`
+  （覆盖普通话 + 川/豫/京/滇/东北/鲁等官话方言），每按 🎤 显式定语种，识别空或低置信度自动回落普通话再听
+- **🗣 单句方言即识别、即切音色、即用方言回**：一句话判别方言 → 立刻切对应口音回读 → 用对应口语回复
+- **➕ 新增云南方言**：方言支持扩至 8 种（粤语 / 台湾腔 / 四川 / 河南 / 东北 / 山东 / 北京 / 云南）
+- **🔍 语音自检增强**：`diagnose()` 增加方言识别包说明，装没装语音包一目了然
+
+> 含 0.28.0 ~ 0.28.3 全部能力：神经符号混合推理、记忆路由器、小人行为自我设计/自我优化、
+> 工作状态显示、灰度思考显示、七地方言同权、团队与技能库完整可用。
+
+📖 **全部功能清单见 [docs/FEATURES.md](docs/FEATURES.md)**（16 章 + 完整模块索引）
+
+### v0.28.3（2026-09-11）· 真机四修
 
 - **💭 回复丢字根治 + DeepSeek 式灰度思考**：云端模型把思考混在正文里返回时，聊天窗会把
   `<think>` 当未知 HTML 标签**连同内容一起吞掉**（这就是"部分文字丢失"）——新增流式思考拆分器根治；
@@ -221,10 +237,33 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 # English · PASM Studio — A Desktop AI Companion That Thinks, Works, and Remembers You (Windows)
 
-> **v0.28.3 Four real-device fixes: grayed-out thinking + dialect bleed root-caused + bubble work badge + team/skills restored** — Chat right out of the box: it thinks,
+> **v0.28.4 Speech-input fixes: accurate dialect/Mandarin recognition + instant voice switch + Yunnan dialect added** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.28.3 (2026-09-11) · Four real-device fixes
+## Latest: v0.28.4 (2026-09-12) · Speech-input fixes + accurate dialect/Mandarin recognition
+
+- **🎤 Three root causes of speech input "not understanding you" fixed**: ① **the recognizer was
+  locked forever** — the old logic only switched to Cantonese/Taiwanese when it detected them and
+  **never switched back to Mandarin**, so after one Cantonese sentence the recognizer stayed on
+  `zh-HK` and all later Mandarin/Sichuan/Henan/Beijing speech failed; ② **the default recognizer
+  wasn't necessarily Mandarin** — with dialect language packs installed, `zh-HK` could sort first;
+  ③ **no fallback** — when a specialized recognizer failed, it never retried in Mandarin. Now:
+  `zh-CN` is forced at startup (covering Mandarin plus the Sichuan/Henan/Beijing/Yunnan/
+  Northeastern/Shandong Mandarin dialects), each 🎤 press pins the language explicitly, and empty
+  or low-confidence results automatically fall back to Mandarin and listen again
+- **🗣 One dialect sentence → instant detection, instant voice switch, instant dialect reply**
+- **➕ Yunnan dialect added**: 8 dialects total (Cantonese / Taiwanese / Sichuan / Henan /
+  Northeastern / Shandong / Beijing / Yunnan)
+- **🔍 Better speech self-check**: `diagnose()` now reports whether dialect recognition packs are
+  installed
+
+> Includes all of 0.28.0 ~ 0.28.3: neuro-symbolic hybrid reasoning, memory router, self-designed &
+> self-optimizing pet behavior, work status display, grayed-out thinking, equal footing for all
+> seven dialects, and fully working team & skill library.
+
+📖 **Full feature list: [docs/FEATURES.md](docs/FEATURES.md)** (16 sections + complete module index)
+
+### v0.28.3 (2026-09-11) · Four real-device fixes
 
 - **💭 Lost-text root-caused + DeepSeek-style grayed-out thinking**: when a cloud model embeds its chain of thought inside the reply, the chat window used to swallow `<think>` as an unknown HTML tag **along with its content** (that was the "missing text"). A new streaming think-splitter fixes it at the source; the separate `reasoning_content` field is no longer dropped. Thinking now streams in as **grayed-out small text (💭 prefix)** followed by the answer — final state keeps "gray thinking + Markdown body", just like DeepSeek
 - **🗣 Dialect bleed root-caused**: the soft-word tables were full of everyday Mandarin characters (整/贼/老/啥/咋/啦/儿…) and Henan's marker list had the bare "中" — a few Mandarin sentences were enough to drift the pet into a Northeastern/Henan accent. Tables now hold only dialect-exclusive strong words + accent switching picks the best count, so Mandarin stays Mandarin while all 7 dialects still detect & speak
