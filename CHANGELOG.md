@@ -80,6 +80,16 @@
 - 补齐 qclaw 侧此前缺失的 engine_api 环境插件章节（约 138 行）——
   两仓 `pasm/` 下 **37 个文件恢复逐字一致**；核心包版本 `0.7.0 → 0.7.1`。
 
+### 十、发布与打包改进
+- `desktop/installer.iss` 支持 `/DSrcDir=` 覆盖打包源目录，配合「每次构建用全新 dist 目录」
+  （本机有删除守卫，`--clean` 会被拦截）；构建说明更新为两步式（PyInstaller → iscc 指过去）。
+- `desktop/frozen_smoke.py`（新）：模拟 frozen 包环境（`pasm.agent/config/envs` 被 spec 排除）
+  验证引擎降级路径 —— 源码环境有 torch 走完整引擎，**安装包实际走降级链路**，
+  这条路径必须在打包前验证到，否则只会在用户机器上暴露。8 项断言全过。
+- 安装包 `PASMStudio-Setup-0.28.5.exe`（**50.8MB**；清理构建中间残留 `PASMStudio.exe.pyz.bin`
+  后 63MB → 51MB），已发 Gitee + GitHub 双端 Release，`latest.json` 升级通道指向 v0.28.5，
+  旧版附件按惯例清理（释放 126MB）。
+
 ## 0.28.4（2026-09-12）· 语音接收修复 + 方言/普通话精准识别
 
 反馈："语音输出正常，但接收的语音不正确、小U 回复提示听不懂；希望粤语/河南/四川/云南/北京等
