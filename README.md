@@ -4,7 +4,7 @@
 
 📚 **文档导航**：[**全部功能总览**](docs/FEATURES.md) · [**PASM 核心知识总览**](docs/CORE.md) · [更新日志](CHANGELOG.md)
 
-> **v0.29.0 记忆与预演：关键事实记得住、改口会留痕，办事前先预演成功率** —— 打开就能聊：它能思考、
+> **v0.29.1 修复版 + 记忆与预演：关键事实记得住、改口会留痕，聊天也不再莫名变慢** —— 打开就能聊：它能思考、
 > 学过的本事（笑话/知识/技能）被点名时能真用出来；回复像 DeepSeek 一样思考灰度实时显示、随后正文流出；
 > 桌面小人的动作由性格自我设计、随你的反馈自我优化，工作提示变成头顶冒泡气泡，
 > 四川/河南/东北/山东/北京方言与粤语、台湾腔一样能听会说。每一次相处都会沉淀成它的记忆与性格——
@@ -13,7 +13,25 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.29.0（2026-09-14）· 记忆层合一 + 新增「事实层 / 世界模型」+ 找回跨表述记忆
+## 最新：v0.29.1（2026-09-14）· 修「聊天变慢 5 倍 / 莫名背能力清单 / 语音变哑」
+
+- **🩹 修「聊天突然变慢 5 倍」**：同一句话从 10 秒变 52 秒。定位发现 48.92 秒的「首字」里
+  **40.2 秒是把模型重新装进显存** —— 推理侧其实没有退化（同长度提示热态实测首字 1.35 秒、总 8.7 秒）。
+  根因是 `keep_alive` 逐请求生效，而 **Ollama 服务端默认只保活 5 分钟**，App 侧闲置超时或某条路径
+  掉到兼容端点兜底（会静默丢弃 `keep_alive`）模型就被卸载。已加**驻留守卫**：只在发现模型真不在
+  显存时才补载，模型驻留时**绝不打扰**（实测任何触碰都会重置前缀缓存，把 0.3 秒的提示评估打回 4.2 秒）；
+  并加请求前体检预热、「只装载不推理」的预热方式，补上「从云端切到本地时预热不跑」的漏口。
+- **🩹 修「答非所问，突然背一串能力清单」**：问「能否先吃点小吃？」会回一串能力清单。
+  根因是能力询问判定**太宽**（「能否 / 会不会」出现在句子任意位置就算问能力），末尾还有
+  **无条件兜底**，模型整轮没参与。已收紧为「框架开在句首 + 能力领域词紧跟其后 12 字内」——
+  实测误触发 **9/13 → 0/14**（14 条负样本 + 8 条正样本）。
+- **🩹 修「语音变哑 / 念出一串英文」**：微软**静默下架**了 7 个在线声线（女童声线、男童声线 +
+  四川 / 河南 / 山东方言），而被下架声线会**返回空音频且不报错**；成长档表又把幼儿 / 童年两档
+  全指向女童声线 → **每次合成必失败**，只能回落系统声线硬念中英混排。已改用**存活声线 + 音高塑形**
+  做年龄感，并新增**声线守卫**（空音频记黑名单自动换替身 + 每小时校验服务端声线表）——
+  **以后微软再下架也不会静默变哑**。实测 12 个（性别 × 档位）+ 全部方言声线逐个真合成 **0 处空音频**。
+
+## v0.29.0（2026-09-14）· 记忆层合一 + 新增「事实层 / 世界模型」+ 找回跨表述记忆
 
 - **🩹 修掉一个正在悄悄丢记忆的缺陷**：桌面端原先各留了一份记忆实现，而且是**拷贝**、不是同一份
   ——同一件事在两个副本里各记各的，表现为「聊天时有时记得、有时不记得」（半失忆），**且不报任何错**。
@@ -225,9 +243,9 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 ## 下载与安装
 
-最新版见仓库 **Releases**（v0.29.0，单文件约 77.5MB）：
+最新版见仓库 **Releases**（v0.29.1，单文件约 77.5MB）：
 
-1. 下载 `PASMStudio-Setup-0.29.0.exe`
+1. 下载 `PASMStudio-Setup-0.29.1.exe`
 2. 双击安装 → 打开 PASM Studio → 点右上「设置」填 LLM Key（或留空用本地 Ollama）
 3. 开始聊天；要用「图像/视频/漫剧」真出片时，首次使用按提示接入出图引擎（约 1 分钟）
 
@@ -276,10 +294,33 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 # English · PASM Studio — A Desktop AI Companion That Thinks, Works, and Remembers You (Windows)
 
-> **v0.29.0 Memory & foresight: key facts stick, changing your mind leaves a trace, and it previews success rates before acting** — Chat right out of the box: it thinks,
+> **v0.29.1 fixes + memory & foresight: key facts stick, changing your mind leaves a trace, and replies no longer go mysteriously slow** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.29.0 (2026-09-14) · Memory layer unified + new Fact Layer & World Model + cross-phrasing recall
+## Latest: v0.29.1 (2026-09-14) · Fixed 5× slower replies, canned capability answers, and a muted / English-reading voice
+
+- **🩹 Fixed "replies suddenly 5× slower"** — one report went from 10 s to 52 s for the same question.
+  The 48.92 s "first token" turned out to be **40.2 s of re-loading the model into VRAM**: inference itself
+  had not regressed (hot, same-length prompt: 1.35 s first token, 8.7 s total). Root cause: `keep_alive` is
+  per-request while the Ollama server default is only **5 minutes**, so an idle gap — or any path falling back
+  to the compatibility endpoint (which silently drops `keep_alive`) — unloads the model. Added a **residency
+  guard** that reloads only when the model is genuinely gone and otherwise never touches it (measured: any
+  touch resets Ollama's prefix cache, turning a 0.3 s prompt eval into 4.2 s), plus a pre-flight prewarm and a
+  "load-only, no inference" warm-up.
+- **🩹 Fixed "answers with a capability list instead of your question"** — asking 「能否先吃点小吃？」
+  returned a canned capability list. The capability-question test was too loose ("能否 / 会不会" anywhere in
+  the sentence counted) and ended in an unconditional fallback, so the model never got a turn. The frame must
+  now open the sentence and a capability keyword must follow within 12 characters — false triggers dropped
+  from **9/13 to 0/14**.
+- **🩹 Fixed "voice goes mute / reads out a string of English"** — Microsoft **silently retired** 7 neural
+  voices (the child voices plus the Sichuan / Henan / Shandong dialects). Retired voices **return empty audio
+  without any error**, and the growth-stage table pointed both the toddler and childhood stages at a retired
+  child voice — so every online synthesis failed and fell back to the system voice. Now uses **surviving
+  voices + pitch shaping**, plus a **voice guard** (blacklists empty-audio voices and re-checks the server
+  voice list hourly). Measured: 12 gender × stage combinations and every dialect voice synthesised for real —
+  **0 empty**.
+
+## v0.29.0 (2026-09-14) · Memory layer unified + new Fact Layer & World Model + cross-phrasing recall
 
 - **🩹 Fixed a defect that was silently losing memories** — the desktop app kept its *own copy* of the
   memory implementation instead of sharing one. The same fact was recorded independently in two copies,
@@ -463,9 +504,9 @@ PASM Studio is a **dual-brain architecture + cognitive execution cortex**:
 
 ## Download & install
 
-Grab the latest from **[Releases](https://github.com/arronJack/pasm-qclaw/releases)** (v0.29.0, single ~77.5 MB file):
+Grab the latest from **[Releases](https://github.com/arronJack/pasm-qclaw/releases)** (v0.29.1, single ~77.5 MB file):
 
-1. Download `PASMStudio-Setup-0.29.0.exe`
+1. Download `PASMStudio-Setup-0.29.1.exe`
 2. Install → launch PASM Studio → open ⚙ Settings and enter an LLM key (or leave empty for local Ollama)
 3. Start chatting. For real image/video/manga output, connect an image engine on first use (~1 minute)
 
