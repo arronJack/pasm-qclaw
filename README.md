@@ -4,7 +4,7 @@
 
 📚 **文档导航**：[**全部功能总览**](docs/FEATURES.md) · [**PASM 核心知识总览**](docs/CORE.md) · [更新日志](CHANGELOG.md)
 
-> **v0.28.5 架构收敛：引擎 / 环境 / 学习三层契约统一，换引擎不再改代码** —— 打开就能聊：它能思考、
+> **v0.29.0 记忆与预演：关键事实记得住、改口会留痕，办事前先预演成功率** —— 打开就能聊：它能思考、
 > 学过的本事（笑话/知识/技能）被点名时能真用出来；回复像 DeepSeek 一样思考灰度实时显示、随后正文流出；
 > 桌面小人的动作由性格自我设计、随你的反馈自我优化，工作提示变成头顶冒泡气泡，
 > 四川/河南/东北/山东/北京方言与粤语、台湾腔一样能听会说。每一次相处都会沉淀成它的记忆与性格——
@@ -13,7 +13,29 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.28.5（2026-09-12）· 三层契约收敛 + 认知核心层落盘 + 文档补全
+## 最新：v0.29.0（2026-09-14）· 记忆层合一 + 新增「事实层 / 世界模型」+ 找回跨表述记忆
+
+- **🩹 修掉一个正在悄悄丢记忆的缺陷**：桌面端原先各留了一份记忆实现，而且是**拷贝**、不是同一份
+  ——同一件事在两个副本里各记各的，表现为「聊天时有时记得、有时不记得」（半失忆），**且不报任何错**。
+  现已收敛为**唯一真相源**，并加两道自动守门防复发；实测容量 200 的记忆库被 260 条无关闲聊灌满后，
+  **三条早期重要记忆一条没丢**
+- **📌 新增「事实层」**：专门记住姓名 / 年龄 / 住址 / 用药 / 过敏 / 家人电话这类**关键事实**，
+  与闲聊记忆分开存，**保证不被日常对话挤掉**
+  - **改口会留痕**：从「北京」改说「上海」，旧事实不是删掉而是标记失效（历史可查），检索只返回当前有效的
+  - **可信度保护**：把握不大的新说法**不会**盖掉把握很大的旧事实，而是先「挂起待确认」
+  - 问「我住哪儿」「吃什么药」「对啥过敏」都能查到
+- **🎯 新增「世界模型」**：同类处境做过几次、成过几次，给出**成功率估计**与**瓶颈提示**
+  （如「成功率约 83%」）；**知道就说、不知道就说不知道**，不给虚假确定
+- **🔍 记忆检索：换种说法也找得到**：问「我叫什么名字」现在能查到存成「姓名」的事实
+  （实测该场景召回率 **50% → 100%**）
+- **📦 同时包含 0.28.6 / 0.28.7 / 0.28.8 全部能力**：中文语言锁与干活前确认门、浏览器自动化与实时天气、
+  语音稳定性、PPT 插图、定时与周期任务、邮件连接器、日历连接器、跨端远程桥、自进化沉淀技能、多智能体协作层
+- 安装包体积 **77.5MB**（含浏览器自动化所需的运行时）
+
+> 含 0.28.5 全部能力：认知核心层落盘 PASM 核心包、引擎接口统一调用（api 1.1）、
+> 学习层「同一接口两档实现」可热插拔、三篇能力总览文档。
+
+### v0.28.5（2026-09-12）· 三层契约收敛 + 认知核心层落盘 + 文档补全
 
 - **🧠 认知核心层落盘 PASM 核心包**：符号推理 / 记忆路由 / 向量记忆 / 学习层从桌面端提升为
   `pasm.cognitive.*` 单一真相源，桌面端改为再导出薄壳——跨版本行为更一致，也为多端复用打好地基
@@ -25,6 +47,7 @@
   同接口可互换，并支持**运行时热插拔**；修正两档 `learn()` 签名不一致导致「学习静默失效」的隐患
 - **📚 文档补全**：《PASM 核心知识总览》《PASM Studio 全部功能总览》《PASM-Lite 全部功能总览》
 - **📦 安装包瘦身**：清理构建残留，体积 63MB → **51MB**
+
 
 > 含 0.28.4 全部能力：语音接收方言识别修复、八种方言（粤语/台湾腔/四川/河南/东北/山东/北京/云南）、
 > 神经符号混合推理、记忆路由器、小人行为自我设计/自我优化、工作状态显示、灰度思考显示。
@@ -202,9 +225,9 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 ## 下载与安装
 
-最新版见仓库 **Releases**（v0.28.5，单文件约 51MB）：
+最新版见仓库 **Releases**（v0.29.0，单文件约 77.5MB）：
 
-1. 下载 `PASMStudio-Setup-0.28.5.exe`
+1. 下载 `PASMStudio-Setup-0.29.0.exe`
 2. 双击安装 → 打开 PASM Studio → 点右上「设置」填 LLM Key（或留空用本地 Ollama）
 3. 开始聊天；要用「图像/视频/漫剧」真出片时，首次使用按提示接入出图引擎（约 1 分钟）
 
@@ -253,10 +276,37 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 # English · PASM Studio — A Desktop AI Companion That Thinks, Works, and Remembers You (Windows)
 
-> **v0.28.5 Architecture convergence: unified engine / environment / learning contracts — swap engines without touching code** — Chat right out of the box: it thinks,
+> **v0.29.0 Memory & foresight: key facts stick, changing your mind leaves a trace, and it previews success rates before acting** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.28.5 (2026-09-12) · Three-layer contract convergence + cognitive core persisted + docs
+## Latest: v0.29.0 (2026-09-14) · Memory layer unified + new Fact Layer & World Model + cross-phrasing recall
+
+- **🩹 Fixed a defect that was silently losing memories** — the desktop app kept its *own copy* of the
+  memory implementation instead of sharing one. The same fact was recorded independently in two copies,
+  showing up as "sometimes it remembers, sometimes it doesn't" — **with no error at all**. Now there is a
+  single source of truth, guarded by two automated fences. Verified: after flooding a 200-slot memory with
+  260 unrelated chit-chat lines, **all three early important memories survived**.
+- **📌 New "Fact Layer"** — keeps key facts (name / age / address / medication / allergies / family phone)
+  **separate from chit-chat memory**, so they can never be crowded out.
+  - **Changing your mind leaves a trace** — saying "Shanghai" after "Beijing" doesn't delete the old fact;
+    it's marked invalid (history stays queryable) and recall only returns what's currently true.
+  - **Confidence protection** — a low-confidence new statement **cannot** overwrite a high-confidence fact;
+    it's held as "pending confirmation" instead.
+  - Ask "where do I live", "what medicine do I take", "what am I allergic to" — all answered.
+- **🎯 New "World Model"** — for similar situations, it estimates the **success rate** and points out the
+  **bottleneck** (e.g. "about 83% success"); **it says "I don't know" when it doesn't know** — no fake certainty.
+- **🔍 Recall now survives rewording** — "what's my name" now finds the fact stored as "name"
+  (measured recall for this case: **50% → 100%**).
+- **📦 Also includes everything from 0.28.6 / 0.28.7 / 0.28.8** — Chinese language lock and pre-work
+  confirmation gate, browser automation and live weather, speech stability, PPT illustrations, scheduled and
+  recurring tasks, mail connector, calendar connector, cross-device remote bridge, self-evolving skills,
+  multi-agent collaboration layer.
+- Installer size: **77.5 MB** (includes the runtime needed for browser automation).
+
+> Includes everything from 0.28.5: cognitive core persisted into the PASM package, unified engine-interface
+> calls (api 1.1), interchangeable/hot-swappable learning tiers, and three capability overview documents.
+
+### v0.28.5 (2026-09-12) · Three-layer contract convergence + cognitive core persisted + docs
 
 - **🧠 Cognitive core now lives in the PASM package** — symbolic reasoning / memory router /
   vector memory / learning layer promoted from the desktop app to `pasm.cognitive.*` as the single
@@ -413,9 +463,9 @@ PASM Studio is a **dual-brain architecture + cognitive execution cortex**:
 
 ## Download & install
 
-Grab the latest from **[Releases](https://github.com/arronJack/pasm-qclaw/releases)** (v0.28.5, single ~51 MB file):
+Grab the latest from **[Releases](https://github.com/arronJack/pasm-qclaw/releases)** (v0.29.0, single ~77.5 MB file):
 
-1. Download `PASMStudio-Setup-0.28.5.exe`
+1. Download `PASMStudio-Setup-0.29.0.exe`
 2. Install → launch PASM Studio → open ⚙ Settings and enter an LLM key (or leave empty for local Ollama)
 3. Start chatting. For real image/video/manga output, connect an image engine on first use (~1 minute)
 
