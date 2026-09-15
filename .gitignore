@@ -1,3 +1,25 @@
+# 安装包不入库（发行走 Releases 附件，Gitee 附件配额有限）
 PASMStudio-Setup-*.exe
+
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# 虚拟环境
+.venv/
+venv/
+.buildvenv/
+env/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 本机一次性产物
+_patch_backup/
+_*.txt
+*.log

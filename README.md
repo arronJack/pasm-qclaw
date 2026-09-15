@@ -356,7 +356,7 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 # English · PASM Studio — A Desktop AI Companion That Thinks, Works, and Remembers You (Windows)
 
-> **v0.29.1 fixes + memory & foresight: key facts stick, changing your mind leaves a trace, and replies no longer go mysteriously slow** — Chat right out of the box: it thinks,
+> **It never loses what you typed, and never claims to have done something it didn't** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
 ## Latest: v0.30.2 (2026-09-15) · Chat no longer loses your messages · no more fake "done"
