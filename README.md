@@ -33,7 +33,30 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.29.1（2026-09-14）· 修「聊天变慢 5 倍 / 莫名背能力清单 / 语音变哑」
+## 最新：v0.30.0（2026-09-15）· 3D 机甲小人 + 栏目整合 + 六项工作能力
+
+- **🎮 小人立体起来了，而且真的会动**：换成 **GPU 真 3D 机甲造型** —— 外壳分片、金属质感、
+  清漆高光、胸口发光徽记；**会呼吸、会摇摆、头顶天线轻轻晃**，还会跟着鼠标方向转头看你。
+  走路 / 挥手 / 跳跃 / 跳舞 / 思考 / 抱球这些动作都看得出来；随成长四档从"圆头圆脑"
+  长成"修长青年"（身高体态逐级变化，青年期还会长出肩甲与天线）。
+  形体**全部程序化生成**，没有引入任何新依赖；万一机器跑不了 3D，会**自动退回原 2D 画法**，绝不崩。
+- **🧩 工作栏清爽了**：原来「文案 / 表格 / PPT / Word」四个按钮收成一个 **「📄 文档与演示」**，
+  点它在按钮下方弹出**卡片式展示框**（四种格式各带一句说明、当前格式高亮），
+  不占常驻布局高度、点面板外部自动关闭、贴边会自动回拉。
+  **显式指定依然优先**：直接说「给我个 Word」照样直接走，不弹选择器。
+- **📎 聊天框多了「＋」**：图片 / 文档 / 任意文件 / 截屏四个入口。Word、PPT、Excel 会
+  **真读正文与表格**（不只是认扩展名），所以可以直接说"照这份报表做个 PPT"；
+  单文件截断 6000 字、单次最多 3 个，坏文件只提示不崩。
+- **🔐 权限三档（默认「安全」）**：安全（写文件 / 执行命令都先问）·
+  标准（低风险放行、高危确认）· 完全访问（全放行，切换有明确风险提示 + 二次确认）。
+  **拿不准一律停下来问你**，不自己猜。
+- **✨ 页面切换有过渡动效**，不再生硬跳转。
+- **🎙 语音唤醒**：直接说「小U」就醒（**默认关闭**，在设置里打开才占用麦克风；
+  助手说话时不会自唤醒；**改了名字唤醒词立刻跟着变**，不用重启）。
+- **🚀 开机自动启动**：设置里一键开关，写当前用户注册表，**不需要管理员权限**，开机不弹黑框。
+- **🏷 名字统一为「小U」**（桌宠 / 设置 / 知识库 / 语音各处；**你自己改过的名字不会被覆盖**）。
+
+### v0.29.1（2026-09-14）· 修「聊天变慢 5 倍 / 莫名背能力清单 / 语音变哑」
 
 - **🩹 修「聊天突然变慢 5 倍」**：同一句话从 10 秒变 52 秒。定位发现 48.92 秒的「首字」里
   **40.2 秒是把模型重新装进显存** —— 推理侧其实没有退化（同长度提示热态实测首字 1.35 秒、总 8.7 秒）。
@@ -51,7 +74,7 @@
   做年龄感，并新增**声线守卫**（空音频记黑名单自动换替身 + 每小时校验服务端声线表）——
   **以后微软再下架也不会静默变哑**。实测 12 个（性别 × 档位）+ 全部方言声线逐个真合成 **0 处空音频**。
 
-## v0.29.0（2026-09-14）· 记忆层合一 + 新增「事实层 / 世界模型」+ 找回跨表述记忆
+### v0.29.0（2026-09-14）· 记忆层合一 + 新增「事实层 / 世界模型」+ 找回跨表述记忆
 
 - **🩹 修掉一个正在悄悄丢记忆的缺陷**：桌面端原先各留了一份记忆实现，而且是**拷贝**、不是同一份
   ——同一件事在两个副本里各记各的，表现为「聊天时有时记得、有时不记得」（半失忆），**且不报任何错**。
@@ -263,9 +286,9 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 ## 下载与安装
 
-最新版见仓库 **Releases**（v0.29.1，单文件约 77.5MB）：
+最新版见仓库 **Releases**（v0.30.0，单文件约 75.8MB）：
 
-1. 下载 `PASMStudio-Setup-0.29.1.exe`
+1. 下载 `PASMStudio-Setup-0.30.0.exe`
 2. 双击安装 → 打开 PASM Studio → 点右上「设置」填 LLM Key（或留空用本地 Ollama）
 3. 开始聊天；要用「图像/视频/漫剧」真出片时，首次使用按提示接入出图引擎（约 1 分钟）
 
@@ -317,7 +340,36 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 > **v0.29.1 fixes + memory & foresight: key facts stick, changing your mind leaves a trace, and replies no longer go mysteriously slow** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.29.1 (2026-09-14) · Fixed 5× slower replies, canned capability answers, and a muted / English-reading voice
+## Latest: v0.30.0 (2026-09-15) · A 3D mecha companion, a cleaner work bar, six new capabilities
+
+- **🎮 It's 3D now — and it actually moves.** The companion is rendered with real GPU 3D:
+  layered armour, metallic sheen, clear-coat highlights, a glowing chest emblem. It **breathes,
+  sways, its antenna wobbles**, and it turns its head to follow your cursor. Seven actions are
+  visibly distinct (idle / walk / wave / hop / dance / think / hold-ball), and it **grows through
+  four stages** from a round-headed toddler to a slender adult — with shoulder plates and an
+  antenna appearing in the later stages. Fully procedural, **zero new dependencies**; if your
+  machine can't do 3D it silently falls back to the original 2D drawing and never crashes.
+- **🧩 Cleaner work bar.** The four document buttons (copy / spreadsheet / PPT / Word) became one
+  **「📄 Documents & Decks」** entry that pops a **card picker** — each format with a one-line hint,
+  the current one highlighted. It takes no permanent layout space, closes when you click away, and
+  repositions itself near screen edges. **Explicit requests still win**: say "give me a Word file"
+  and it goes straight there, no picker.
+- **📎 A「＋」in the chat box**: images, documents, any file, and screenshot. Word / PPT / Excel are
+  **actually read** (body text *and* tables, not just the extension), so you can say "turn this
+  report into a deck". 6000 chars per file, up to 3 at a time; bad files warn instead of crashing.
+- **🔐 Three permission levels** (safe / standard / full access; default **safe**): safe asks before
+  writing files or running commands; switching to full access requires an explicit risk confirmation.
+  **When in doubt it stops and asks** rather than guessing.
+- **✨ Page transitions** are animated now.
+- **🎙 Voice wake word**: say 「小U」 to wake it (**off by default** — the mic is only used once you
+  enable it in Settings; it won't wake on its own voice; **renaming the character updates the wake
+  word immediately**, no restart needed).
+- **🚀 Launch-at-startup** toggle in Settings — writes to your user registry, **no admin rights**,
+  no console window.
+- **🏷 The default name is now 「小U」** (pet / settings / knowledge base / speech) —
+  **a name you customised is never overwritten**.
+
+### v0.29.1 (2026-09-14) · Fixed 5× slower replies, canned capability answers, and a muted / English-reading voice
 
 - **🩹 Fixed "replies suddenly 5× slower"** — one report went from 10 s to 52 s for the same question.
   The 48.92 s "first token" turned out to be **40.2 s of re-loading the model into VRAM**: inference itself
@@ -524,9 +576,9 @@ PASM Studio is a **dual-brain architecture + cognitive execution cortex**:
 
 ## Download & install
 
-Grab the latest from **[Releases](https://github.com/arronJack/pasm-qclaw/releases)** (v0.29.1, single ~77.5 MB file):
+Grab the latest from **[Releases](https://github.com/arronJack/pasm-qclaw/releases)** (v0.30.0, single ~75.8 MB file):
 
-1. Download `PASMStudio-Setup-0.29.1.exe`
+1. Download `PASMStudio-Setup-0.30.0.exe`
 2. Install → launch PASM Studio → open ⚙ Settings and enter an LLM key (or leave empty for local Ollama)
 3. Start chatting. For real image/video/manga output, connect an image engine on first use (~1 minute)
 
