@@ -33,7 +33,26 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.30.0（2026-09-15）· 3D 机甲小人 + 栏目整合 + 六项工作能力
+## 最新：v0.30.2（2026-09-15）· 修「聊天内容会丢」+ 不再编造「已执行」
+
+- **🐞 你自己发的话不会再丢了**：回复是逐字蹦出来的（约 1.2 秒），而这段时间输入框已经可打字；
+  抢在它蹦完之前发一条，那条消息会被它自己的动画覆盖掉（消息其实存着，
+  换到别的对话再换回来又会冒出来 —— 所以看着像灵异事件）。现在它先确认
+  「这一段是不是我自己的」，不是就另起一段、**绝不覆盖你的话**；
+  你抢话时它会把没说完的半句**立刻补完整**再停，不会停在半句上。
+- **🚫 不再口嗨「已生成 / 已打开」**：以前它偶尔会说「✅ 已生成并打开浏览器」而屏幕上一片空白 ——
+  那是编的，并没有真的执行。现在**每件真事都记一笔账**，说了「已生成 / 已打开 / 已运行」
+  却查不到记录时，它会自己更正为「我并没有真的做到」。
+- **🚶 走路先转身**：不再正面朝前横向平移 —— 先转身、再迈步，走完自动转回正面；
+  转身未完成时会收小步幅，读起来是"先转过身再走"。
+- **🎭 动作从 7 个增到 16 个**：新增伸懒腰 / 抱臂 / 弹跳撒欢 / 点头致意 / **飞天转圈**；
+  动作**跟着性格抽**（九种性格各有偏好：调皮灵动爱颠球跳舞，温和沉稳爱点头思考……），
+  超过 90 秒没人理它还会自己飞天转一圈。
+- **👕 换形象会同步**：桌宠换了皮肤，聊天区的小人立刻跟着变。
+- **🗂 数据目录不再分家**：以前从终端等方式启动可能把数据写到另一个目录（双击启动却不会），
+  现在统一用系统标准路径。
+
+### v0.30.0（2026-09-15）· 3D 机甲小人 + 栏目整合 + 六项工作能力
 
 - **🎮 小人立体起来了，而且真的会动**：换成 **GPU 真 3D 机甲造型** —— 外壳分片、金属质感、
   清漆高光、胸口发光徽记；**会呼吸、会摇摆、头顶天线轻轻晃**，还会跟着鼠标方向转头看你。
@@ -286,9 +305,9 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 ## 下载与安装
 
-最新版见仓库 **Releases**（v0.30.0，单文件约 75.8MB）：
+最新版见仓库 **Releases**（v0.30.2，单文件约 75.8MB）：
 
-1. 下载 `PASMStudio-Setup-0.30.0.exe`
+1. 下载 `PASMStudio-Setup-0.30.2.exe`
 2. 双击安装 → 打开 PASM Studio → 点右上「设置」填 LLM Key（或留空用本地 Ollama）
 3. 开始聊天；要用「图像/视频/漫剧」真出片时，首次使用按提示接入出图引擎（约 1 分钟）
 
@@ -340,7 +359,24 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 > **v0.29.1 fixes + memory & foresight: key facts stick, changing your mind leaves a trace, and replies no longer go mysteriously slow** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.30.0 (2026-09-15) · A 3D mecha companion, a cleaner work bar, six new capabilities
+## Latest: v0.30.2 (2026-09-15) · Chat no longer loses your messages · no more fake "done"
+
+- **🐞 Your own messages are no longer swallowed**: replies used to be typed out character by
+  character (~1.2s), while the input box was already usable. Send a new message inside that
+  window and it got overwritten by the typing animation (the message *was* saved, so it reappeared
+  after switching conversations — which is why it looked like a ghost). Now it verifies
+  "is this block mine?" before redrawing, starts a new block instead, and **never overwrites your
+  words**; if you cut in, it **finishes its half-sentence immediately** instead of freezing.
+- **🚫 No more empty promises**: it used to say "✅ generated and opened in browser" with nothing on
+  screen — that was fabricated. Now every real action is written to a ledger, and any claim of
+  "generated / opened / ran" without a matching record is **corrected to "I did not actually do it"**.
+- **🚶 Turns before walking**: no more sideways sliding while facing forward.
+- **🎭 16 actions (was 7)**: stretch / arms crossed / bounce / nod / **fly-and-spin**,
+  chosen **by personality** (9 personas each with their own taste).
+- **👕 Avatar change syncs** to the chat-side character, and the **data folder no longer splits**
+  depending on how the app was launched.
+
+### v0.30.0 (2026-09-15) · A 3D mecha companion, a cleaner work bar, six new capabilities
 
 - **🎮 It's 3D now — and it actually moves.** The companion is rendered with real GPU 3D:
   layered armour, metallic sheen, clear-coat highlights, a glowing chest emblem. It **breathes,
@@ -576,9 +612,9 @@ PASM Studio is a **dual-brain architecture + cognitive execution cortex**:
 
 ## Download & install
 
-Grab the latest from **[Releases](https://github.com/arronJack/pasm-qclaw/releases)** (v0.30.0, single ~75.8 MB file):
+Grab the latest from **[Releases](https://github.com/arronJack/pasm-qclaw/releases)** (v0.30.2, single ~75.8 MB file):
 
-1. Download `PASMStudio-Setup-0.30.0.exe`
+1. Download `PASMStudio-Setup-0.30.2.exe`
 2. Install → launch PASM Studio → open ⚙ Settings and enter an LLM key (or leave empty for local Ollama)
 3. Start chatting. For real image/video/manga output, connect an image engine on first use (~1 minute)
 
