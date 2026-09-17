@@ -15,7 +15,7 @@
 | `pasm-mcp-server` | MCP 接入层：给任意 AI 客户端装长期记忆 | 公开 | 0.2.0 |
 | `PASM-Lite` | 教学版 + 认知引擎接口 | 公开 | — |
 | `PASM` | 核心引擎（七层仿生 / 世界模型） | **私有** | 0.7.2 |
-| **`pasm-qclaw`（本仓）** | **桌面应用发行通道** | 公开 | **0.30.3** |
+| **`pasm-qclaw`（本仓）** | **桌面应用发行通道** | 公开 | **0.30.11** |
 
 本仓是**发行通道**（安装包 + 更新清单 `latest.json`），桌面源码在私有核心仓 `PASM/desktop`。
 
@@ -33,7 +33,38 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.30.3（2026-09-16）· 小人形象与行为修复
+## 最新：v0.30.11（2026-09-17）· 12 项真机反馈全部落地 + 产物统一到一个工作根
+
+- **🛩️ 飞天变了**：起飞**原地变身**成飞机形态（不再是"人形平移"），落地变回人形；航线改成随机曲线，
+  不再是规规矩矩的直线矩形。
+- **🔀 左右两栏不再都叫"自动化"**：左导航改「⚡ 自发行为」，右侧固定栏改「🤖 工作流（AI 多步任务引擎）」，
+  并互相注明区别。
+- **🖥️ 含糊说法也能开文件**：以前只认写全路径的文件，"打开 E 盘里的 txt"完全不理；现在按"盘符 + 类型"
+  做有界搜索，而且**疑问句不抢答**（"E 盘的 txt 怎么打开"就老实回答）。
+- **📣 广告设计不再只出图**：新增「创意说明（策略层）」—— 传播目标 / 人群 / 主张 / 调性 / 媒介 / 主视觉构思，
+  与设计稿同在右侧栏。
+- **🧍 桌面小人三连**：① 今日心情**独立成行**（名字+格言 / 今日心情 / 内心 三行分明）；
+  ② 动作**补回 4 个被静默丢弃的**（点头 / 伸懒腰 / 抱臂 / 弹跳），再**新增 4 个**
+  （欢呼 / 鼓掌 / 指一指 / 比心），**2D 与 3D 双路径都实现**；
+  ③ 新增**形象 DIY** —— 配色三旋钮（色相 / 饱和度 / 明度）+ 头饰开关（兽耳 / 角 / 天线），
+  刻意做成 **2D 与 3D 同一套变换**（只改 2D 的话，能跑 3D 的机器上等于看不见）。
+- **🛠️ 工作真"对标"了**：代码类工作**真跑官方脚手架 + 真装依赖**，落盘就是能跑的项目
+  （实测 express 真装 70 包、vite+vue 真装 35 包）；代码 / 支付类工种此前**根本没有执行器**，现已补上。
+- **💳 接入支付（沙箱优先）**：沙箱是**真签名、真状态机**（下单 → 支付 → 回调验签 → 查单 → 退款），
+  订单落盘重启不丢；微信 / 支付宝**只留接口与配置**，即使凭据填齐也会明确报"尚未接真实 HTTP"，
+  **绝不静默假装成功**，密钥永不回显。
+- **📎 上传的图 / 文件看得见了**：聊天区内联缩略图，非图片文件显示带大小的卡片，模型与你都看得见。
+- **🔌 工作会自己调工具了**：接通 `pasm-mcp-server`，13 个认知工具并入对话工具总线，
+  工作流里真能调 `pasm_observe / pasm_context / pasm_feel`；连不上静默降级。
+- **🗂 产物统一到一个工作根**（朋友反馈）：改前产物散在 **4 套互不相通的根**（含写死在桌面的 `PASM创作`），
+  现在统一到 `桌面\PASM工作`，下面按类型分 `project` / `image` / `video` / `copy` / `doc` / `team` / `script`；
+  存量**迁移**走"复制 → 逐项校验（sha256 + 树摘要）→ 通过才删原"，**可回滚**；
+  **只搬产物不搬知识** —— 笔记 / 角色配置 / 书籍一律留原地。会话记录里引用的旧路径一并改写。
+- **🐞 顺手修掉 9 个真实缺陷**，其中两个值得一提：**飞天高度旋钮形同虚设**（有定义、有滑块、自检也过，
+  却**没有任何代码读它**）；**占位符判据把每一份广告方案都判死**（广告模板自带的「策略层」被当成占位符，
+  于是工作流步骤永远回"广告方案未过质检"）。
+
+### v0.30.3（2026-09-16）· 小人形象与行为修复
 
 - **📏 长反了 → 现在真长高**：以前小人越长大越"缩水"（体型系数随成长递减），现已改为递增（幼儿 0.98 → 青年 1.16），陪伴越久越高大，符合直觉。
 - **🤖 头部放大、细节更清楚**：2D 头像整体放大；3D 模型头部尺寸上调约 33%（青年期），躯干四肢仍随成长长高，不再"看不清脸"。
@@ -367,7 +398,47 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 > **It never loses what you typed, and never claims to have done something it didn't** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.30.2 (2026-09-15) · Chat no longer loses your messages · no more fake "done"
+## Latest: v0.30.11 (2026-09-17) · All 12 field reports fixed · everything under one work root
+
+- **🛩️ Flight reworked**: it now **transforms into a plane in place** on take-off (no more a human
+  sliding through the air) and turns back on landing; the route is a random curve, not a tidy
+  rectangular loop.
+- **🔀 No more two panels both named "Automation"**: the left nav is now "⚡ Spontaneous Behaviour"
+  and the right fixed tab is "🤖 Workflow (multi-step AI engine)", each explaining the difference.
+- **🖥️ Vague file requests work**: previously only fully-qualified paths were understood, so
+  "open the txt on E:" was ignored. It now does a bounded "drive + file type" search — and
+  **does not jump in when you are merely asking a question**.
+- **📣 Ad design now includes the rationale**: a creative-brief block (objective / audience /
+  proposition / tone / media / key visual), shown next to the artwork in the right panel.
+- **🧍 Desktop companion, three fixes**: mood is on its own line; **4 silently-dropped actions
+  restored** (nod / stretch / arms / bounce) plus **4 new ones** (cheer / clap / point /
+  finger-heart), implemented on **both** the 2D and 3D paths; and **appearance DIY** —
+  hue / saturation / value knobs plus head-accessory toggles, deliberately using **one shared
+  transform for 2D and 3D** (a 2D-only change would be invisible on 3D-capable machines).
+- **🛠️ "Work" now really scaffolds**: code tasks run the official scaffolders and install
+  dependencies for real (measured: express 70 packages, vite+vue 35), leaving a runnable project
+  on disk. Code and payment job types previously had **no executor at all**.
+- **💳 Payments integrated (sandbox first)**: the sandbox uses **real HMAC signing and a real state
+  machine** (order → pay → signed callback → query → refund), persisted across restarts.
+  WeChat Pay / Alipay have interfaces and configuration only; even with full credentials it stops
+  with an explicit "real HTTP not implemented yet" rather than **silently pretending to succeed**.
+  Secrets are never echoed back.
+- **📎 Uploads are visible**: inline thumbnails in chat, size-labelled cards for non-images —
+  both you and the model can see them.
+- **🔌 Work calls tools by itself**: `pasm-mcp-server` is wired in and 13 cognitive tools joined the
+  conversation tool bus; it degrades silently if the server is unavailable.
+- **🗂 All output unified under one work root** (a friend's suggestion): output used to be split
+  across **four unrelated roots** (one of them hard-coded to the Desktop). It now all lands under
+  `Desktop\PASM工作`, categorised as `project` / `image` / `video` / `copy` / `doc` / `team` / `script`.
+  Existing output is **migrated** via copy → verify (sha256 + tree digest) → delete-only-if-verified,
+  **and is rollback-able**. **Only artefacts move** — notes, role config and books stay where they are.
+  Stale absolute paths embedded in saved conversations are rewritten too.
+- **🐞 Plus 9 real defects found and fixed along the way**, two worth naming: a flight-height slider
+  wired to **nothing at all** (defined, exposed, self-tested — and never read by any flight code),
+  and a placeholder check that condemned **every** ad plan (the ad template's own word
+  "strategy layer" matched the placeholder pattern).
+
+### v0.30.2 (2026-09-15) · Chat no longer loses your messages · no more fake "done"
 
 - **🐞 Your own messages are no longer swallowed**: replies used to be typed out character by
   character (~1.2s), while the input box was already usable. Send a new message inside that
