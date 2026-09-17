@@ -3,8 +3,66 @@
 > **版本号说明**：本仓有两条版本轴，别混 ——
 > · **引擎/内核** `pasm.__version__`（当前 `0.7.2`）+ `pasm.cognitive.__version__`（`0.8.0`），
 >   与 `pyproject.toml` 的 `version` 必须一致；
-> · **桌面产品** PASM Studio `APP_VERSION`（当前 `0.30.17`，见 `desktop/appinfo.py`），
+> · **桌面产品** PASM Studio `APP_VERSION`（当前 `0.31.0`，见 `desktop/appinfo.py`），
 >   驱动安装包与升级通道，其发行记录见 `pasm-qclaw/CHANGELOG.md`。
+
+## 0.31.0（2026-09-17）· 右栏接真浏览器 + 一个产物一页 · 每轮向下追加
+
+> 小志要求：把真浏览器接进去；每一页对应一个产物，修改也在同页向下展示、不删除不覆盖，
+> 每次新要求新产出就往下输出；漫剧每个工序均向下展开；右侧栏美观一些。
+
+### 一、三条**实测**结论（决定实现形状，别再走一遍）
+
+| # | 实测结论 | 影响 |
+|---|---|---|
+| 1 | **每个 `QWebEngineView` = 一个独立 Chromium 渲染进程**（建 2 个视图 → `QtWebEngineProcess.exe` 变 2 个） | 全应用**只用一个视图**，切页只换 HTML 不换视图 |
+| 2 | **`setHtml(html)` 不带 baseUrl 时页面不是「本地内容」**，`LocalContentCanAccessFileUrls` 不生效，**连绝对 `file://` 图片都加载不到**（实测 `naturalWidth == 0`） | 必须 `setHtml(html, QUrl.fromLocalFile(目录))`；这样图片/视频/站点 iframe 全都能加载（实测 iframe 读得到站点正文），**不需要**落临时 html |
+| 3 | Qt6 里 **`QWebEnginePage`/`Settings` 属于 `QtWebEngineCore`**，从 `QtWebEngineWidgets` 里 import 会 ImportError | 会**静默降级**（`available()` 返回 False、界面一切正常）；已踩到并修正 |
+
+另：`QApplication` 之后 import `QtWebEngineWidgets` 是可以的（PySide6 6.11.2 实测）。
+
+### 二、改动
+
+- **新增 `desktop/effect_view.py`**：`SharedEffectView`（全应用唯一的 WebEngine 视图，懒创建）、
+  `wrap_document`/`block_html`（统一样式：正文 14px/1.75、块内无滚动条、代码块换行不横滚）、
+  `available()`/`error()`（如实探测）、`dispose()`/`shutdown_all()`（**显式销毁视图**）。
+- **右栏重构**：`QTabWidget` → `OutTabBar`（`QTabBar` 子类，保留 `QTabWidget` 那撮 API，
+  免得打坏既有调用与用例）+ **唯一共享内容区**。标签只是"选择器"。
+- **一个产物一页 + 每轮向下追加**：页内 `blocks` 只增不减；块头显示「第 N 轮 · 当时的要求」
+  （要求来自 `send()` 记下的 `_cur_req`）。
+- `_mark_effect` 增加 `page=`（页归属）：图片/视频/漫剧=会话目录、文档=那份文件、开发=项目目录。
+- 操作区作用于**最新一轮**的产物；确认按**产物路径**记（各轮可各自确认）；
+  删除走 `sysops.delete_path`（回收站）且**不关页**。
+- **漫剧逐工序展开**：`_manga_note`，每个产出分支**紧接着**登记同一页。
+- 新增 `FitBrowser` 降级渲染器（自适应高度、无内层滚动条）。
+- `pasm_main.py` 新增 `--we-check` 冻结版自检开关（真建视图→真加载→**读回 DOM**→落盘+退出码）。
+
+### 三、修掉的真 bug（都是判据抓出来的）
+
+1. 开发类原来只给 `path` 不给 `media` → 右栏里**根本没有 iframe**，"站点效果"是空话。
+2. WebEngine 视图等到解释器退出才销毁 → 进程以 **`0xC0000005`（访问冲突）**结束，
+   在套件里表现为"断言全过但脚本 rc=3221225477"（`verify_panel_width` 原来就是这样）。
+   现在窗口 `closeEvent` 里显式销毁。
+3. 静态守门当场抓出两处未导入名字（`QScrollArea` / `QtWidgets`）。
+
+### 四、验证
+
+- 套件 **27 脚本 941 项 0 失败**；新增 `verify_v0310.py` **67 项**，关键判据在
+  **真渲染页面里读 DOM 事实**（图是否真解码、iframe 里能否读到站点正文、有无内层滚动容器、
+  渲染进程数、字号 ≥14px、`setHtml` 是否带 `file://` 基准）。
+- **反向验证**：故意改坏五处核心设计 → 用例全部抓得住。其中「漫剧漏登记一支」**第一次没抓住**：
+  原判据是「登记次数 ≥6」而实际有 7 处，删一个还剩 6 —— 阈值太松。已改成**结构配对**
+  （每个产出分支的**下一条语句**必须就是登记）。这条修正本身就是那次反向验证的价值。
+- 冻结版：`--we-check` **PASS**（`WE_DOM=FROZEN_OK|40`）；真启动冒烟 PASS；
+  包内 WebEngine 运行件逐项核对齐全（`QtWebEngineProcess.exe` / resources / 53 locale）。
+- 旧用例按**新设计的原意升级**（`show_box` / `art_view` / `art_view.pixmap()` 那批随重构退役，
+  原意由更强的判据接管）。
+
+### 五、体积（诚实边界）
+
+安装包 **82.7MB → 190.1MB**（内嵌 Chromium，约 +107MB）；dist 292M → 728M。
+构建环境需要 **`PySide6-Addons`**：只装 Essentials 拿不到 WebEngine 的 Python 绑定，
+会**静默降级**成原生渲染（界面正常，只有"站点/视频没渲染"一个症状）。
 
 ## 0.30.17（2026-09-17）· 右侧栏变「产出效果台」+ 工作流搬到左栏
 
