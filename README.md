@@ -15,7 +15,7 @@
 | `pasm-mcp-server` | MCP 接入层：给任意 AI 客户端装长期记忆 | 公开 | 0.2.0 |
 | `PASM-Lite` | 教学版 + 认知引擎接口 | 公开 | — |
 | `PASM` | 核心引擎（七层仿生 / 世界模型） | **私有** | 0.7.2 |
-| **`pasm-qclaw`（本仓）** | **桌面应用发行通道** | 公开 | **0.30.14** |
+| **`pasm-qclaw`（本仓）** | **桌面应用发行通道** | 公开 | **0.30.15** |
 
 本仓是**发行通道**（安装包 + 更新清单 `latest.json`），桌面源码在私有核心仓 `PASM/desktop`。
 
@@ -33,24 +33,43 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.30.14（2026-09-17）· 第三方接入：飞书 / Discord / 微信 / Webhook 四条通道全部双向打通
+## 最新：v0.30.15（2026-09-17）· 聊天慢的真凶找到了：一个被 `except` 吞掉的 NameError
 
-在 **⚙ 设置 → 💳 支付**（第 6 页）直接配置收款渠道，不用再手改配置文件：
+**「输入『你好』过了一分钟还没反应」不是模型慢，是本地通路被静默降级了。**
+真机日志里的证据：`原生 /api/chat 不可用，回退兼容端点：name 'base_url' is not defined`
+—— 一个拼错变量名的 `NameError` 被上层 `except Exception` 吞成一行 INFO，于是每次请求
+都退回兼容端点，而那条路会**丢掉三个关键参数**：
 
-- **收款渠道**下拉：沙箱（默认，不真实收款）/ 微信支付 / 支付宝 —— 切换时下方字段自动跟着换；
-- **微信支付**：商户号 `mch_id`、应用 `app_id`、**APIv3 密钥**、证书序列号、商户私钥文件（带「…」直接选文件）、回调地址；
-- **支付宝**：应用 AppID、**应用私钥文件**、支付宝公钥文件、网关地址、回调地址；
-- **🔎 检查就绪状态**：缺哪项就点名哪项（例如「缺 private_key_path」），不静默降级。
+| 丢掉的参数 | 后果 |
+|---|---|
+| `keep_alive` | 模型被换出显存 → 下次请求**冷加载 45 秒** |
+| `num_ctx` | 上下文没压小 → 更慢 |
+| `think=false` | **思考链照开** → 首字 20 秒、动辄想 2000+ 字 |
 
-安全上做了四件事：
+修完之后最坏一轮从"等 1 分钟以上"回到正常（本机实测首字 1~2 秒）。
 
-1. **密钥框只显示掩码**（如 `WX_S************34`）—— 不动它就按原值保存，要改就全选重填；密钥不进日志、不回显；
-2. **「允许真实收款」默认关闭**，由关到开要**二次确认**；点「否」时连界面上的勾也会拨回去；
-3. **填好凭据 ≠ 会收钱** —— 要收钱必须显式打开 live；
-4. 配置写 `%APPDATA%\PASMStudio\payment.json`，保存后**回读校验**。
+**顺带立了一道静态守门**（`tools/check_undefined_names.py`）：专门找"读了但没定义"的名字。
+拿它扫全仓，又抓出 **4 处同类**（全都是"被 except 吞掉 → 功能静默失效"），其中一处就是
+**你说的"没有产物预览"** —— 文本/方案产物的预览代码用了没导入的 `_io`，永远报错。
 
-改完**保存即生效，不用重启**。沙箱用的是真 HMAC 签名 + 真状态机，可以把
-「下单 → 支付 → 回调验签 → 查单 → 退款」整条链路先跑通，再接真渠道。
+**另外六件事**：
+
+1. **点「📋 复制」不再把聊天正文吃掉** —— Qt 的 `QTextBrowser` 点锚点后还会自己 `setSource`，
+   而复制键的 href（`pasm://copy/0`）不是真资源 → 整块正文被换成一张空白错误页。已修。
+2. **找不到刚完成的工作** —— 入口本来在（左侧工作台列表 `任务#tXXX`，双击进详情），但
+   **双击必崩**（详情窗少了一个属性）。已修，并在工作流页新增
+   **「📂 已完成的工作（看产物）」**：列真实存在的产物，点文件名**直接打开**、点标题看详情。
+3. **产物预览**：顶部加「📂 打开文件 / 📁 所在文件夹」，并改成取**第一个真实存在的**产物。
+4. **设置面板「🔗 接入」改成二级标签页**：飞书 / Lark · Discord · 微信 · 通用 Webhook
+   四个标签，**一次只显示一个通道**（原来四组平铺，面板被拉成一条长龙）。
+5. **聊天页小人高度与头部对齐**：实测卡片内高 80px、小人 89px → **被切掉 9px**。
+   改成由小人高度反推卡片高度（内高 == 小人高）。
+6. **支付接口：保留**。它是"给**你做出来的项目**接收单"（产出可拷走的收单适配层文件，
+   沙箱真 HMAC 签名 + 真状态机），**不是替你付款**（那类操作在安全底线里一律不做）。
+   这一定位现在写在支付页最上面，一眼可见。
+
+> 本轮验证：桌面守门套件 **25 个脚本 832 项断言 0 失败**（含 3 组反例对照，其中一组起
+> **假 Ollama 服务端**证明请求真的打到 `/api/chat` 且参数带全了）。
 
 ### v0.30.11（2026-09-17）· 12 项真机反馈全部落地 + 产物统一到一个工作根
 
@@ -363,9 +382,9 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 ## 下载与安装
 
-最新版见仓库 **Releases**（v0.30.14，单文件约 86.7MB）：
+最新版见仓库 **Releases**（v0.30.15，单文件约 86.8MB）：
 
-1. 下载 `PASMStudio-Setup-0.30.14.exe`
+1. 下载 `PASMStudio-Setup-0.30.15.exe`
 2. 双击安装 → 打开 PASM Studio → 点右上「设置」填 LLM Key（或留空用本地 Ollama）
 3. 开始聊天；要用「图像/视频/漫剧」真出片时，首次使用按提示接入出图引擎（约 1 分钟）
 
@@ -417,24 +436,53 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 > **It never loses what you typed, and never claims to have done something it didn't** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.30.14 (2026-09-17) · Third-party integrations: Feishu / Discord / WeChat / Webhook — all four channels bidirectional
+## Latest: v0.30.15 (2026-09-17) · Found the real cause of the slow chat: a NameError swallowed by `except`
 
-**Settings → 💳 Payment** (6th tab) now lets you configure the payment channel without editing any config file:
+**"I typed 你好 and nothing came back for a minute" was not a slow model — the local path was silently downgraded.**
+The log says it plainly: `native /api/chat unavailable, falling back to the compatible endpoint:
+name 'base_url' is not defined`. A typo'd variable name raised a `NameError` that an outer
+`except Exception` swallowed into a single INFO line, so every request fell back to the
+compatible endpoint — which **drops three critical parameters**:
 
-- **Channel** dropdown: Sandbox (default, never charges real money) / WeChat Pay / Alipay — the fields below switch automatically;
-- **WeChat Pay**: merchant ID (`mch_id`), app ID, **APIv3 key**, cert serial, merchant private key file (with a file picker), notify URL;
-- **Alipay**: App ID, app private key file, Alipay public key file, gateway, notify URL;
-- **🔎 Check readiness** names exactly what is missing (e.g. "missing private_key_path") — no silent degradation.
+| Dropped parameter | Consequence |
+|---|---|
+| `keep_alive` | Model gets evicted from VRAM → **45 s cold load** on the next request |
+| `num_ctx` | Context not narrowed → slower |
+| `think=false` | **Thinking chain stays on** → 20 s to first token, 2000+ chars of thinking |
 
-Four safety guarantees:
+After the fix, the worst round is back to normal (measured: first token in 1–2 s locally).
 
-1. **Key fields are masked** (e.g. `WX_S************34`) — leave them untouched to keep the stored value; keys never appear in logs or in the UI in clear text;
-2. **"Allow real payments" (live) is off by default** and requires an explicit confirmation; if you click No, the checkbox snaps back;
-3. **Filling in credentials is not the same as charging money** — live must be turned on explicitly;
-4. Config lives in `%APPDATA%\PASMStudio\payment.json` and is read back for verification after saving.
+**Plus a new static gate** (`tools/check_undefined_names.py`) that finds names which are read but
+never defined. Sweeping the repo with it turned up **4 more of the same class** (all "swallowed by
+except → feature silently dead") — one of them is exactly the **"no artifact preview"** you reported:
+the preview code for text/plan artifacts used an un-imported `_io`, so it always errored.
 
-Changes take effect on save — no restart needed. The sandbox uses real HMAC signing and a real state machine,
-so you can exercise the full order → pay → notify-verify → query → refund flow before connecting a live channel.
+**Six more things:**
+
+1. **Clicking 📋 Copy no longer eats the chat transcript** — Qt's `QTextBrowser` calls `setSource`
+   after the anchor click, and our copy link (`pasm://copy/0`) is not a real resource, so the whole
+   message body was replaced by a blank error page. Fixed.
+2. **"Can't find the work I just finished"** — the entry point existed (left workbench list,
+   `Task#tXXX`, double-click for details) but **double-click crashed** (the detail dialog was
+   missing an attribute). Fixed, and the workflow page now has a
+   **"📂 Completed work (view artifacts)"** button: lists artifacts that really exist, click a
+   filename to **open it**, click a title for details.
+3. **Artifact preview**: added 📂 Open file / 📁 Show in folder, and it now previews the first
+   artifact that actually exists on disk.
+4. **Settings → 🔗 Integrations is now a second-level tab strip**: Feishu / Lark · Discord ·
+   WeChat · Generic Webhook, **showing one channel at a time** (the four flat groups used to
+   stretch the dialog into a very long column).
+5. **Chat-header companion now aligns with the header card height**: measured inner height was
+   80 px while the avatar is 89 px, so it was **clipped by 9 px**. The card height is now derived
+   from the avatar height (inner height == avatar height).
+6. **Payment stays.** It is "take payments for the project **you** build" (it emits a portable
+   payment-adapter layer, sandbox with real HMAC signing and a real state machine), **not**
+   "pay on your behalf" (that class of action is a hard safety boundary). This positioning is now
+   displayed at the top of the payment page.
+
+> Verification this round: desktop guard suite — **25 scripts, 832 assertions, 0 failures**
+> (including three counter-example controls; one of them spins up a **fake Ollama server** to
+> prove the request really hits `/api/chat` with all parameters present).
 
 ### v0.30.11 (2026-09-17) · All 12 field reports fixed · everything under one work root
 
@@ -729,9 +777,9 @@ PASM Studio is a **dual-brain architecture + cognitive execution cortex**:
 
 ## Download & install
 
-Grab the latest from **[Releases](https://github.com/arronJack/pasm-qclaw/releases)** (v0.30.14, single ~86.7 MB file):
+Grab the latest from **[Releases](https://github.com/arronJack/pasm-qclaw/releases)** (v0.30.15, single ~86.8 MB file):
 
-1. Download `PASMStudio-Setup-0.30.14.exe`
+1. Download `PASMStudio-Setup-0.30.15.exe`
 2. Install → launch PASM Studio → open ⚙ Settings and enter an LLM key (or leave empty for local Ollama)
 3. Start chatting. For real image/video/manga output, connect an image engine on first use (~1 minute)
 
