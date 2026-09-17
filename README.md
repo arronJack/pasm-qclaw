@@ -15,7 +15,7 @@
 | `pasm-mcp-server` | MCP 接入层：给任意 AI 客户端装长期记忆 | 公开 | 0.2.0 |
 | `PASM-Lite` | 教学版 + 认知引擎接口 | 公开 | — |
 | `PASM` | 核心引擎（七层仿生 / 世界模型） | **私有** | 0.7.2 |
-| **`pasm-qclaw`（本仓）** | **桌面应用发行通道** | 公开 | **0.30.11** |
+| **`pasm-qclaw`（本仓）** | **桌面应用发行通道** | 公开 | **0.30.12** |
 
 本仓是**发行通道**（安装包 + 更新清单 `latest.json`），桌面源码在私有核心仓 `PASM/desktop`。
 
@@ -33,7 +33,26 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.30.11（2026-09-17）· 12 项真机反馈全部落地 + 产物统一到一个工作根
+## 最新：v0.30.12（2026-09-17）· 设置面板新增「💳 支付」：微信 / 支付宝的商户号与 API 密钥在界面里填
+
+在 **⚙ 设置 → 💳 支付**（第 6 页）直接配置收款渠道，不用再手改配置文件：
+
+- **收款渠道**下拉：沙箱（默认，不真实收款）/ 微信支付 / 支付宝 —— 切换时下方字段自动跟着换；
+- **微信支付**：商户号 `mch_id`、应用 `app_id`、**APIv3 密钥**、证书序列号、商户私钥文件（带「…」直接选文件）、回调地址；
+- **支付宝**：应用 AppID、**应用私钥文件**、支付宝公钥文件、网关地址、回调地址；
+- **🔎 检查就绪状态**：缺哪项就点名哪项（例如「缺 private_key_path」），不静默降级。
+
+安全上做了四件事：
+
+1. **密钥框只显示掩码**（如 `WX_S************34`）—— 不动它就按原值保存，要改就全选重填；密钥不进日志、不回显；
+2. **「允许真实收款」默认关闭**，由关到开要**二次确认**；点「否」时连界面上的勾也会拨回去；
+3. **填好凭据 ≠ 会收钱** —— 要收钱必须显式打开 live；
+4. 配置写 `%APPDATA%\PASMStudio\payment.json`，保存后**回读校验**。
+
+改完**保存即生效，不用重启**。沙箱用的是真 HMAC 签名 + 真状态机，可以把
+「下单 → 支付 → 回调验签 → 查单 → 退款」整条链路先跑通，再接真渠道。
+
+### v0.30.11（2026-09-17）· 12 项真机反馈全部落地 + 产物统一到一个工作根
 
 - **🛩️ 飞天变了**：起飞**原地变身**成飞机形态（不再是"人形平移"），落地变回人形；航线改成随机曲线，
   不再是规规矩矩的直线矩形。
@@ -344,9 +363,9 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 ## 下载与安装
 
-最新版见仓库 **Releases**（v0.30.2，单文件约 75.8MB）：
+最新版见仓库 **Releases**（v0.30.12，单文件约 86.6MB）：
 
-1. 下载 `PASMStudio-Setup-0.30.2.exe`
+1. 下载 `PASMStudio-Setup-0.30.12.exe`
 2. 双击安装 → 打开 PASM Studio → 点右上「设置」填 LLM Key（或留空用本地 Ollama）
 3. 开始聊天；要用「图像/视频/漫剧」真出片时，首次使用按提示接入出图引擎（约 1 分钟）
 
@@ -398,7 +417,26 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 > **It never loses what you typed, and never claims to have done something it didn't** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.30.11 (2026-09-17) · All 12 field reports fixed · everything under one work root
+## Latest: v0.30.12 (2026-09-17) · Payment settings page: configure WeChat Pay / Alipay merchant ID and API keys in the UI
+
+**Settings → 💳 Payment** (6th tab) now lets you configure the payment channel without editing any config file:
+
+- **Channel** dropdown: Sandbox (default, never charges real money) / WeChat Pay / Alipay — the fields below switch automatically;
+- **WeChat Pay**: merchant ID (`mch_id`), app ID, **APIv3 key**, cert serial, merchant private key file (with a file picker), notify URL;
+- **Alipay**: App ID, app private key file, Alipay public key file, gateway, notify URL;
+- **🔎 Check readiness** names exactly what is missing (e.g. "missing private_key_path") — no silent degradation.
+
+Four safety guarantees:
+
+1. **Key fields are masked** (e.g. `WX_S************34`) — leave them untouched to keep the stored value; keys never appear in logs or in the UI in clear text;
+2. **"Allow real payments" (live) is off by default** and requires an explicit confirmation; if you click No, the checkbox snaps back;
+3. **Filling in credentials is not the same as charging money** — live must be turned on explicitly;
+4. Config lives in `%APPDATA%\PASMStudio\payment.json` and is read back for verification after saving.
+
+Changes take effect on save — no restart needed. The sandbox uses real HMAC signing and a real state machine,
+so you can exercise the full order → pay → notify-verify → query → refund flow before connecting a live channel.
+
+### v0.30.11 (2026-09-17) · All 12 field reports fixed · everything under one work root
 
 - **🛩️ Flight reworked**: it now **transforms into a plane in place** on take-off (no more a human
   sliding through the air) and turns back on landing; the route is a random curve, not a tidy
@@ -687,13 +725,13 @@ PASM Studio is a **dual-brain architecture + cognitive execution cortex**:
 
 **Reliability**
 - Windows 10/11 x64 minimum (Win7/8 dropped); startup errors are readable messages + `crash.log` instead of a mysterious flash
-- ~51 MB installer; runs without torch (built-in lightweight cognitive core)
+- ~87 MB installer; runs without torch (built-in lightweight cognitive core)
 
 ## Download & install
 
-Grab the latest from **[Releases](https://github.com/arronJack/pasm-qclaw/releases)** (v0.30.2, single ~75.8 MB file):
+Grab the latest from **[Releases](https://github.com/arronJack/pasm-qclaw/releases)** (v0.30.12, single ~86.6 MB file):
 
-1. Download `PASMStudio-Setup-0.30.2.exe`
+1. Download `PASMStudio-Setup-0.30.12.exe`
 2. Install → launch PASM Studio → open ⚙ Settings and enter an LLM key (or leave empty for local Ollama)
 3. Start chatting. For real image/video/manga output, connect an image engine on first use (~1 minute)
 
