@@ -15,7 +15,7 @@
 | `pasm-mcp-server` | MCP 接入层：给任意 AI 客户端装长期记忆 | 公开 | 0.2.0 |
 | `PASM-Lite` | 教学版 + 认知引擎接口 | 公开 | — |
 | `PASM` | 核心引擎（七层仿生 / 世界模型） | **私有** | 0.7.2 |
-| **`pasm-qclaw`（本仓）** | **桌面应用发行通道** | 公开 | **0.30.12** |
+| **`pasm-qclaw`（本仓）** | **桌面应用发行通道** | 公开 | **0.30.13** |
 
 本仓是**发行通道**（安装包 + 更新清单 `latest.json`），桌面源码在私有核心仓 `PASM/desktop`。
 
@@ -33,7 +33,7 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.30.12（2026-09-17）· 设置面板新增「💳 支付」：微信 / 支付宝的商户号与 API 密钥在界面里填
+## 最新：v0.30.13（2026-09-17）· 广告设计 ≠ 图像 / 慢机也能好好聊天 / 工作流自动起步
 
 在 **⚙ 设置 → 💳 支付**（第 6 页）直接配置收款渠道，不用再手改配置文件：
 
@@ -363,9 +363,9 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 ## 下载与安装
 
-最新版见仓库 **Releases**（v0.30.12，单文件约 86.6MB）：
+最新版见仓库 **Releases**（v0.30.13，单文件约 86.6MB）：
 
-1. 下载 `PASMStudio-Setup-0.30.12.exe`
+1. 下载 `PASMStudio-Setup-0.30.13.exe`
 2. 双击安装 → 打开 PASM Studio → 点右上「设置」填 LLM Key（或留空用本地 Ollama）
 3. 开始聊天；要用「图像/视频/漫剧」真出片时，首次使用按提示接入出图引擎（约 1 分钟）
 
@@ -417,7 +417,7 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 > **It never loses what you typed, and never claims to have done something it didn't** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.30.12 (2026-09-17) · Payment settings page: configure WeChat Pay / Alipay merchant ID and API keys in the UI
+## Latest: v0.30.13 (2026-09-17) · Ad design is now a real deliverable / slow machines can chat / workflows auto-start
 
 **Settings → 💳 Payment** (6th tab) now lets you configure the payment channel without editing any config file:
 
@@ -729,9 +729,9 @@ PASM Studio is a **dual-brain architecture + cognitive execution cortex**:
 
 ## Download & install
 
-Grab the latest from **[Releases](https://github.com/arronJack/pasm-qclaw/releases)** (v0.30.12, single ~86.6 MB file):
+Grab the latest from **[Releases](https://github.com/arronJack/pasm-qclaw/releases)** (v0.30.13, single ~86.6 MB file):
 
-1. Download `PASMStudio-Setup-0.30.12.exe`
+1. Download `PASMStudio-Setup-0.30.13.exe`
 2. Install → launch PASM Studio → open ⚙ Settings and enter an LLM key (or leave empty for local Ollama)
 3. Start chatting. For real image/video/manga output, connect an image engine on first use (~1 minute)
 
