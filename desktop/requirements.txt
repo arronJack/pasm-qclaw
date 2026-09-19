@@ -1,0 +1,14 @@
+# PASM Studio 桌面版依赖（v0.16：最低 Windows 10 / Python 3.10+，Qt6 单后端）
+# 不再兼容 Win7/Win8、不再使用 PyQt5 —— 详见 CHANGELOG 0.16.0
+PySide6>=6.6
+pyttsx3>=2.90
+comtypes>=1.2
+openai>=1.30
+edge-tts>=6.1.0
+python-docx>=0.8.11
+python-pptx>=0.6.23
+openpyxl>=3.1
+# 浏览器自动化（打开网页/搜索/点击/填表/截图）。优先复用系统自带 Edge，
+# 无需再跑 playwright install chromium；不装也只影响浏览器能力（会优雅提示）。
+playwright>=1.40
+# torch>=2.0  # 如需完整 PASM 训练功能另行安装 CPU 版（打包体积考虑默认不带）

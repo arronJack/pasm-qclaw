@@ -15,9 +15,16 @@
 | `pasm-mcp-server` | MCP 接入层：给任意 AI 客户端装长期记忆 | 公开 | 0.2.0 |
 | `PASM-Lite` | 教学版 + 认知引擎接口 | 公开 | — |
 | `PASM` | 核心引擎（七层仿生 / 世界模型） | **私有** | 0.7.2 |
-| **`pasm-qclaw`（本仓）** | **桌面应用发行通道** | 公开 | **0.30.16** |
+| **`pasm-qclaw`（本仓）** | **桌面应用（UI 外壳，已开源）** | 公开 | **0.31.0** |
 
-本仓是**发行通道**（安装包 + 更新清单 `latest.json`），桌面源码在私有核心仓 `PASM/desktop`。
+本仓**现在包含 PASM Studio 桌面端的开源源码**（[`desktop/`](desktop/README.md) 目录，基于 PySide6 的 Windows 桌面应用 UI/外壳层），
+同时仍是安装包与更新清单 `latest.json` 的**发行通道**。
+
+> **开源边界（务必先读）**：`desktop/` 是**应用外壳 / UI 层**，它依赖私有的 **PASM 认知核心引擎**
+> （`pasm.cognitive`、`pasm.agent`、`pasm.engine_api` 等，位于私有仓 `PASM/`，不开源）。
+> 因此本仓可独立阅读与学习桌面端结构，但**单独无法编译运行**——
+> 编译需要把私有核心引擎以依赖形式接入（见 [`desktop/README.md`](desktop/README.md) 的「依赖与构建」）。
+> 核心引擎的算法、记忆/世界模型/规划器等仍在闭源仓迭代（含即将到来的 PASM V2.0 深层重构）。
 
 地址：[Gitee](https://gitee.com/arronzheng/pasm-qclaw) ·
 [GitHub](https://github.com/arronJack/pasm-qclaw)
