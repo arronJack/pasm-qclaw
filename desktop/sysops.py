@@ -16,7 +16,20 @@ import sys
 import json
 import time
 import ctypes
-import ctypes.wintypes as wt
+
+#: 本模块只用 4 个 Win32 类型名。`ctypes.wintypes` 在 CPython 各平台其实都能导入
+#: （它只是纯类型定义，没有平台守卫），但为了**不在非 Windows 上留隐式依赖**、
+#: 也避免未来版本差异，这里显式用固定宽度类型等价表达，并在缺用时回落到本地定义。
+try:                                        # 标准定义优先（Windows 上是完整的）
+    import ctypes.wintypes as wt
+except Exception:                           # pragma: no cover - 非 Windows 兜底
+    class _WintypesShim:                    # 仅覆盖本模块用到的 4 个名字
+        HWND = ctypes.c_void_p
+        UINT = ctypes.c_uint
+        LPCWSTR = ctypes.c_wchar_p
+        BOOL = ctypes.c_int
+
+    wt = _WintypesShim
 
 APPDATA_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")),
                            "PASMStudio")
@@ -284,7 +297,6 @@ def desktop_dir() -> str:
     if sys.platform == "win32":
         try:
             import ctypes
-            from ctypes import wintypes
 
             class _GUID(ctypes.Structure):
                 _fields_ = [("d1", ctypes.c_ulong), ("d2", ctypes.c_ushort),

@@ -1,0 +1,19 @@
+# PASM Studio 依赖（Linux / macOS 专用清单）
+#
+# 与 `requirements.txt` 的关系：那份是 **Windows 权威清单**，含 `comtypes`（Windows 专用）。
+# 本文件 = 去掉 Windows 专属项后的跨平台子集，供 Linux / macOS 构建使用。
+#
+# ⚠ 缺失的平台能力（脚本里已做优雅降级，不会崩）：
+#   · 系统音频自愈（注册表 MMDevices + WASAPI）→ desktop/audio.py 已按平台守卫，非 Windows 返回"无需处理"
+#   · SAPI 语音（走 comtypes）→ 自动回落到 edge-tts（联网）或无声（不报错）
+#   · 开机自启走 HKCU Run 键 → desktop/autostart.py 在 macOS/Linux 上报告"不支持"
+
+PySide6>=6.6
+pyttsx3>=2.90
+openai>=1.30
+edge-tts>=6.1.0
+python-docx>=0.8.11
+python-pptx>=0.6.23
+openpyxl>=3.1
+# 浏览器自动化：Linux/macOS 上需要 `playwright install chromium`（CI 里已加该步）
+playwright>=1.40

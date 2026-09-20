@@ -11,21 +11,50 @@
 import ctypes
 import os
 import re
-import winreg
-from ctypes import wintypes
+import sys
 from uuid import UUID
 
-_ole32 = ctypes.OleDLL("ole32")
-_ole32.CoInitializeEx(None, 0x2)          # COINIT_APARTMENTTHREADED
+#: 本模块是 **Windows 专用**的音频自愈（读注册表 MMDevices + COM 端点音量）。
+#:
+#: ⚠ 跨平台约束：其它系统必须能**安全导入**本模块 —— 否则调用方
+#: （`pasm_companion.py` 顶层 `import audio`）会让应用在 Linux/macOS 上**启动即崩**。
+#: 所以：① Windows 专有的 ctypes 成员一律 `getattr` 取，缺失时降级；
+#: ② 每个公开函数在非 Windows 上直接返回"无需处理"的默认值（不抛异常）。
+_IS_WINDOWS = sys.platform == "win32"
+
+try:                                        # 仅 Windows 存在
+    import winreg
+except ImportError:                         # pragma: no cover - 非 Windows
+    winreg = None
+
 CLSCTX_ALL = 23
 E_RENDER, E_CONSOLE = 0, 0
-HRESULT = ctypes.HRESULT
+# Windows 上有 ctypes.HRESULT；其它平台用等价的 4 字节整数占位（类型仅用于原型声明）。
+HRESULT = getattr(ctypes, "HRESULT", ctypes.c_long)
 LPGUID = ctypes.c_void_p
+# 固定宽度类型：等价于 ctypes._tDWORD / WORD / BYTE / BOOL / LPWSTR，
+# 但**不依赖** wintypes 模块（少一层隐式平台依赖）。
+_tDWORD, _tWORD, _tBYTE = ctypes.c_uint32, ctypes.c_uint16, ctypes.c_ubyte
+_tBOOL, _tLPWSTR = ctypes.c_int, ctypes.c_wchar_p
+
+
+def is_supported() -> bool:
+    """本机是否支持 Windows 音频自愈（供调用方决定要不要展示相关设置）。"""
+    return _IS_WINDOWS
+
+
+# COM 初始化：只在 Windows 上做（其它平台根本没有 ole32）。
+_ole32 = None
+if _IS_WINDOWS:
+    _OleDLL = getattr(ctypes, "OleDLL", None)
+    if _OleDLL is not None:
+        _ole32 = _OleDLL("ole32")
+        _ole32.CoInitializeEx(None, 0x2)    # COINIT_APARTMENTTHREADED
 
 
 class GUID(ctypes.Structure):
-    _fields_ = [("Data1", wintypes.DWORD), ("Data2", wintypes.WORD),
-                ("Data3", wintypes.WORD), ("Data4", wintypes.BYTE * 8)]
+    _fields_ = [("Data1", _tDWORD), ("Data2", _tWORD),
+                ("Data3", _tWORD), ("Data4", _tBYTE * 8)]
 
     def __init__(self, s=None):
         super().__init__()
@@ -34,7 +63,7 @@ class GUID(ctypes.Structure):
             self.Data1 = u.time_low
             self.Data2 = u.time_mid & 0xFFFF
             self.Data3 = u.time_hi_version & 0xFFFF
-            self.Data4 = (wintypes.BYTE * 8)(
+            self.Data4 = (_tBYTE * 8)(
                 *(bytes([u.clock_seq_hi_variant, u.clock_seq_low])
                   + u.node.to_bytes(6, "big")))
 
@@ -62,7 +91,9 @@ def _vtbl(obj):
 def _fn(obj, idx, restype, argtypes):
     """取 COM vtable 第 idx 个槽并包成可调用函数。"""
     fp = _vtbl(obj)[idx]
-    proto = ctypes.WINFUNCTYPE(restype, ctypes.c_void_p, *argtypes)
+    # WINFUNCTYPE 仅 Windows 存在；本函数只在 Windows 分支被调用，
+    # 这里显式取值以便非 Windows 上给出清晰错误而不是 AttributeError。
+    proto = getattr(ctypes, "WINFUNCTYPE")(restype, ctypes.c_void_p, *argtypes)
     return proto(fp)
 
 
@@ -95,6 +126,8 @@ def _endpoint_name(guid_or_id: str) -> str:
 
 def list_render_endpoints() -> list:
     """所有渲染端点 (guid, name, state)，state=1 为活动。"""
+    if not _IS_WINDOWS:
+        return []                       # 非 Windows 没有 MMDevices 注册表 → 空列表
     out = []
     try:
         k = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, _RENDER)
@@ -122,6 +155,8 @@ def list_render_endpoints() -> list:
 
 def default_endpoint_guid() -> str | None:
     """读取当前默认（多媒体/控制台角色）渲染端点 GUID。"""
+    if not _IS_WINDOWS:
+        return None                     # 非 Windows 无此概念
     try:
         k = winreg.OpenKey(winreg.HKEY_CURRENT_USER, _RENDER)
         i = 0
@@ -159,6 +194,10 @@ def heal_and_diagnose(adjust: bool | None = None) -> str:
     取消静音 + 音量过低(<35%)时拉回 60%。
     全程 try/except，任何一步失败都不影响调用方（自愈尽力而为）。
     """
+    if not _IS_WINDOWS:
+        # 非 Windows：没有 MMDevices 注册表与 WASAPI 端点，本模块**无事可做**。
+        # 返回可读文本而不是抛异常 —— 调用方（语音链路）会把它写进日志/界面。
+        return "音频自愈仅支持 Windows；当前系统（%s）由系统自行管理音频，无需处理。" % sys.platform
     if adjust is None:
         adjust = ALLOW_TWEAK
     lines = []
@@ -188,8 +227,8 @@ def heal_and_diagnose(adjust: bool | None = None) -> str:
         # 设备名（先注册表默认角色，后 COM GetId 尾段）
         dev_id = ""
         try:
-            GetId = _fn(dev, 5, HRESULT, [ctypes.POINTER(wintypes.LPWSTR)])
-            pid = wintypes.LPWSTR()
+            GetId = _fn(dev, 5, HRESULT, [ctypes.POINTER(_tLPWSTR)])
+            pid = _tLPWSTR()
             if GetId(dev, ctypes.byref(pid)) == 0 and pid.value:
                 dev_id = pid.value
                 _ole32.CoTaskMemFree(pid)
@@ -200,7 +239,7 @@ def heal_and_diagnose(adjust: bool | None = None) -> str:
         lines.append("默认播放设备：" + dev_name)
         # Activate IAudioEndpointVolume
         Activate = _fn(dev, 3, HRESULT,
-                       [ctypes.POINTER(GUID), wintypes.DWORD, ctypes.c_void_p,
+                       [ctypes.POINTER(GUID), _tDWORD, ctypes.c_void_p,
                         ctypes.POINTER(ctypes.c_void_p)])
         vol = ctypes.c_void_p()
         hr = Activate(dev, ctypes.byref(IID_IAudioEndpointVolume),
@@ -208,11 +247,11 @@ def heal_and_diagnose(adjust: bool | None = None) -> str:
         if hr != 0 or not vol.value:
             lines.append("无法访问音量接口（可能无权限，hr=0x%08X）" % (hr & 0xFFFFFFFF))
             return "\n".join(lines)
-        GetMute = _fn(vol, 15, HRESULT, [ctypes.POINTER(wintypes.BOOL)])
-        SetMute = _fn(vol, 14, HRESULT, [wintypes.BOOL, LPGUID])
+        GetMute = _fn(vol, 15, HRESULT, [ctypes.POINTER(_tBOOL)])
+        SetMute = _fn(vol, 14, HRESULT, [_tBOOL, LPGUID])
         GetVol = _fn(vol, 9, HRESULT, [ctypes.POINTER(ctypes.c_float)])
         SetVol = _fn(vol, 7, HRESULT, [ctypes.c_float, LPGUID])
-        muted = wintypes.BOOL(0)
+        muted = _tBOOL(0)
         level = ctypes.c_float(1.0)
         if GetMute(vol, ctypes.byref(muted)) == 0:
             if muted.value:
@@ -250,6 +289,9 @@ def heal_and_diagnose(adjust: bool | None = None) -> str:
 
 def ensure_audible() -> bool:
     """发声前诊断一次（默认只读，不动系统音量），返回是否至少有可用的活动输出端点。"""
+    if not _IS_WINDOWS:
+        # 非 Windows：不介入系统音频，直接放行（返回 True = 不阻塞播放）
+        return True
     try:
         any_active = any(e[2] == 1 for e in list_render_endpoints())
     except Exception:

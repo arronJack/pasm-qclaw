@@ -1228,8 +1228,14 @@ def open_vault() -> dict:
         return res
     res["ok"] = bool(r.get("ok"))
     fn = _opener
-    if fn is None and os.name == "nt":
-        fn = os.startfile
+    if fn is None:
+        # 跨平台：platform_ops.startfile 在 Windows=os.startfile / macOS=open / Linux=xdg-open
+        # （旧版只在 Windows 上给 fn，非 Windows 一律"不支持自动打开"）
+        try:
+            import platform_ops
+            fn = platform_ops.startfile
+        except Exception:
+            fn = None
     if fn is None:
         res["err"] = "当前系统不支持自动打开文件夹，请手动打开上面的路径"
         return res

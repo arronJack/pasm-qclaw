@@ -57,6 +57,7 @@ from updater import check_async
 from offline_brain import reply as offline_reply
 import tts as tts_mod
 import audio as audio_mod
+import platform_ops as PLATFORM_OPS   # 跨平台：打开文件 / 在文件管理器中定位（v0.31.1）
 import asr as asr_mod
 from knowledge import learned_bullets, record as kb_record, summarize as kb_summary, read_book as kb_read
 import knowledge
@@ -2676,7 +2677,8 @@ class TaskDialog(QDialog):
         p = item.text()
         try:
             if os.path.exists(p):
-                os.startfile(p)
+                # 跨平台：Windows=os.startfile / macOS=open / Linux=xdg-open
+                PLATFORM_OPS.open_path(p)
         except Exception:
             pass
 
@@ -4985,7 +4987,7 @@ class CompanionWindow(QMainWindow):
         try:
             ws = self.cfg.get("ws_dir")
             target = ws if (ws and os.path.isdir(ws)) else AT.SCRIPTS_DIR
-            os.startfile(target)
+            PLATFORM_OPS.startfile(target)
         except Exception:
             pass
 
@@ -5002,9 +5004,9 @@ class CompanionWindow(QMainWindow):
         if path and os.path.exists(path):
             try:
                 if os.path.isdir(path):
-                    os.startfile(path)
+                    PLATFORM_OPS.startfile(path)
                 else:
-                    os.startfile(path)
+                    PLATFORM_OPS.startfile(path)
             except Exception:
                 pass
 
@@ -5866,7 +5868,7 @@ class CompanionWindow(QMainWindow):
                 QMessageBox.information(self, "产出目录", "还没有执行产出。先点「▶ 让团队开工」。")
                 return
         try:
-            os.startfile(rd)
+            PLATFORM_OPS.startfile(rd)
         except Exception as ex:
             QMessageBox.information(self, "产出目录", "打不开目录：%s\n路径：%s" % (ex, rd))
 
@@ -13460,7 +13462,7 @@ class CompanionWindow(QMainWindow):
             pass
         folder = os.path.dirname(path)
         try:
-            os.startfile(folder)          # 打开所在文件夹让你直接看到
+            PLATFORM_OPS.startfile(folder)          # 打开所在文件夹让你直接看到
         except Exception:
             pass
         # v0.30.17：登记"文档与演示"效果 —— 效果区的正文就是**成稿本身**，
@@ -13729,7 +13731,7 @@ class CompanionWindow(QMainWindow):
         for idx, p in paths:
             lines += ["", f"![图{idx:02d}]({CRE._as_uri(p)})"]
         try:
-            os.startfile(pkg)
+            PLATFORM_OPS.startfile(pkg)
         except Exception:
             pass
         # v0.30.17：登记效果 → 右栏「产出」自动开一个效果页（图在上、路径在下）
@@ -13850,7 +13852,7 @@ class CompanionWindow(QMainWindow):
         except Exception as ex:
             return "成片渲染失败：" + str(ex)
         try:
-            os.startfile(pkg)
+            PLATFORM_OPS.startfile(pkg)
         except Exception:
             pass
         ff = self._ensure_ff()
@@ -14263,7 +14265,7 @@ class CompanionWindow(QMainWindow):
         except Exception as ex:
             return "成片渲染失败：" + str(ex)
         try:
-            os.startfile(pkg)
+            PLATFORM_OPS.startfile(pkg)
         except Exception:
             pass
         mp4 = ""
@@ -15090,10 +15092,10 @@ class CompanionWindow(QMainWindow):
                 self._panel_note(key, "⚠️ 产物已不在原位置：%s" % (p or "(还没有产物)"), "warn")
                 return
             if os.path.isdir(p):
-                os.startfile(p)                       # noqa: S606  用户自己的产物目录
+                PLATFORM_OPS.open_path(p)              # 跨平台：打开目录
                 return
-            import subprocess
-            subprocess.Popen(["explorer", "/select,", os.path.normpath(p)])
+            # 定位到文件（Windows=explorer /select, · macOS=open -R · Linux=打开所在目录）
+            PLATFORM_OPS.reveal_in_file_manager(p)
         except Exception as ex:                                  # noqa: BLE001
             logging.exception("reveal artifact failed")
             self._panel_note(key, "定位失败：%s" % ex, "err")
@@ -15240,7 +15242,7 @@ class CompanionWindow(QMainWindow):
         try:
             p = (self._out_tabs.get(key) or {}).get("path") or ""
             if p and os.path.exists(p):
-                os.startfile(p)              # noqa: S606  打开的是用户自己的产物
+                PLATFORM_OPS.startfile(p)              # noqa: S606  打开的是用户自己的产物
             else:
                 self._panel_note(key, "产物不存在（可能已被移走）：%s"
                                  % (p or "(还没有产物)"), "warn")
@@ -15608,11 +15610,11 @@ class CompanionWindow(QMainWindow):
             if folder:
                 d = path if os.path.isdir(path) else os.path.dirname(path)
                 if os.path.isdir(d):
-                    os.startfile(d)
+                    PLATFORM_OPS.startfile(d)
                     return True
                 return False
             if os.path.exists(path):
-                os.startfile(path)
+                PLATFORM_OPS.startfile(path)
                 return True
         except Exception:
             logging.exception("打开产物失败：%s", path)

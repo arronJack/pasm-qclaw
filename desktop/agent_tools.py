@@ -30,6 +30,8 @@ import urllib.request
 import zipfile
 from typing import List, Optional, Tuple
 
+import platform_ops                  # 跨平台：打开文件 / 定位 / 脚本解释器（v0.31.1）
+
 if os.name == "nt":
     DATA_DIR = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"),
                             "PASMStudio")
@@ -211,10 +213,10 @@ def _proc_alive(proc: str, wait_s: float = 0.0) -> bool:
 def _launch_and_check(exe: str, proc: str, label: str) -> str:
     """真实启动 + 真实验证：进程出现才算"已打开"；否则如实说明。
     返回给用户看的文本（以 ! 开头 = 失败需提示）。"""
-    try:
-        os.startfile(exe)
-    except Exception as ex:
-        return "!启动「%s」失败：%s" % (label, ex)
+    # 跨平台：Windows 用 os.startfile，macOS 用 open，Linux 用 xdg-open（见 platform_ops）。
+    _ok, _msg = platform_ops.open_path(exe)
+    if not _ok:
+        return "!启动「%s」失败：%s" % (label, _msg)
     if proc and not _proc_alive(proc, 0.9) and not _proc_alive(proc, 1.1):
         # 两次仍未见进程 → 明确告知"只发了指令、没确认到进程"
         return "已发送启动指令，但几秒内没检测到「%s」进程——若窗口没弹出，请检查应用是否正常安装，或告诉我它的安装路径，我直接打开。" % label
@@ -345,7 +347,7 @@ def open_app(name: str) -> str:
     p = resolve_path(name)
     if p:
         try:
-            os.startfile(p)
+            platform_ops.startfile(p)
             return f"已打开：`{p}`"
         except Exception as ex:
             return "!打开失败：" + str(ex)
@@ -362,7 +364,7 @@ def open_app(name: str) -> str:
                     continue
                 if name.lower() in fn[:-4].lower():
                     try:
-                        os.startfile(os.path.join(root, fn))
+                        platform_ops.startfile(os.path.join(root, fn))
                         return f"已打开「{fn[:-4]}」。"
                     except Exception:
                         continue
@@ -384,7 +386,7 @@ def open_path(path: str) -> str:
     if not p:
         return "!" + (path or "空路径")
     try:
-        os.startfile(p)
+        platform_ops.startfile(p)
     except Exception as ex:
         return "!" + str(ex)
     return p
@@ -945,12 +947,17 @@ def run_script(path: str, timeout: int = 60) -> str:
                                text=True, timeout=timeout, encoding="utf-8",
                                errors="replace")
         elif ext == ".bat":
-            r = _sp(["cmd", "/c", path], capture_output=True,
+            # .bat 是 Windows 批处理；非 Windows 上不能假装能跑，如实说清。
+            _argv = platform_ops.script_argv(path)
+            if _argv is None:
+                return ("这是 Windows 批处理脚本（.bat），%s 上无法直接运行。"
+                        % platform_ops.platform_name())
+            r = _sp(_argv, capture_output=True,
                                text=True, timeout=timeout, encoding="utf-8",
                                errors="replace")
         elif ext == ".html":
-            try:
-                os.startfile(path)          # 用默认浏览器打开看效果
+            _ok, _msg = platform_ops.open_path(path)   # 用默认浏览器打开看效果
+            if _ok:
                 try:
                     import sysops as _SYS
                     _SYS.note_action("open_browser", path, ok=True)
@@ -958,8 +965,7 @@ def run_script(path: str, timeout: int = 60) -> str:
                     pass
                 return ("网页已写好并用浏览器打开：`" + path + "`\n"
                         "（没弹出来的话手动双击该文件即可）")
-            except Exception:
-                return "网页已写好：`" + path + "`（双击即可在浏览器打开）"
+            return "网页已写好：`" + path + "`（双击即可在浏览器打开；%s）" % _msg
         elif ext == ".sh":
             sh = which("bash")
             if not sh:
@@ -1321,7 +1327,7 @@ def run_project(pdir: str, timeout: int = 45) -> str:
         if htmls:
             page = os.path.join(pdir, htmls[0])
             try:
-                os.startfile(page)
+                platform_ops.startfile(page)
                 return "🌐 前端页面已用浏览器打开：" + page
             except Exception:
                 return "项目已生成，入口页面：" + page
