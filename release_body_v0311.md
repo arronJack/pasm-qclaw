@@ -95,3 +95,36 @@
 
 功能与 v0.31.0 一致（本版主要动的是平台适配与构建链），可以按习惯升级；
 若你只关心 Windows 功能变化，可留在 0.31.0，或直接升到本版（无行为差异）。
+
+---
+
+## ⚠️ 从 Gitee 下载的用户：分卷合并（macOS / Linux）
+
+Gitee 单附件上限 100MB，因此 **macOS 的 `.dmg` 和 Linux 的 `.tar.gz` 被切成了多个 `<文件名>.00x` 分卷**
+（`PASMStudio-0.31.1-macos-arm64.dmg.001~.004`、`PASMStudio-0.31.1-linux-x86_64.tar.gz.001~.004`）。
+**必须先把分卷合并成完整文件才能使用**，单独一个分卷是打不开的。
+
+合并命令（在下载目录里执行，4 个分卷要全部下完）：
+
+**macOS（dmg）：**
+
+```bash
+cat PASMStudio-0.31.1-macos-arm64.dmg.001 \
+    PASMStudio-0.31.1-macos-arm64.dmg.002 \
+    PASMStudio-0.31.1-macos-arm64.dmg.003 \
+    PASMStudio-0.31.1-macos-arm64.dmg.004 \
+    > PASMStudio-0.31.1-macos-arm64.dmg
+```
+
+**Linux（tar.gz）：**
+
+```bash
+cat PASMStudio-0.31.1-linux-x86_64.tar.gz.001 \
+    PASMStudio-0.31.1-linux-x86_64.tar.gz.002 \
+    PASMStudio-0.31.1-linux-x86_64.tar.gz.003 \
+    PASMStudio-0.31.1-linux-x86_64.tar.gz.004 \
+    > PASMStudio-0.31.1-linux-x86_64.tar.gz
+```
+
+> - **Windows 安装器不用合并**：双击 `PASMStudio-Setup-0.31.1-gitee.exe` 即可，Inno Setup 会自动找同目录的 `.bin` 切片。
+> - **GitHub 端下载的是完整文件，无需合并**（GitHub 无 100MB 附件限制）。
