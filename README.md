@@ -15,7 +15,7 @@
 | `pasm-mcp-server` | MCP 接入层：给任意 AI 客户端装长期记忆 | 公开 | 0.2.0 |
 | `PASM-Lite` | 教学版 + 认知引擎接口 | 公开 | — |
 | `PASM` | 核心引擎（七层仿生 / 世界模型） | **私有** | 0.7.2 |
-| **`pasm-qclaw`（本仓）** | **桌面应用（UI 外壳，已开源）** | 公开 | **0.31.2** |
+| **`pasm-qclaw`（本仓）** | **桌面应用（UI 外壳，已开源）** | 公开 | **0.31.3** |
 
 本仓**现在包含 PASM Studio 桌面端的开源源码**（[`desktop/`](desktop/README.md) 目录，基于 PySide6 的 Windows 桌面应用 UI/外壳层），
 同时仍是安装包与更新清单 `latest.json` 的**发行通道**。
@@ -41,7 +41,76 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.31.2（2026-09-23）· 「我让它开发，它什么都没做」修好了 + 干活过程实时可见
+## 最新：v0.31.3（2026-09-23）· 「请立即开始」接得上上文了 + 「只答应、不动手」也治了
+
+**这一版补的是 PASM 最该有的两样东西：记得住上下文、说到做到。**
+
+### 一、说「请立即开始」，它不再跑偏
+
+你在开发栏目里只打一句「请立即开始」，旧版会把**这句话本身**当需求送进模型
+（提示词就是「帮我开发一个项目：请立即开始」）—— 模型只能凭空造。真机上造出来的项目名
+就叫「开发一个项目请立即开始」，而当时你真正在谈的是 `D:\Code副\springcloud-business`
+（Spring Boot），**位置、语言、项目全错**。
+
+现在这类"自己不含信息"的话会先把**要做什么**从上文找回来，四级兜底：
+
+| 优先级 | 来源 | 跨重启 |
+|---|---|---|
+| ① | 本栏目上一轮的需求 | 有（落盘 `work_session.json`） |
+| ② | 本会话的开发需求 | 有（会话落盘） |
+| ③ | **开发台账**里该项目的最后一条需求（新增核心接口 `workctx.last_request()`） | **有** |
+| ④ | 会话历史里最近一条有实质内容的消息 | 有 |
+
+并且会**明说依据**：聊天区写出「按上文继续：『…』」—— 说错了你当场就能纠正。
+⚠️ 图像 / 视频 / 漫剧**只认 ①**（画面需求不能被别的栏目历史顶替）。
+
+顺带修好两件：**项目名不再取废话**（有现成目录就取目录名）；**目标目录被尊重**
+（需求里写明**且真实存在**的目录 → 就在那里干活，不再一律跑到桌面另建；不存在的路径**不猜**）。
+
+### 二、「只答应、不动手」治好了（两条病根，缺一条都会复发）
+
+真机实录：你连说四轮「请开始执行 / 马上执行 / 执行方案A吧 / 请马上开发」，
+**每轮它都只回一句"我这就去扫一下…"就没了下文**，一个文件都没落地。
+
+| 病根 | 为什么旧版抓不到 | 现在 |
+|---|---|---|
+| **路由** | 这些口令**自己不含需求词** → `_detect_agent` 一律返回 `None` → 掉进普通聊天，模型手上**根本没有执行手段** | 催办口令接得上上文 → 落到执行器（干活栏直接开做；聊天栏出确认墙） |
+| **护栏** | 诚实性防线只认**完成时**（`已生成/已打开`）—— 而「我**这就去**」是**将来时**，一条都拦不到 | 新增**承诺守卫**：按「承诺词 + 真动作词**同句**」判定（`我这就去回答你`这类**不命中**） |
+
+护栏抓到后**不只改口** —— 能从"继承来的需求 / 本栏目上一轮 / 台账"里推断出要干什么，
+就挂上可点的「⚙️ 立刻开工」，**点一下就是真开做**；推断不出则如实说清并请你补一句，
+**绝不给一个点不出东西的假入口**。有真账（真扫过）时一律放行，不许误改口。
+
+### 三、聊天里也看得见过程了
+
+以前只有干活栏目有过程卡片，聊天栏只有一段流式文字 —— 你没法判断它到底有没有真去回忆、自查。
+现在**工具调用会摊开**：工具名（中文标签）、**关键参数**（如检索用的那个词，便于你核对它查的是什么）、
+结果摘要；失败也看得见（红）。**没调用工具时一张卡都不多出**，聊天保持干净。
+过程卡片跑完会收口成「✅ 本轮完成 · N 步」，不再"越长越长然后无声停止"。
+
+### 四、验证
+
+桌面守门套件 **35 个脚本 · 1180 项断言 · 0 失败**（新增 `verify_promise_v0313` 45 项、
+`verify_context_v0313` 29 项）；跨仓漂移守卫 **20/20**（两仓 `desktop/` 逐字节一致）。
+
+### 五、生态影响：**不动任何已发布产物**
+
+| 产物 | 要不要动 | 依据 |
+|---|---|---|
+| PyPI `pasm-skills` / `pasm-agents` / `pasm-framework` / `pasm-mcp-server` | **不动** | 本轮改的是桌面端与核心认知层，四个包的源码一行未动；本地版本与 PyPI 已一致 |
+| ClawHub / WorkBuddy 开放平台的技能 | **不重传** | 技能正文本轮零改动（各仓 `skill/` 最后改动是 09-20/21，与平台一致） |
+| 桌面安装包 | **要发** | 修复都在桌面端 |
+
+### 六、产物
+
+`PASMStudio-Setup-0.31.3.exe`（Windows，单文件）。
+Gitee 侧为**分卷版**（`-gitee.exe` + `.bin` 切片）：**全部下到同一目录后直接运行 exe 即可**，
+安装程序会自己找分卷，不需要手动合并。
+**macOS / Linux 本版未重出**（需 CI 跑 PyInstaller，本机不能交叉编译）。
+
+---
+
+### v0.31.2（2026-09-23）· 「我让它开发，它什么都没做」修好了 + 干活过程实时可见
 
 **这一版修的是桌面端最伤人的一个问题：你对它说「帮我开发一个记账系统」，它没有任何动作。**
 查下来不是执行器坏了，是**路由** —— 一句话要穿过一串判断门（能力问句 → 关键词路由 → 模式门
@@ -96,7 +165,7 @@
 
 - 桌面守门套件 **33 个脚本 · 1104 项断言 · 0 失败**；新增**跨仓漂移守卫**
   （两仓 `desktop/` 逐字节比对 + 子进程真起窗口冒真），以后"改完忘同步"会当场被抓出来。
-- 本版产物：`PASMStudio-Setup-0.31.2.exe`（Windows）。
+- 那一版产物：`PASMStudio-Setup-0.31.2.exe`（Windows）。
   Gitee 侧为**分卷版**（`-gitee.exe` + `.bin` 切片）：**全部下到同一目录后直接运行 exe 即可**，
   安装程序会自己找分卷，不需要手动合并。
   **macOS / Linux 本版未重出**（需 CI 跑 PyInstaller，本机不能交叉编译）。
@@ -452,10 +521,10 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 ## 下载与安装
 
-最新版见仓库 **Releases**（v0.31.2）：
+最新版见仓库 **Releases**（v0.31.3）：
 
-1. 下载安装包。**GitHub / GitCode** 上下载 `PASMStudio-Setup-0.31.2.exe`（单文件整包）；
-   **Gitee** 上是**分卷版** `PASMStudio-Setup-0.31.2-gitee.exe` + `.bin` 切片 ——
+1. 下载安装包。**GitHub / GitCode** 上下载 `PASMStudio-Setup-0.31.3.exe`（单文件整包）；
+   **Gitee** 上是**分卷版** `PASMStudio-Setup-0.31.3-gitee.exe` + `.bin` 切片 ——
    请把 `.exe` 与**全部 `.bin` 分卷下到同一个目录**，然后直接运行 exe 即可
    （安装程序会自己找同目录的分卷，**不需要手动合并**）。
 2. 双击安装 → 打开 PASM Studio → 点右上「设置」填 LLM Key（或留空用本地 Ollama）
@@ -513,7 +582,84 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 > **It never loses what you typed, and never claims to have done something it didn't** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.31.2 (2026-09-23) · "I asked it to build something and nothing happened" — fixed, and you can watch it work
+## Latest: v0.31.3 (2026-09-23) · "Please start now" now remembers what you asked, and "all talk, no action" is fixed
+
+**This release adds the two things PASM should be best at: it remembers the context, and it actually
+does what it says.**
+
+### 1. Saying "please start" no longer derails
+
+In the Work area, if you typed only "please start now", the old build took **that sentence itself** as
+the requirement — the prompt literally became `build me a project: please start now`, so the model had
+to invent something. On a real machine the project it created was even *named*
+"build me a project please start now", while what you were actually discussing was a
+`D:\Code副\springcloud-business` (**Spring Boot**) repo — wrong location, wrong language, wrong project.
+
+Such information-free phrases now recover **what to do** from the context, with a four-level fallback:
+
+| Priority | Source | Survives restart |
+|---|---|---|
+| ① | the previous request in this very mode | yes (persisted) |
+| ② | this conversation's dev request | yes (conversation is persisted) |
+| ③ | **the dev ledger** — the project's last request (new core API `workctx.last_request()`) | **yes** |
+| ④ | the most recent substantive message in the history | yes |
+
+It also **states its evidence**: the chat pane prints "continuing from:『…』" so you can correct it on
+the spot. ⚠️ Image / video / manga modes accept **only ①** — a visual request must never be replaced by
+another mode's history.
+
+Two related fixes: the **project name** is no longer taken from boilerplate (an existing directory
+supplies its own name), and an **explicitly stated target directory is respected** — if the directory
+is written out *and* really exists, the work happens there instead of always creating something new on
+the Desktop (non-existent paths are **not** guessed).
+
+### 2. "All talk, no action" — fixed (two root causes; fixing only one lets it come back)
+
+Real transcript: four messages in a row — "please start", "run it now", "go with plan A", "start
+developing right now" — and **every single reply was a promise like "let me go scan that…" with nothing
+happening**, not one file written.
+
+| Root cause | Why the old build missed it | Now |
+|---|---|---|
+| **Routing** | these phrases carry no requirement keywords, so the router returned `None` → plain chat, where the model **has no execution tool at all** | such urging phrases now inherit their requirement and reach an executor (Work mode starts immediately; chat mode shows a confirmation with a real button) |
+| **Guard** | the honesty guard only understood the **past tense** (`generated` / `opened`) — but "I'm **about to** go scan" is the **future tense**, so nothing caught it | new **promise guard**: requires a promise phrase **and** a real-action word in the *same* sentence (so "I'm about to go answer you" does **not** match) |
+
+After catching a promise it does more than rephrase: if the intended work can be inferred (from the
+inherited request, this mode's previous request, or the ledger), it attaches a clickable
+**"⚙️ start now"** that really starts the work; if it cannot be inferred, it says so plainly and asks you
+to add one sentence — it **never** shows a button that leads nowhere. When the ledger proves something
+really ran, the reply passes through untouched.
+
+### 3. You can watch the process in chat too
+
+Previously only the Work area had step cards; the chat pane had a stream of text and no way to tell
+whether the assistant actually recalled or self-checked anything. Tool calls are now laid out in the
+open: the tool's (localised) name, its **key argument** (e.g. the recall keyword, so you can verify what
+it searched for) and a result summary; failures are visible too. **No tool call, no extra card** — chat
+stays clean. A finished card closes with "✅ done · N steps" instead of growing forever and then silently
+stopping.
+
+### 4. Verified
+
+**35 desktop gate scripts, 1180 assertions, 0 failures** (new: `verify_promise_v0313` 45 assertions,
+`verify_context_v0313` 29); cross-repo drift guard **20/20** (the two `desktop/` trees are byte-identical).
+
+### 5. Ecosystem impact: **nothing already published changes**
+
+| Artifact | Action | Evidence |
+|---|---|---|
+| PyPI `pasm-skills` / `pasm-agents` / `pasm-framework` / `pasm-mcp-server` | **none** | this release touches the desktop app and the core cognition layer only; none of those package sources changed, and their local versions already match PyPI |
+| Skills on ClawHub / WorkBuddy | **no re-upload** | no skill body changed (last change to any `skill/` tree was 09-20/21, matching the platforms) |
+| Desktop installer | **released** | all fixes are in the desktop app |
+
+**Artifacts:** `PASMStudio-Setup-0.31.3.exe` (Windows). On Gitee the installer is uploaded as
+**split volumes** (`-gitee.exe` plus `.bin` slices) because of Gitee's 100 MB per-attachment limit —
+download all parts into one folder and run the `.exe`; it finds the volumes by itself, no manual
+merge needed. macOS / Linux packages are **not rebuilt** in this release (they require a CI build;
+
+---
+
+## v0.31.2 (2026-09-23) · "I asked it to build something and nothing happened" — fixed, and you can watch it work
 
 **This release fixes the most painful desktop bug: you say "build me an expense tracker" and the
 app does nothing.** The cause was not the executor — it was **routing**. A sentence has to pass a
@@ -554,7 +700,7 @@ byte-compares the dev and release `desktop/` trees (sha256 equality, reverse che
 edits, shared build params, version alignment) and boots the synced copy in a subprocess to prove it
 actually works.
 
-**Artifacts:** `PASMStudio-Setup-0.31.2.exe` (Windows). On Gitee the installer is uploaded as
+**Artifacts (that release):** `PASMStudio-Setup-0.31.2.exe` (Windows). On Gitee the installer is uploaded as
 **split volumes** (`-gitee.exe` plus `.bin` slices) because of Gitee's 100 MB per-attachment limit —
 download all parts into one folder and run the `.exe`; it finds the volumes by itself, no manual
 merge needed. macOS / Linux packages are **not rebuilt** in this release (they require a CI build;

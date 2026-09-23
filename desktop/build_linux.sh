@@ -2,7 +2,7 @@
 # ============================================================
 #  PASM Studio —— Linux 构建脚本（PyInstaller onedir + tar.gz + 可选 .deb）
 #  用法：  bash desktop/build_linux.sh            （在仓库根执行）
-#          APP_VERSION=0.31.2 bash desktop/build_linux.sh
+#          APP_VERSION=0.31.3 bash desktop/build_linux.sh
 #  产物：  dist/PASMStudio/            可直接运行（dist/PASMStudio/PASMStudio）
 #          dist/PASMStudio-<ver>-linux-x86_64.tar.gz
 #          dist/pasm-studio_<ver>_amd64.deb        （装了 dpkg-deb 才有）
@@ -18,7 +18,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."                     # 仓库根
-APP_VERSION="${APP_VERSION:-0.31.2}"
+APP_VERSION="${APP_VERSION:-0.31.3}"
 APP_NAME="PASMStudio"
 ARCH="$(uname -m)"
 echo "[INFO] 构建 ${APP_NAME} ${APP_VERSION} for linux-${ARCH}"

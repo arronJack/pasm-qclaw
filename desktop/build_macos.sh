@@ -2,7 +2,7 @@
 # ============================================================
 #  PASM Studio —— macOS 构建脚本（PyInstaller onedir → .app → .dmg）
 #  用法：  bash desktop/build_macos.sh            （在仓库根执行，需 macOS）
-#          APP_VERSION=0.31.2 bash desktop/build_macos.sh
+#          APP_VERSION=0.31.3 bash desktop/build_macos.sh
 #  产物：  dist/PASMStudio.app
 #          dist/PASMStudio-<ver>-macos-<arch>.dmg
 #
@@ -19,7 +19,7 @@ set -euo pipefail
 [ "$(uname -s)" = "Darwin" ] || { echo "[ERR] 本脚本只能在 macOS 上执行（当前 $(uname -s)）"; exit 1; }
 
 cd "$(dirname "$0")/.."
-APP_VERSION="${APP_VERSION:-0.31.2}"
+APP_VERSION="${APP_VERSION:-0.31.3}"
 APP_NAME="PASMStudio"
 ARCH="$(uname -m)"                          # arm64 / x86_64
 # TARGET_ARCH=universal2 → 同时兼容 Apple Silicon 与 Intel（推荐对外发布用）

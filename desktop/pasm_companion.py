@@ -4891,6 +4891,20 @@ class CompanionWindow(QMainWindow):
 
     def _work_close(self, tid: str, reply: str, ok: bool = True):
         """任务收尾：写状态 + 提产物路径 + 通知工作台/桌面小人刷新。"""
+        # ── v0.31.3 过程卡片收尾：补一行明确的终点 ──────────────────────
+        #   旧版过程卡片只会"越长越长"然后无声停止 —— 用户看不出这轮到底跑完
+        #   了还是断了。这里统一补上「✅ 本轮完成 · N 步」/「✕ 本轮中止」，
+        #   对标 WorkBuddy 那种"跑完就收口"的观感。**必须放在 tid 早退之前**：
+        #   有些活儿（如创作栏目直连引擎）没有工作台账 id，同样需要收口。
+        try:
+            if getattr(self, "_steps", None) and not getattr(self, "_step_closed", False):
+                self._step_closed = True
+                # sync_wl=False：这行是"播报"，不是"状态变更" —— 见 `_step_ui` 注释
+                self._step("ok" if ok else "err",
+                           "本轮完成" if ok else "本轮中止",
+                           "%d 步" % len(self._steps), sync_wl=False)
+        except Exception:                                        # noqa: BLE001
+            logging.exception("step close failed")
         if not WORKLOG or not tid:
             return
         try:
@@ -7995,6 +8009,25 @@ class CompanionWindow(QMainWindow):
     _RE_INHERIT_AGAIN = re.compile(
         r"^(?:再来|再画|再做|再写|再出一?|再生成|再搞|同上|照样)"
         r"(?:一?[份张个遍次版]|吧|呀)?$")
+    #: **明确催办**用的动词表（比 `_RE_INHERIT_PURE` 窄得多，见 `_is_work_order_phrase`）
+    _RE_WORK_ORDER = re.compile(
+        r"^(?:请|麻烦|帮我|那就|就)?\s*(?:马上|立即|立刻|现在|赶紧|快|直接)?\s*"
+        r"(?:执行|开工|动手|开做|开干|照办|开发|开始执行|开始做)"
+        r"(?:吧|呀|啊|了|一下)?$")
+
+    def _is_work_order_phrase(self, text: str) -> bool:
+        """是不是**明确催办**（"马上执行 / 请马上开发 / 执行方案A吧 / 开工"）。
+
+        刻意比 `_is_inherit_req` **收得更紧** —— 「继续 / 接着 / 好 / 可以 /
+        往下」都不算：它们在聊天里常常只是"你接着说"，贸然开工比不动手更糟。
+        只有"它明确在催办"时，才配把上文的需求接过来真的开做。
+        """
+        t = (text or "").strip().strip("。.！!~～,，、;；:： ")
+        if not t or len(t) > 18:
+            return False
+        if self._RE_INHERIT_EXECPLAN.fullmatch(t):
+            return True
+        return bool(self._RE_WORK_ORDER.fullmatch(t))
 
     def _is_inherit_req(self, text: str) -> bool:
         """这句话**本身**含不含"要做什么"的信息？不含 → 必须从上文继承。
@@ -8795,6 +8828,21 @@ class CompanionWindow(QMainWindow):
         allow_cap = self.mode != "work"          # 干活模式下不把句子当"问能力"
         if agent is None:
             agent = self._detect_agent(req, allow_cap=allow_cap)
+        # ★v0.31.3：**催办口令**也必须落到执行器 —— 这是"只说话不动手"的另一半病根。
+        #   真机实录：小志连说四轮「请开始执行 / 马上执行 / 执行方案A吧 / 请马上开发」，
+        #   四轮**全部**掉进普通聊天（这些句子自己不含需求词，`_detect_agent` 一律
+        #   返回 None），于是模型每轮只能回一句"我这就去扫一下…"就没了下文。
+        #   现在：只要上文能补出一条**重活**需求，催促就等于下单 ——
+        #   聊天模式下会走既有的确认墙（带「⚙️ 立刻开工」按钮），干活模式下直接开做。
+        if agent is None and (self._inherit_req or ""):
+            try:
+                if self._is_work_order_phrase(text):
+                    _got = self._detect_agent(self._inherit_req, allow_cap=False)
+                    if _got and _got[0] in _HEAVY_KINDS:
+                        agent = _got
+                        logging.info("work-order phrase -> %s（依据上文需求）", _got[0])
+            except Exception:                                    # noqa: BLE001
+                logging.exception("work-order bridge failed")
         # —— 创作引擎懒接入：真动手(work 模式)且要出图/成片时，没配置就先弹接入框；
         #    输入自动存进设置（cfg["engines"]），下次不再问。取消则降级成提示词/脚本 ——
         if agent and agent[0] in ("image", "video", "manga", "ad") and self.mode == "work":
@@ -9633,6 +9681,12 @@ class CompanionWindow(QMainWindow):
                    "不需要就绝不调用，直接回答用户。")
         msgs = [{"role": "system", "content": system}] + hist + \
                [{"role": "user", "content": user}]
+        # ── v0.31.3 过程显示：聊天里的工具调用也要**看得见** ──────────────
+        #   真机对比：干活栏目的「过程 · N 步」卡片一直在长，聊天栏却只有一段
+        #   流式文字，中间"它查了什么"完全不可见 —— 用户没法判断它到底有没有
+        #   真去回忆/自查。这里把工具轮播报成同一种过程卡片（复用同一套控件，
+        #   不新造 UI）。**懒创建**：这一轮没调工具就一张卡都不出，聊天保持干净。
+        _stepped = False
         for _ in range(2):
             try:
                 resp = GW.gw.create(
@@ -9649,20 +9703,66 @@ class CompanionWindow(QMainWindow):
                                       stop=stop)
             msg = resp.choices[0].message
             if not getattr(msg, "tool_calls", None):
+                if _stepped:
+                    self._step("ok", "查完了", "依据检索结果作答")
                 return (msg.content or "").strip()
             msgs.append({"role": "assistant",
                          "content": msg.content or "", "tool_calls": [
                              {"id": c.id, "type": "function", "function": c.function}
                              for c in msg.tool_calls]})
+            if not _stepped:
+                _stepped = True
+                self._step_reset()
+                self._step("plan", "边想边查", "本轮用到了检索工具，过程就显示在这里")
             for c in msg.tool_calls:
                 try:
                     import json as _j
                     args = _j.loads(c.function.arguments or "{}")
+                    _icon, _label = self._tool_step_label(c.function.name)
                     out = self._run_tool(c.function.name, args)
                 except Exception as ex:
                     out = f"工具出错：{ex}"
+                    _icon, _label = "✕", "工具出错"
+                try:
+                    _txt = str(out or "")
+                    self._step(
+                        "err" if (_txt.startswith("⚠️") or _txt.startswith("工具出错")) else "read",
+                        _label, self._tool_step_target(c.function.name, args),
+                        _txt[:110].replace("\n", " "),
+                        "err" if (_txt.startswith("⚠️") or _txt.startswith("工具出错")) else "ok")
+                except Exception:                                # noqa: BLE001
+                    logging.exception("chat step dispatch failed")
                 msgs.append({"role": "tool", "tool_call_id": c.id, "content": out})
+        if _stepped:
+            self._step("ok", "查完了", "依据检索结果作答")
         return "（对话循环过深，已自动收敛）"
+
+    #: 聊天工具 → 过程卡片上的中文标签（看不懂英文工具名的用户也能读懂）
+    _TOOL_STEP_LABELS = {
+        "recall": "回忆你的记录", "verify": "自查与你的记录是否冲突",
+        "learn": "记下这一点", "mood": "调整情绪姿态",
+        "scaffold_project": "真装框架", "payment_status": "查支付状态",
+    }
+
+    def _tool_step_label(self, name: str):
+        """工具名 → (图标, 中文标签)。MCP 工具统一显示成"调用 MCP 工具 X"。"""
+        n = str(name or "")
+        if n.startswith("mcp_"):
+            return ("›", "调用 MCP 工具 %s" % n[4:])
+        return ("◉", self._TOOL_STEP_LABELS.get(n, "调用工具 %s" % n))
+
+    @staticmethod
+    def _tool_step_target(name: str, args: dict) -> str:
+        """工具调用的**关键参数**（直接摊开，用户能核对它到底查的是什么）。"""
+        try:
+            a = args or {}
+            for k in ("kw", "claim", "content", "path", "query", "q"):
+                v = a.get(k)
+                if v:
+                    return str(v)[:90]
+            return ""
+        except Exception:                                        # noqa: BLE001
+            return ""
 
     def _needs_recall(self, text: str, dec: dict | None = None) -> bool:
         """v0.22：这条消息是否需要走工具轮回忆个人相关内容（智能总线门控）。"""
@@ -10223,18 +10323,24 @@ class CompanionWindow(QMainWindow):
         self._step_tag = self._STEP_TAG_BASE + (self._step_gen & 0xFFFF)
 
     def _step(self, kind: str, title: str, target: str = "",
-              detail: str = "", status: str = "ok", key: str = ""):
+              detail: str = "", status: str = "ok", key: str = "",
+              sync_wl: bool = True):
         """追加一条过程步骤并立刻上屏。**线程安全**：worker 线程可直接调。
 
         `key` 非空时表示"这条是可原地刷新的"（例如模型思考增量）：末尾步骤的 key
         相同就**替换**它，不重复追加 —— 否则思考流会把卡片流刷爆。
+
+        `sync_wl=False`：这条步骤**不回写工作台账**。收尾行必须这么调 —— 见
+        `_step_ui` 里那段注释（回写会把已 finish 的任务刷回 running）。
         """
         try:
-            self._ui(lambda: self._step_ui(kind, title, target, detail, status, key))
+            self._ui(lambda: self._step_ui(kind, title, target, detail, status, key,
+                                           sync_wl))
         except Exception:
             logging.exception("step dispatch failed")     # 播报失败绝不影响干活
 
-    def _step_ui(self, kind, title, target="", detail="", status="ok", key=""):
+    def _step_ui(self, kind, title, target="", detail="", status="ok", key="",
+                 sync_wl=True):
         if not hasattr(self, "_steps") or self._steps is None:
             self._step_reset()
         item = {"kind": str(kind or "plan"), "title": str(title or ""),
@@ -10249,6 +10355,14 @@ class CompanionWindow(QMainWindow):
         self._steps_render()
         # 同步落进工作台账（v0.31.2：`worklog.set_status` 在本项目里**从未被调用过**，
         # 所以工作台的"进度"一栏一直是空的 —— 顺手补上，同一份事实两处可见）
+        #
+        # ⚠️ v0.31.3 踩到的坑：`_step()` 是经 `_ui()` **排队**到 UI 线程的，所以
+        #   "收尾行"实际执行时刻**晚于** `_work_close()` 里的 `WORKLOG.finish()`。
+        #   于是那行收尾会把已经 finish 的任务**刷回 running**，工作台上留下
+        #   "永远在跑、进度卡在第 N 步 · 本轮完成"的僵尸任务（`verify_ad_path_v0313`
+        #   实测抓到）。所以收尾行一律 `sync_wl=False` —— 播报可以晚，状态不许回滚。
+        if not sync_wl:
+            return
         try:
             wid = getattr(self, "_cur_wid", "") or ""
             if wid and WORKLOG:
@@ -12405,6 +12519,95 @@ class CompanionWindow(QMainWindow):
                 return seg.strip()[:60]
         return ""
 
+    #: 承诺型话术（**将来时**）—— 「我这就去扫一下」「让我先看看」「正在为你分析」。
+    #: ⚠️ 与"已完成"是**两种不同的病灶**，必须分开治：
+    #:   · `_RE_ACT_WORD` 抓的是"嘴上完成"（完成时）；
+    #:   · 这一条抓的是"嘴上答应"（将来时）。真机实录（小志 2026-09-23）：
+    #:     「请开始执行 / 马上执行 / 执行方案A吧 / 请马上开发」四轮，每轮它都回一句
+    #:     "我这就去扫一下…"就**没了下文，一个文件都没落地**。旧防线只认完成时
+    #:     → 完美漏过。这就是"只说话不动手"的真凶。
+    #:   动词必须指向**真动作**（扫/查/生成/打开/运行…），否则"我这就去回答你"
+    #:   这类正常表达会被误伤 —— 拿不准一律放行（误拦比漏拦糟得多）。
+    _RE_PROMISE = re.compile(
+        r"(?:我)?(?:这就|马上|立刻|立即|现在|尽快|待会|一会|稍后)(?:就)?"
+        r"(?:去|来|开始|帮|给|为|着手)"
+        r"|让我(?:先|来|去)"
+        r"|我先(?:去|来)"
+        r"|正在(?:为你|帮你)?(?:扫描|分析|读取|查找|生成|创建|处理|检查|搜索|加载|整理)")
+    #: 承诺后**必须**同句出现的"真动作"词（第二道收紧：只承诺"我会努力"不算）
+    _RE_PROMISE_ACT = re.compile(
+        r"扫|查|看|读|分析|检索|搜索|生成|创建|写|做|开发|搭|建|打开|运行|执行|"
+        r"处理|检查|整理|下载|抓取|安装|部署|导出|转换|删除|清理|发送|推送|"
+        r"图片|图像|视频|文档|表格|PPT|Word|Excel|代码|项目|文件|文件夹|目录|脚本")
+
+    def _claims_promise(self, reply: str) -> str:
+        """回复里是否**只顾承诺、没给结果**（返回命中那句，否则空串）。
+
+        判据与 `_claims_execution` 对称：承诺词 + 真动作词**同句**出现。
+        """
+        for seg in re.split(r"[。！？!?\n；;]", reply or ""):
+            if self._RE_PROMISE.search(seg) and self._RE_PROMISE_ACT.search(seg):
+                return seg.strip()[:60]
+        return ""
+
+    def _pending_intent(self, text: str):
+        """从"这一轮想干什么"里推断一条**可执行**意图（找不到返回 None）。
+
+        依据优先级：本轮从指代句继承来的真实需求 → 本栏目上一轮的需求 →
+        开发台账里上次那件事。必须能被 `_detect_agent` 认成**重活**才返回 ——
+        轻活/闲聊不挂"立刻开工"入口，免得给用户一个点不出东西的按钮。
+        """
+        cands = []
+        try:
+            cands.append(getattr(self, "_inherit_req", "") or "")
+            _ch = str(getattr(self, "_chip", "") or "")
+            cands.append(str((getattr(self, "_chip_req", {}) or {}).get(_ch, "")))
+            cands.append(str((getattr(self, "dev", {}) or {}).get("last_req", "")))
+        except Exception:                                        # noqa: BLE001
+            pass
+        for c in cands:
+            c = (c or "").strip()
+            if len(c) < 4:
+                continue
+            try:
+                got = self._detect_agent(c, allow_cap=False)
+            except Exception:                                    # noqa: BLE001
+                got = None
+            if got and got[0] in _HEAVY_KINDS:
+                return got
+        return None
+
+    def _promise_guard(self, text: str, reply: str) -> str:
+        """空头承诺守卫：回复**只承诺了动作**，而这一轮台账里没有任何真实动作。
+
+        与"已执行"防线不同，这里**不只改口** —— 还要把"要做的事"接回来：
+        能推断出该干什么，就挂上可点的「⚙️ 立刻开工」（复用确认墙那条
+        **已被实测验证过**的通道），点一下就是真开工；推断不出就如实说清并
+        请用户补一句。原则：**绝不留下"只答应、没下文"的状态**。
+        """
+        import sysops as SYS
+        seg = self._claims_promise(reply)
+        if not seg:
+            return reply
+        if SYS.ledger_recent(self._ACT_KINDS, seconds=600):
+            return reply                  # 有真账（真扫过/真生成过）→ 放行
+        # 只有**短回复**（一句承诺，没有别的实质内容）才算"空口答应"；
+        # 长回复里带"接下来我会…"这种收尾语属正常表达，刻意不误伤。
+        if len(reply or "") > 200:
+            return reply
+        SYS.ledger("honesty_guard", (text or "")[:80],
+                   "回复只承诺未执行（台账无真实动作）", {"ok": False, "what": seg})
+        head = ("⚠️ 更正：我上一句只说了一句「%s」，**并没有真的动手**"
+                "（执行台账里查不到真实操作，我不装做完了）。\n\n" % seg[:26])
+        _req = self._pending_intent(text)
+        if _req:
+            self._pending_work = _req
+            return (head + "我把要做的事接回来了 —— 点下面这个入口，我**现在就真做**：\n\n"
+                    "[⚙️ 立刻开工](pasm://confirmwork)\n\n"
+                    "（想改口径就先补一句，比如做在哪个目录、用什么技术栈。）")
+        return (head + "要真做的话，把**做在哪、做什么**说清"
+                "（例：「在 D:\\Code副\\xxx 里加一个查询接口」），我立刻就开。")
+
     def _guard_say(self, text: str, reply: str, kind: str, what: str) -> str:
         """记拦截台账 + 给更正话术（**不断言"我骗你"，只说查不到记录**）。"""
         import sysops as SYS
@@ -12439,7 +12642,15 @@ class CompanionWindow(QMainWindow):
             if SYS.ledger_recent(self._ACT_KINDS, seconds=600):
                 return reply                       # 有真账（真生成/真打开/真运行）
             return self._guard_say(text, reply, "已生成/打开/运行", "生成或打开")
-        return reply
+        # —— 承诺类（v0.31.3 新增）——
+        #   真机事故：用户连说四轮"马上执行/请开始执行"，每轮都只收到一句
+        #   "我这就去扫一下…"就没了下文。完成时防线一条都拦不到，因为病根是
+        #   **将来时**。这里补上，并且不是简单改口 —— 会把要做的事接回来。
+        try:
+            return self._promise_guard(text, reply)
+        except Exception:                                        # noqa: BLE001
+            logging.exception("promise guard failed")
+            return reply
 
     # ---------- v0.29：权限三档 ----------
     def _perm_level(self) -> str:
