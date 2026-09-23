@@ -5,7 +5,9 @@ PASMStudio-Setup-*.exe
 PASMStudio-Setup-*.bin
 *.bin
 
-# 桌面端构建期生成的 latest.json（真正的更新清单在仓库根，不重复入库）
+# 桌面端那份 latest.json 已废弃（**不是**构建产物，没有任何代码读写它；
+# 升级通道只有本仓根目录这一份）。保留忽略只是防止它被误提交回来，
+# 来龙去脉见 PASM/desktop/README.md 的「同步约定」
 desktop/latest.json
 
 # Python

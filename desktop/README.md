@@ -59,7 +59,14 @@
 ::    -> installer\PASMStudio-Setup-0.16.7.exe（约 55MB 单文件，可直传 Gitee Release）
 ```
 
-版本号：改 `appinfo.py` 的 `APP_VERSION`，同步 `desktop/latest.json` 与安装脚本。
+版本号：改 `appinfo.py` 的 `APP_VERSION`（**唯一版本源**），并同步跨平台构建脚本里的默认值
+（`desktop/build_linux.sh` / `desktop/build_macos.sh` 的 `APP_VERSION="${APP_VERSION:-x.y.z}"`）。
+
+> ⚠️ **升级通道的 `latest.json` 不在本仓**，而在**公开发行仓 `pasm-qclaw` 的根目录**
+> （`desktop/appinfo.py` 的 `APP_LATEST_URL` 指过去，客户端只读那一份）。
+> 本仓 `desktop/latest.json` 已于 **v0.31.2 删除** —— 它是手工维护的残留，
+> 没有任何代码读写它，于是长期停在 v0.27.8 而无人察觉；留着只会误导。
+> 发版时要更新的是**发行仓**的 `latest.json`，顺序见下方「同步约定」第 ③ 步。
 
 ## 运行与数据
 
@@ -76,21 +83,36 @@
 snapshot 字段齐全）。`PASMStudio.spec` 显式排除 torch/numpy/引擎子模块，
 安装包约 55MB（vs 带 torch 的 143MB）；开发环境装了 torch 仍走完整引擎。
 
-## 同步约定（核心 ↔ 桌面 ↔ 公开镜像）
+## 同步约定（开发主仓 ↔ 公开发行仓）
 
 ```
-E:\AI\PASM                权威私库：pasm/（引擎+认知皮层）+ desktop/ + docs/ + tests/
-   └─ desktop/cog.py          ↔ pasm/cognitive/cog.py           （镜像同源）
+E:/AI/pasm/code/PASM/          开发主仓（私有）：pasm/（引擎+认知层）+ desktop/ + tools/ + docs/
+   └─ desktop/cog.py          ↔ pasm/cognitive/cog.py           薄壳同源（sys.modules 别名）
    └─ desktop/memory_layers.py ↔ pasm/cognitive/memory_layers.py
    └─ desktop/pasm_light.py    ↔ pasm/light.py
-E:\AI\pasm_qclaw          开发主仓（纯本地，计划开源）：desktop/ + pasm/ 整目录
-E:\AI\pasm_qclaw_release  公开发行镜像（gitee arronzheng/pasm-qclaw）：
-                           README / CHANGELOG / latest.json + installer 安装包
+   └─ desktop/build_common.py  = 打包参数**单一真相源**（Windows/Linux/macOS 三方共用）
+E:/AI/pasm/code/pasm-qclaw/    公开发行仓（Gitee + GitCode + GitHub 三端）：
+                               desktop/      与主仓**逐字节同源**
+                               latest.json   **升级通道真身**（在仓库根目录）
+                               README / CHANGELOG / Release 安装包
 ```
 
-改动认知皮层/桌面代码后：① 同步 desktop ↔ pasm/cognitive；② 复制到 PASM 私库
-与 qclaw 开发主仓；③ 更新 RELEASE_NOTES / CHANGELOG / latest.json；
-④ 打包 → 同步发行镜像 → 推 Gitee 公开仓 → 建 Release 传安装包。
+改动 `desktop/` 或认知层之后：
+
+① **认知层**改动：`desktop/<同名>.py` 必须是**薄壳**
+   （`sys.modules[__name__] = 实现`，绝不用属性拷贝），跑 `python tools/check_core_fork.py`；
+② **桌面代码**改动：`desktop/` 下**所有**文件复制到发行仓 `pasm-qclaw/desktop/`，
+   再跑 `python tools/desktop_verify/verify_repo_sync_v0312.py` —— 它**逐字节**比对两份
+   `desktop/`、反查发行仓有没有私自改动，并**用子进程真起一次窗口**验证同步过去那份能用；
+③ **版本与文档**：改 `APP_VERSION`（唯一版本源）→ 更新**发行仓**根目录的
+   `latest.json` / `README.md` / `CHANGELOG.md`（升级弹窗展示的是 `latest.json` 的 `notes`）；
+④ **打包发版**：PyInstaller（全新 `dist_v<版本>` 目录）→ Inno（单文件整包 +
+   `/DGiteeSplit=1` 分卷）→ `tools/publish_release_multi.py` 发三端 Release
+   → `tools/clean_old_releases.py` 只留最新版安装包。
+
+> 历史提醒：旧文档里的 `E:/AI/PASM`（"权威私库"）与 `E:/AI/pasm_qclaw_release`（"发行镜像仓"）
+> **都已不存在**。`E:/AI/PASM` 与 `E:/AI/pasm` 是同一个目录、且只是**生态根**（不是 git 仓）；
+> 发行仓就叫 `pasm-qclaw`，与开发主仓同在 `E:/AI/pasm/code/` 下。
 
 > 开源策略（2026-09）：pasm-qclaw 开发主仓计划后续开源供共同研究；
 > PASM（完整引擎 + 认知皮层）暂不开源，等进一步优化扩展后再定。
