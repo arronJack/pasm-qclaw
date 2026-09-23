@@ -247,6 +247,11 @@ CONFIG = os.path.join(DATA_DIR, "config.json")
 NOTES = os.path.join(DATA_DIR, "user_notes.json")
 HISTORY = os.path.join(DATA_DIR, "chat_last.json")
 PREFS = os.path.join(DATA_DIR, "prefs.json")
+#: v0.31.3 干活会话状态（各栏目的"上一轮需求"）—— **必须落盘**。
+#: 起因（真机）：用户在开发栏目只打「请立即开始」，而"上一次要做什么"只存在内存里
+#: （`self.dev`），App 一重启就丢 → 那句话被原样当需求送进模型 → 凭空造一个项目，
+#: 用户看到"一个不是我想要的开发"。落盘后跨重启也能续上。
+WORK_SESSION = os.path.join(DATA_DIR, "work_session.json")
 SESSION_DIR = os.path.join(DATA_DIR, "sessions")
 GEN_MEM = os.path.join(DATA_DIR, "genfiles.json")  # v0.26.2 产物记忆：会话 → 最近生成的表格/文档/PPT {path, md}
 os.makedirs(SESSION_DIR, exist_ok=True)
@@ -292,6 +297,34 @@ def _save_json(path, obj):
         pass
 
 
+def _extract_target_dir(text: str) -> str:
+    """从需求里抽出用户**明确指定且已存在**的目标目录（没有就返回空串）。
+
+    真机场景（2026-09-23 用户会话实录）：用户说
+    「帮我先看下我在 D:\\Code副\\springcloud-business 的**Spring Boot** 项目」，
+    后来连续说了 6 遍"执行 / 马上执行 / 请马上开发"，最后说「请立即开始」——
+    包里**完全无视那个路径**，跑到 `桌面/PASM工作/project/` 下另建了一个
+    Python 项目（`app.py` / `backend.py`）。用户的原话是
+    「我检查过我的 D:\\Code副\\springcloud-business 了，里面是空的，怎么没有内容」。
+
+    → 用户**在需求里写明的目录**是他的显式指令，优先级高于"在工作根里另建一个"。
+      这里只认**真实存在**的目录（不存在的路径不猜，免得又造出一个错地方）。
+    """
+    if not text:
+        return ""
+    for m in re.finditer(r"[A-Za-z]:[\\/][^\s，。；;：:）)】」\"'、,]+", str(text)):
+        cand = m.group(0).strip(" \t\"'")
+        # 路径后面常直接粘中文（"…springcloud-business 的骨架" / "…的骨架"），逐字回退
+        while len(cand) > 3 and not os.path.isdir(cand):
+            if re.match(r"[\u4e00-\u9fa5。，、；：！？]$", cand[-1]):
+                cand = cand[:-1]
+            else:
+                break
+        if os.path.isdir(cand):
+            return cand
+    return ""
+
+
 def _pick_project_name(req: str) -> str:
     """从整句需求里抽一个像样的项目名。
 
@@ -299,6 +332,17 @@ def _pick_project_name(req: str) -> str:
     避免把「那么你能根据这个文档里的内容帮我…」整句前 12 字当项目名。
     """
     name = ""
+    # ★ v0.31.3：需求里带了**现成的项目目录**时，优先用那个目录名。
+    #   「帮我在 D:\Code副\springcloud-business 里搭 Spring Boot 3.x 骨架」
+    #   → springcloud-business（旧版取前 12 字，得到「在DCode副sprin」这种名字）
+    m = re.search(r"[A-Za-z]:[\\/][^，。；;：:）)】」\"'\s]*[\\/]([A-Za-z0-9_\-\.]{2,32})", req)
+    if not m:
+        m = re.search(r"(?:^|[\s（(【\[])([A-Za-z0-9_\-]{2,24}[\\/][A-Za-z0-9_\-\.]{2,32})", req)
+    if m:
+        cand = m.group(1).strip("\\/. ")
+        # 目录名可以比中文项目名长（springcloud-business 就 20 字），别用 16 字上限砍掉它
+        if 2 <= len(cand) <= 32:
+            return cand
     m = re.search(r"(?:叫|名为|名字[叫是])\s*[「『\"“]?([\w\u4e00-\u9fa5\- ]{1,20}?)(?=的|帮|请|"
                   r"然后|还有|以及|并且|可以|能|，|。|？|!|！|$)", req)
     if m:
@@ -3059,6 +3103,11 @@ class CompanionWindow(QMainWindow):
         self.work_ctx = {}          # 工作上下文：最近读取的文件 {path: text}
         self.path_refs = []         # 本次会话里出现过的路径（文件/文件夹），支持"刚才那个路径"
         self.dev = {}               # v0.26 开发会话：{project, lang, root, last_ts, last_req}
+        # v0.31.3 上下文继承：`_chip_req` = 各栏目上一轮的需求（落盘，跨重启）；
+        #   `_inherit_req/_inherit_src` = 本轮从"指代型指令"里解析出的真实需求与来源。
+        self._chip_req = {}
+        self._inherit_req = ""
+        self._inherit_src = ""
         self.turns = 0
         # 交互模式（工种分栏）：chat=聊天（永不自动开工）其余=对应工种（输入即干活）
         # 必须先于槽位会话初始化，因为 _slot_key() 依赖 mode/_chip
@@ -3627,6 +3676,8 @@ class CompanionWindow(QMainWindow):
         self._switch_page("chat")          # 启动默认停在对话页并高亮「对话」
         self._refresh_conv_list()
         self._reload_model_combo()
+        # v0.31.3：读回"各栏目上一轮需求 + 开发会话"（跨重启续上「请立即开始」）
+        self._load_work_state()
         self._heal_autoscan()              # v0.24 C1 哨兵：启动后静默巡检一次
 
     # ---------- v0.29：语音唤醒 ----------
@@ -7909,6 +7960,150 @@ class CompanionWindow(QMainWindow):
             self._ui(done)
         threading.Thread(target=worker, daemon=True).start()
 
+    # ── v0.31.3 上下文继承：让"请立即开始 / 就用刚才那个"这类话接得上上文 ──────
+    #
+    # 真机症状（2026-09-23，小志在 v0.31.2 上实测）：
+    #   「我直点在开发栏目中，输入了请立即开始，结果出来了一个不是我想要的开发」
+    # 探针实测（`probe_ctx_v2.py`）到的真凶：
+    #   · 开发栏目里 `CHIP_SEED` 把用户原话包成 `帮我开发一个项目：请立即开始`
+    #     → 送给模型的提示词就是 `项目需求：帮我开发一个项目：请立即开始`
+    #     → **既没有上一轮需求、也没有记忆块** → 模型只能凭空造一个项目；
+    #   · 续改路由即使命中，送进去的 `spec` 也仍是「请立即开始」；
+    #   · `_work_mem()` 的召回键是"当前这句话里的 2~6 字词"，对这句话**必然 0 命中**；
+    #   · 而 `self.dev["last_req"]/last_ts` 只在内存 → **App 一重启续改路由就失灵**。
+    # 修法：这句话自己不含信息时，从上文把"要做什么"找回来，再拼进 req。
+    _RE_INHERIT_PURE = re.compile(
+        r"^(?:请|麻烦|帮我|那就|就|好|行|嗯|可以|OK|ok|okay)?"
+        r"(?:(?:立即|马上|现在|赶紧|快|直接|继续|接着|往下|按这个|照这个)?"
+        r"(?:开始|开工|动手|干|做|搞|来|走|上|继续|接着|执行|照办|办)){1,2}"
+        r"(?:吧|呀|啊|哦|了|起|起来|一下)?$")
+    #: 「执行方案A吧 / 按方案二来」—— 指代**它上一轮提的方案**（真机会话里的原话）
+    _RE_INHERIT_EXECPLAN = re.compile(
+        r"^(?:请|麻烦|帮我|那就|就|好)?(?:马上|立即|现在|赶紧)?"
+        r"(?:执行|按|照|用|选|走)\s*(?:你?的?)?方案\s*"
+        r"[0-9A-Za-z一二三四五六七八九十]{0,3}\s*(?:吧|呀|啊|了|来)?$")
+    #: 光秃秃一个"动词"（没带宾语）：在**已选定栏目**的语境下 = "按上文立刻开工"。
+    #   来自真机会话里用户的三种说法：「执行方案A吧」「马上执行」「请马上开发」——
+    #   旧版这三种都只被当普通聊天，于是它回一句"我这就去扫一下…"就没了下文。
+    _RE_INHERIT_BAREVERB = re.compile(
+        r"^(?:请|麻烦|帮我|那就|就)?(?:立即|马上|现在|赶紧|快|直接)?"
+        r"(?:开发|做|写|建|搭|搞|生成|执行|开工|动手)"
+        r"(?:吧|呀|啊|哦|了|一下)?$")
+    _RE_INHERIT_BACKREF = re.compile(
+        r"^(?:就|再|又)?\s*(?:用|按|照|跟|要)?\s*"
+        r"(?:刚才|刚刚|上面|前面|之前|上次|上一次|原来|原样|同样的?|一样|这个|那个)")
+    _RE_INHERIT_AGAIN = re.compile(
+        r"^(?:再来|再画|再做|再写|再出一?|再生成|再搞|同上|照样)"
+        r"(?:一?[份张个遍次版]|吧|呀)?$")
+
+    def _is_inherit_req(self, text: str) -> bool:
+        """这句话**本身**含不含"要做什么"的信息？不含 → 必须从上文继承。
+
+        只在"短且明显是确认/推进/指代"时才判真，避免把真正的需求误判成指代。
+        反例（必须判**假**）：「帮我开发一个记账系统」「把标题改活泼一点」
+        「再画一张戴帽子的橘猫」（自带新内容，不该被上一轮覆盖）。
+        """
+        t = (text or "").strip().strip("。.！!~～,，、;；:： ")
+        if not t or len(t) > 16:
+            return False
+        if self._RE_INHERIT_PURE.fullmatch(t):
+            return True
+        # "马上执行 / 请马上开发 / 执行方案A吧" —— 承诺/催促型，本身没说做什么
+        if self._RE_INHERIT_BAREVERB.fullmatch(t) or \
+                self._RE_INHERIT_EXECPLAN.fullmatch(t) or (
+                re.match(r"^(?:就|按)(?:这么|这样|你说的|方案)", t) and len(t) <= 14):
+            return True
+        if self._RE_INHERIT_AGAIN.fullmatch(t):
+            return True
+        # "就用刚才那个风格再画一张 / 照这个来 / 这个再加一列" —— 必须**整句都在指代**：
+        #   ① 以指代词开头；② 整句不超过 24 字（再长通常自带新内容，不该整句被判成指代）。
+        #   注意这里**不排斥**"指代 + 新细节"（如"这个表格再加一列"）：这种句子会把
+        #   指代对象与新要求一起送进模型（见 `send()` 里 chip 分支的拼法），是想要的行为。
+        if self._RE_INHERIT_BACKREF.match(t) and len(t) <= 24:
+            return True
+        return False
+
+    def _inherit_requirement(self, chip: str = "") -> str:
+        """把"这句话到底要做什么"从上文找回来。四级兜底，**越靠前越同语境**：
+
+        ① 本栏目上一轮的需求（`self._chip_req[chip]`）—— 同栏目同话题，最准；
+        ② 本会话刚做过的开发需求（`self.dev["last_req"]`）；
+        ③ **台账里该项目的最后一条需求**（落盘 → **跨重启有效**，这是
+           "刚装完新版就试"能续上的关键，见 `workctx.last_request`）；
+        ④ 会话历史里最近一条"有实质内容"的用户消息（兜底；可能跨栏目）。
+
+        ⚠️ 图像/视频/漫剧这类**创作栏目只认 ①②**：它们的要求是画面描述，
+        拿别的栏目（比如开发）的历史去顶替，会画出一个莫名其妙的东西。
+        """
+        chip = str(chip or "")
+        creative = chip in ("image", "video", "manga")
+        # ① 同栏目上一轮
+        try:
+            v = (getattr(self, "_chip_req", None) or {}).get(chip)
+            if v:
+                return str(v)[:600]
+        except Exception:
+            pass
+        if creative:
+            return ""
+        # ② 本会话的开发需求
+        try:
+            v = (getattr(self, "dev", None) or {}).get("last_req")
+            if v and not self._is_inherit_req(str(v)):
+                return str(v)[:600]
+        except Exception:
+            pass
+        # ③ 台账（跨重启）
+        try:
+            import workctx as WC
+            name = (self._dev_session() or {}).get("project", "")
+            if name:
+                v = WC.last_request(name, include_changes=True)
+                if v and not self._is_inherit_req(str(v)):
+                    return str(v)[:600]
+        except Exception:
+            pass
+        # ④ 会话历史兜底
+        try:
+            for m in reversed(list(self.history or [])):
+                if m.get("role") != "user":
+                    continue
+                c = str(m.get("content") or "").strip()
+                if len(c) >= 8 and not self._is_inherit_req(c):
+                    return c[:600]
+        except Exception:
+            pass
+        return ""
+
+    def _load_work_state(self):
+        """读回"各栏目上一轮需求" + 开发会话（跨重启）。坏文件当没有。"""
+        self._chip_req = {}
+        try:
+            d = _load_json(WORK_SESSION, {}) or {}
+            cr = d.get("chip_req") or {}
+            if isinstance(cr, dict):
+                self._chip_req = {str(k): str(v)[:600] for k, v in cr.items() if v}
+            dv = d.get("dev") or {}
+            if isinstance(dv, dict) and dv.get("project"):
+                if not getattr(self, "dev", None):
+                    self.dev = {}
+                for k in ("project", "lang", "root", "last_req", "last_ts"):
+                    if dv.get(k) not in (None, ""):
+                        self.dev[k] = dv[k]
+        except Exception:
+            logging.exception("load work_session failed")
+
+    def _save_work_state(self):
+        """落盘"各栏目上一轮需求" + 开发会话。失败只记日志（绝不打断干活）。"""
+        try:
+            _save_json(WORK_SESSION, {
+                "chip_req": dict(getattr(self, "_chip_req", None) or {}),
+                "dev": {k: v for k, v in (getattr(self, "dev", None) or {}).items()
+                        if k in ("project", "lang", "root", "last_req", "last_ts")},
+            })
+        except Exception:
+            logging.exception("save work_session failed")
+
     def _dev_try_continue(self, text: str) -> bool:
         """续改路由：当前有开发项目，且这句话像在要求改它 → 走台账精准续改。"""
         import coder as CDR
@@ -7921,7 +8116,11 @@ class CompanionWindow(QMainWindow):
         if not t or len(t) > 600:
             return False
         # 命中条件：提到项目名 / 明显的"改它"指代 / 继续做某功能
-        hit = (name and name in t) or bool(re.match(
+        # ★ v0.31.3：指代型指令（「请立即开始」「开始吧」「再来一份」）也算 ——
+        #   旧版只认 `^(继续|接着|…)`，「请立即开始」既不匹配、又因"没提到项目名"
+        #   落到下面的短消息分支，而该分支要求 `last_ts` 在内存里（重启即 0）→
+        #   于是这句话完全没有续改语义，被当成全新需求送进模型。
+        hit = (name and name in t) or self._is_inherit_req(t) or bool(re.match(
             r"^(继续|接着|再优化|优化一下|改进|修改|改一下|把(这个|它)|在这?个(项目|基础上))", t))
         if not hit:
             # 短消息 + 上一轮刚做过开发 → 视为对上一轮的追问修改
@@ -7931,10 +8130,19 @@ class CompanionWindow(QMainWindow):
         if not os.path.isdir(os.path.join(d.get("root", ""), CDR.safe_name(name))):
             return False
         root = d["root"]
-        self.dev["last_req"] = t
+        # ★ v0.31.3：真正要做什么 = 继承来的上一轮需求（有的话），而不是"请立即开始"本身。
+        #   并把这次要在哪个项目上改**明说**，免得用户以为"它又另做了一个不是我要的"。
+        spec = self._inherit_req or t
+        if self._inherit_req:
+            self._append("系统", "在已有项目『%s』上继续：<b>%s</b>"
+                         % (html.escape(str(name)),
+                            html.escape(self._inherit_req[:70])))
+        self.dev["last_req"] = spec
         self.dev["last_ts"] = time.time()
-        WC.record_request(name, t, is_change=True)
-        self._dev_build(name, t, d.get("lang", "python"), root, is_new=False)
+        self._chip_req["project"] = spec[:600]
+        self._save_work_state()
+        WC.record_request(name, spec, is_change=True)
+        self._dev_build(name, spec, d.get("lang", "python"), root, is_new=False)
         return True
 
     def _cmd_skill(self, arg: str):
@@ -8457,6 +8665,28 @@ class CompanionWindow(QMainWindow):
         self._append("你", html.escape(text))
         # v0.27.3 语言天赋：每收到一句，就学一点这位用户的说法（口音/方言）
         self._observe_speech(text)
+        # —— v0.31.3 上下文继承（**必须在下面所有栏目分支之前算**，一处修复全栏目受益）——
+        #    「请立即开始 / 就用刚才那个 / 再来一份」这类话自己不含信息，必须从上文补全；
+        #    否则 `CHIP_SEED` 会把它包成「帮我开发一个项目：请立即开始」直接送进模型，
+        #    模型只能凭空造 —— 这就是真机上"出来一个不是我想要的开发"的机制。
+        self._inherit_req = ""
+        self._inherit_src = ""
+        try:
+            if self._is_inherit_req(text):
+                _ch = (self._chip if self.mode == "work" else "") or ""
+                self._inherit_req = self._inherit_requirement(_ch)
+                if self._inherit_req:
+                    self._inherit_src = ("栏目上一轮" if self._chip_req.get(_ch)
+                                         else "开发台账" if (getattr(self, "dev", None) or {})
+                                         .get("last_req") else "上文")
+                    # ★ 诚实边界：**明确告诉用户"我按哪句话继续"**，说错了用户能当场纠正。
+                    #   真机上用户最难受的正是"它做了个东西，但不是我想要的，还没告诉我依据是什么"。
+                    self._append("系统",
+                                 "按上文继续：<b>%s</b>（本轮：%s）"
+                                 % (html.escape(self._inherit_req[:70]),
+                                    html.escape(text[:20])))
+        except Exception:
+            logging.exception("inherit context failed")
         self.history.append({"role": "user", "content": ctx})
         self.history = self.history[-500:]
         self._persist_conv()                     # 用户这句立刻落盘（聊天永不丢）
@@ -8498,7 +8728,9 @@ class CompanionWindow(QMainWindow):
             req = ("（文案任务：请直接输出成稿正文，第一句就是内容本身；"
                    "不要解释、不要发能力清单、不要反问。风格贴合要求。）\n" + text)
         elif chip in ("video", "manga", "image"):
-            agent = (chip, text)                 # 直连创作引擎：真出图/真成片
+            # v0.31.3：指代型指令（"再画一张""就用刚才那个"）要把**上一轮的画面需求**
+            #   带进来 —— 创作栏目只认同栏目上下文（见 `_inherit_requirement`）。
+            agent = (chip, self._inherit_req or text)   # 直连创作引擎：真出图/真成片
         elif chip == "ad":
             # 广告设计版（v0.30.4；v0.30.13 重做）：
             # 以前这里只调 `AD.design()` —— 它**只建一条空台账**（永远 running、0%），
@@ -8536,7 +8768,30 @@ class CompanionWindow(QMainWindow):
                                 "prompt": _ad_prompt}
             agent = ("ad", text)
         elif chip:
-            req = self.CHIP_SEED.get(chip, "{要求}").format(要求=text)
+            # v0.31.3：种子句里的「{要求}」用**继承来的真实需求**（若有），
+            #   并把本轮那句指代话附在后面让模型知道"这次要干什么"。
+            #   旧版把「请立即开始」原样当需求 → 模型凭空造项目。
+            if self._inherit_req:
+                req = self.CHIP_SEED.get(chip, "{要求}").format(
+                    要求="（沿用上文需求）" + self._inherit_req
+                         + "\n（本轮要求：" + text + "）")
+                # ★★ 关键：**路由必须由栏目自己的种子句决定**。
+                #   否则继承来的需求会"篡位" —— 比如在「📄 Word」栏目里继承到一句
+                #   开发需求，`_detect_agent` 会认出"开发"而把栏目判成 `project`，
+                #   于是用户要的是 Word，得到的却是一个项目（探针实测抓到这个回归）。
+                #   所以：先用**空要求**的种子句定 kind，再把完整 req 当载荷装上。
+                _kind = self._detect_agent(
+                    self.CHIP_SEED.get(chip, "").format(要求=""), allow_cap=False)
+                if _kind:
+                    agent = (_kind[0], req)
+            else:
+                req = self.CHIP_SEED.get(chip, "{要求}").format(要求=text)
+            # 记住本栏目这一轮的需求，供**下一句**指代（"再来一份"）使用
+            try:
+                self._chip_req[str(chip)] = (self._inherit_req or text)[:600]
+                self._save_work_state()
+            except Exception:
+                logging.exception("remember chip req failed")
         allow_cap = self.mode != "work"          # 干活模式下不把句子当"问能力"
         if agent is None:
             agent = self._detect_agent(req, allow_cap=allow_cap)
@@ -13531,8 +13786,49 @@ class CompanionWindow(QMainWindow):
         proj = getattr(self, "_ses_proj_dir", None) or ""
         reset = re.search(r"(另建|另做|新开|开个新|新建一?个|再做一个新|换一?个新|"
                           r"不是.{0,6}那个|不要.{0,6}原来)", req)
+        # ★ v0.31.3：需求里**写明了目标目录**（且真存在）→ 就在那里干活。
+        #   用户显式给的路径 > "在工作根里另建一个"。真机上用户明确说了
+        #   `D:\Code副\springcloud-business`，旧版却跑到桌面另建了个 Python 项目。
+        _tgt = _extract_target_dir(req)
+        if _tgt:
+            proj = _tgt
+            self._ses_proj_dir = _tgt
+            self._append("系统", "按你说的，在 <code>%s</code> 里干活 ✓"
+                         % html.escape(_tgt))
         edit_mode = bool(proj and os.path.isdir(proj)) and not reset
-        name = _pick_project_name(req)
+        if _tgt and edit_mode:
+            # 用户指定的目录**是空的** → 那是"从零建"，不是"改旧版"（别去读不存在的旧代码）
+            try:
+                edit_mode = bool(os.listdir(proj))
+            except Exception:
+                edit_mode = False
+        # ★ v0.31.3：项目名**必须来自真实需求**。继承场景下 `req` 前面裹着模板句
+        #   与标记（「帮我开发一个项目：（沿用上文需求）…」），直接拿去取名会得到
+        #   「**开发一个项目请立即开始**」这种怪名字 —— 真机上就是这么发生的
+        #   （用户原话：「出来了一个不是我想要的开发」，连项目名都是那句废话）。
+        _name_src = re.sub(r"^（沿用上文需求）", "", str(self._inherit_req or "")).strip() \
+            or req
+        _name_src = re.sub(r"^帮我(?:开发|做|写|建|搭)\s*(?:一|一个|个)?\s*项目[：:，,、 ]*",
+                           "", _name_src).strip() or _name_src
+        name = _pick_project_name(_name_src)
+        # ★ v0.31.3：**明说这次在改哪个项目**。真机上用户遇到"不是我想要的开发"时，
+        #   最需要知道的就是"它到底动了哪个项目、想开新的该怎么说" —— 旧版只在内联
+        #   步骤里写一句"已有项目原地改"，用户看不到项目名，也不知道怎么另建。
+        if edit_mode:
+            self._append("系统", "这次在**已有项目**『%s』上改（想另开一个就说「另建一个…」）"
+                         % html.escape(str(name)))
+        # 记住开发栏目的这一轮需求（供下一句「请立即开始」继承，并落盘备重启）
+        try:
+            if getattr(self, "_inherit_req", "") or req:
+                self._chip_req["project"] = str(self._inherit_req or req)[:600]
+                self.dev = getattr(self, "dev", None) or {}
+                self.dev["last_req"] = str(self._inherit_req or req)[:600]
+                self.dev["last_ts"] = time.time()
+                if not self.dev.get("project"):
+                    self.dev["project"] = name
+                self._save_work_state()
+        except Exception:
+            logging.exception("remember project req failed")
         base_sys = ("你是全栈工程师。根据需求生成一个完整可运行的多文件项目"
                     "（前端页面+后端服务+数据库，按需求取舍，不要偷懒只给建议）。"
                     "输出格式必须严格遵守：每个文件用下面格式包裹，除此之外不要输出任何解释文字：\n"
