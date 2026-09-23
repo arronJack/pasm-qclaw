@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""publish_release_multi —— 双端（Gitee + GitHub）建 Release 并上传**多份**附件。
+"""publish_release_multi —— 三端（Gitee + GitHub + GitCode）建 Release 并上传**多份**附件。
 
 与 publish_release.py 的差别：
   · 后者只发一个 `PASMStudio-Setup-<ver>.exe`；本脚本支持**每端一组附件**
@@ -25,6 +25,10 @@
   - Gitee 建 Release 必须带 target_commitish；附件字段名是 **file**（multipart）
   - Gitee 附件列表接口是 /releases/{id}/attach_files（这个才返回带 id 的条目）
   - GitHub 走 upload_url（去掉 {?name,label} 后缀）+ `?name=` 查询参数
+  - ★ GitCode 是**两段式预签名上传**（2026-09-23 加，与另两端都不同）：
+    ① `GET /repos/{owner}/{repo}/releases/{tag}/upload_url?file_name=X` → `{url, headers}`
+    ② `PUT <url>`，把返回的 headers **原样带上**，body 是文件字节（华为 OBS 预签名，不是 multipart）
+    认证是 **Bearer <token>**，**不是** Gitee 的 `token <token>`（写错会 401 token not found）
   - 路径一律不写死（tools/pasm_paths.py 定位）
 """
 from __future__ import annotations
@@ -34,6 +38,7 @@ import json
 import os
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -41,6 +46,8 @@ import pasm_paths                                            # noqa: E402
 
 GITEE_REPO = "arronzheng/pasm-qclaw"
 GITHUB_REPO = "arronJack/pasm-qclaw"
+GITCODE_REPO = "arronzheng/pasm-qclaw"          # GitCode 账号同名（arronzheng）
+GITCODE_API = "https://api.gitcode.com/api/v5"
 BRANCH = "master"
 SPLIT_SIZE = 95 * 1000 * 1000          # 95MB：留足余量（Gitee 上限 100MB）
 
@@ -107,18 +114,45 @@ def github_asset(headers, up, path):
                     raw=f.read(), ctype="application/octet-stream")
 
 
+def gitcode_headers(token):
+    """GitCode 认证：**Bearer**（用 Gitee 那套 `token xxx` 会 401 token not found）。"""
+    return {"Authorization": "Bearer " + token, "Accept": "application/json"}
+
+
+def gitcode_asset(token, tag, path):
+    """两段式上传：先取预签名地址，再 PUT 文件字节。返回 (状态码, 响应/说明)。"""
+    name = os.path.basename(path)
+    st, d = http("%s/repos/%s/releases/%s/upload_url?file_name=%s"
+                 % (GITCODE_API, GITCODE_REPO, tag, urllib.parse.quote(name)),
+                 method="GET", headers=gitcode_headers(token))
+    if not (isinstance(d, dict) and d.get("url")):
+        return st, "取预签名地址失败：%s" % str(d)[:200]
+    hdr = dict(d.get("headers") or {})
+    ctype = {k.lower(): v for k, v in hdr.items()}.get("content-type",
+                                                       "application/octet-stream")
+    with open(path, "rb") as f:
+        st2, r2 = http(d["url"], method="PUT", headers=hdr, raw=f.read(), ctype=ctype)
+    return st2, r2
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ver", required=True, help="如 0.31.1（不带 v）")
     ap.add_argument("--title-gitee", required=True)
     ap.add_argument("--title-github", required=True)
+    ap.add_argument("--title-gitcode", default=None,
+                    help="GitCode 的 Release 标题（留空则用 --title-github）")
     ap.add_argument("--body-file", required=True)
     ap.add_argument("--asset-gitee", action="append", default=[], help="可重复")
     ap.add_argument("--asset-github", action="append", default=[], help="可重复")
+    ap.add_argument("--asset-gitcode", action="append", default=[], help="可重复")
     ap.add_argument("--split-gitee", action="store_true",
                     help="Gitee 侧 >100MB 的附件自动分卷（<name>.001/.002…）")
     ap.add_argument("--dry-run", action="store_true")
-    ap.add_argument("--only", choices=["gitee", "github", "both"], default="both")
+    ap.add_argument("--only",
+                    choices=["gitee", "github", "gitcode", "both", "all"],
+                    default="all",
+                    help="both=Gitee+GitHub（旧行为）；all=三端（默认）；也可单端")
     a = ap.parse_args()
 
     tag = "v" + a.ver
@@ -134,7 +168,8 @@ def main():
     print()
 
     # 校验附件存在
-    for label, lst in (("Gitee", a.asset_gitee), ("GitHub", a.asset_github)):
+    for label, lst in (("Gitee", a.asset_gitee), ("GitHub", a.asset_github),
+                       ("GitCode", a.asset_gitcode)):
         print("%s 附件（%d 个）:" % (label, len(lst)))
         for p in lst:
             ok = os.path.isfile(p)
@@ -157,7 +192,7 @@ def main():
     ok = True
 
     # ---------------- Gitee ----------------
-    if a.only in ("gitee", "both"):
+    if a.only in ("gitee", "both", "all"):
         gt = pasm_paths.read_token("gitee", "Gitee 令牌", here)
         st, rel = http("https://gitee.com/api/v5/repos/%s/releases" % GITEE_REPO,
                        data={"access_token": gt, "tag_name": tag, "name": a.title_gitee,
@@ -194,7 +229,7 @@ def main():
         print()
 
     # ---------------- GitHub ----------------
-    if a.only in ("github", "both"):
+    if a.only in ("github", "both", "all"):
         gh = pasm_paths.read_token("github", "GitHub 令牌", here)
         hh = {"Authorization": "token " + gh, "Accept": "application/vnd.github+json"}
         st, grel = http("https://api.github.com/repos/%s/releases" % GITHUB_REPO,
@@ -221,6 +256,34 @@ def main():
                 print("   upload %-58s -> %s %s" % (os.path.basename(p), st3,
                                                     "" if st3 < 300 else str(r3)[:200]))
                 ok &= st3 < 300
+
+    # ---------------- GitCode ----------------
+    if a.only in ("gitcode", "all"):
+        gc = pasm_paths.read_token("gitcode", "GitCode 令牌", here)
+        hh2 = gitcode_headers(gc)
+        st, crel = http("%s/repos/%s/releases" % (GITCODE_API, GITCODE_REPO),
+                        headers=hh2,
+                        data={"tag_name": tag,
+                              "name": a.title_gitcode or a.title_github,
+                              "body": body, "target_commitish": BRANCH,
+                              "prerelease": False})
+        if isinstance(crel, dict) and crel.get("tag_name"):
+            print("GitCode create release:", st)
+        else:
+            print("GitCode create release:", st, str(crel)[:200])
+            st2, c2 = http("%s/repos/%s/releases/tags/%s" % (GITCODE_API, GITCODE_REPO, tag),
+                           method="GET", headers=hh2)
+            if isinstance(c2, dict) and c2.get("tag_name"):
+                print("GitCode 复用已有 release")
+            else:
+                print("GitCode 建/取 release 失败:", st2, str(c2)[:200])
+                ok = False
+        for p in a.asset_gitcode:
+            st3, r3 = gitcode_asset(gc, tag, p)
+            print("   upload %-58s -> %s %s" % (os.path.basename(p), st3,
+                                                "" if st3 < 300 else str(r3)[:200]))
+            ok &= st3 < 300
+        print()
 
     print()
     print("DONE" if ok else "FAILED")

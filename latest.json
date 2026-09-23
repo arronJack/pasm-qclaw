@@ -1,7 +1,7 @@
 {
-  "version": "0.31.1",
-  "download_url": "https://gitee.com/arronzheng/pasm-qclaw/releases/tag/v0.31.1",
-  "notes": "v0.31.1 —— 桌面端首次三平台同发（Windows / macOS / Linux）。本版主要修平台适配与构建链，让同一份代码在三个系统都能出可安装包；Windows 功能与 v0.31.0 一致，可放心升级。\n\nmacOS 提供 .dmg（未签名未公证，首次打开需右键「打开」或 `xattr -dr com.apple.quarantine` 去除隔离标记——这不是程序坏了）；Linux 提供 .tar.gz 与 .deb。两平台首次运行务必先读安装指南：macOS 读 desktop/INSTALL-macos.md、Linux 读 desktop/INSTALL-linux.md（两篇都含「下载损坏」判别方法：大文件断线会让 zip 报「格式未知或数据已损坏」，那是没下完，不是包坏）。\n\nmacOS 包架构以文件名中的 universal2 / arm64 字样为准——本版为 universal2（Intel + Apple Silicon 通用）。macOS / Linux 本版为手动下载升级；Windows 沿用 Inno 增量升级通道（latest.json）。",
-  "published_at": "2026-09-21",
+  "version": "0.31.2",
+  "download_url": "https://gitee.com/arronzheng/pasm-qclaw/releases/tag/v0.31.2",
+  "notes": "v0.31.2 —— 修好「我让它开发，它什么都没做」，并让干活过程实时可见。\n\n① 修掉 5 个真机路由根因：开发指令不再被「表格分析 / 跨端推送」等栏目抢走；「能不能帮我开发一个网站吗」这类问句不再只回一段能力清单而不动手；长需求不再因为关键词窗口太窄而静默失效；「我昨天开发了一个网站」这类叙述句不再被当成开工指令；★ 最重要的一条——聊天模式下的「确认墙」原本是死路：你回「开始」，它既不开工也不回话，现在会立刻开工。\n\n② 干活过程实时可见（像 WorkBuddy 那样）：聊天区会逐步长出「开工 / 文件清单 / 深度思考 / 已读取 / 新建 +N 行 / 修改 +N -M 行 / 运行命令 + 真实输出」的步骤卡片。只报真实发生的事，思考增量原地刷新不刷屏，一轮只占一张卡片。此前重活全程只有一个「正在干活」，本地模型下可能几分钟，「在干活」和「卡死了」看起来一模一样。\n\n③ 顺带修好：设置面板的「📦 场景」页首次真正进包（v0.31.0 / v0.31.1 的安装包里其实没有它）；工作台「进度」一栏终于有内容（此前那个接口全项目从未被调用过）；Linux/macOS 构建脚本从手写参数改为统一读 build_common.py（手写那份漏了 115 个懒加载模块，会让那些能力在包里静默失效）。\n\n④ 本版只出 Windows 安装包（macOS / Linux 需要在 CI 上构建，本机不能交叉编译）。Gitee 上是分卷版：把 -gitee.exe 与同目录的 .bin 分卷全部下载后，直接运行 exe 即可，安装程序会自己找分卷，不需要手动合并。",
+  "published_at": "2026-09-23",
   "min_update_from": "0.20.0"
 }

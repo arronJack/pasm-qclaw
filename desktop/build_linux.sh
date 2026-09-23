@@ -2,7 +2,7 @@
 # ============================================================
 #  PASM Studio —— Linux 构建脚本（PyInstaller onedir + tar.gz + 可选 .deb）
 #  用法：  bash desktop/build_linux.sh            （在仓库根执行）
-#          APP_VERSION=0.31.1 bash desktop/build_linux.sh
+#          APP_VERSION=0.31.2 bash desktop/build_linux.sh
 #  产物：  dist/PASMStudio/            可直接运行（dist/PASMStudio/PASMStudio）
 #          dist/PASMStudio-<ver>-linux-x86_64.tar.gz
 #          dist/pasm-studio_<ver>_amd64.deb        （装了 dpkg-deb 才有）
@@ -18,7 +18,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."                     # 仓库根
-APP_VERSION="${APP_VERSION:-0.31.1}"
+APP_VERSION="${APP_VERSION:-0.31.2}"
 APP_NAME="PASMStudio"
 ARCH="$(uname -m)"
 echo "[INFO] 构建 ${APP_NAME} ${APP_VERSION} for linux-${ARCH}"
@@ -29,16 +29,18 @@ echo "[1/5] 安装构建依赖 ..."
 python3 -m pip install -q -r desktop/requirements-linux-macos.txt pyinstaller pillow
 
 echo "[2/5] PyInstaller 打包（onedir）..."
-python3 -m PyInstaller --noconfirm --clean --onedir --windowed \
+# 共同的构建参数（hiddenimports / datas / excludes / playwright / upx 排除项）
+# 全部来自 desktop/build_common.py —— 与 Windows 的 PASMStudio.spec 是**同一份**。
+# ⚠️ 曾经这里手写一份参数，漏了 desktop/skills、115 个懒加载 hiddenimports 与
+#    playwright 驱动 → 冻结版里那些能力**静默失效**（冒烟照样 PASS）。别再手写。
+mapfile -t BUILD_EXTRA < <(python3 desktop/build_common.py lines)
+echo "      build_common 提供 ${#BUILD_EXTRA[@]} 个额外参数"
+
+python3 -m PyInstaller --noconfirm --onedir --windowed \
   --name "${APP_NAME}" \
   --icon desktop/assets/icon.png \
   --collect-all pasm \
-  --add-data "desktop/assets:assets" \
-  --exclude-module matplotlib \
-  --exclude-module pytest \
-  --exclude-module uvicorn \
-  --exclude-module fastapi \
-  desktop/pasm_main.py
+  desktop/pasm_main.py "${BUILD_EXTRA[@]}"
 
 OUT="dist/${APP_NAME}"
 [ -x "${OUT}/${APP_NAME}" ] || { echo "[ERR] 未生成可执行文件：${OUT}/${APP_NAME}"; ls -la "$OUT" || true; exit 1; }

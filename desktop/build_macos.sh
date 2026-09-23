@@ -2,7 +2,7 @@
 # ============================================================
 #  PASM Studio —— macOS 构建脚本（PyInstaller onedir → .app → .dmg）
 #  用法：  bash desktop/build_macos.sh            （在仓库根执行，需 macOS）
-#          APP_VERSION=0.31.1 bash desktop/build_macos.sh
+#          APP_VERSION=0.31.2 bash desktop/build_macos.sh
 #  产物：  dist/PASMStudio.app
 #          dist/PASMStudio-<ver>-macos-<arch>.dmg
 #
@@ -19,7 +19,7 @@ set -euo pipefail
 [ "$(uname -s)" = "Darwin" ] || { echo "[ERR] 本脚本只能在 macOS 上执行（当前 $(uname -s)）"; exit 1; }
 
 cd "$(dirname "$0")/.."
-APP_VERSION="${APP_VERSION:-0.31.1}"
+APP_VERSION="${APP_VERSION:-0.31.2}"
 APP_NAME="PASMStudio"
 ARCH="$(uname -m)"                          # arm64 / x86_64
 # TARGET_ARCH=universal2 → 同时兼容 Apple Silicon 与 Intel（推荐对外发布用）
@@ -49,17 +49,19 @@ fi
 echo "      -> ${ICNS}"
 
 echo "[3/6] PyInstaller 打包 ..."
-PYI_ARGS=(--noconfirm --clean --windowed --onedir
+# 共同的构建参数全部来自 desktop/build_common.py（与 Windows 的 PASMStudio.spec 同一份）。
+# ⚠️ 别再手写这份参数：曾经漏了 desktop/skills、115 个懒加载 hiddenimports 与 playwright 驱动，
+#    冻结版里那些能力**静默失效**（冒烟照样 PASS）。
+mapfile -t BUILD_EXTRA < <(python3 desktop/build_common.py lines)
+echo "      build_common 提供 ${#BUILD_EXTRA[@]} 个额外参数"
+
+PYI_ARGS=(--noconfirm --windowed --onedir
   --name "${APP_NAME}"
   --icon "${ICNS}"
   --osx-bundle-identifier "com.arronjack.pasmstudio"
   --collect-all pasm
-  --add-data "desktop/assets:assets"
-  --exclude-module matplotlib
-  --exclude-module pytest
-  --exclude-module uvicorn
-  --exclude-module fastapi
-  desktop/pasm_main.py)
+  desktop/pasm_main.py
+  "${BUILD_EXTRA[@]}")
 
 if [ -n "$TARGET_ARCH" ]; then
   # universal2 需要 runner 的 Python 本身是 universal2 构建；不是就会失败 → 回落本机架构

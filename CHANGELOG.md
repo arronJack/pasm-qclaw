@@ -3,8 +3,99 @@
 > **版本号说明**：本仓有两条版本轴，别混 ——
 > · **引擎/内核** `pasm.__version__`（当前 `0.7.2`）+ `pasm.cognitive.__version__`（`0.8.0`），
 >   与 `pyproject.toml` 的 `version` 必须一致；
-> · **桌面产品** PASM Studio `APP_VERSION`（当前 `0.31.0`，见 `desktop/appinfo.py`），
+> · **桌面产品** PASM Studio `APP_VERSION`（当前 `0.31.2`，见 `desktop/appinfo.py`），
 >   驱动安装包与升级通道，其发行记录见 `pasm-qclaw/CHANGELOG.md`。
+
+## 0.31.2（2026-09-23）· 「我让它开发，它什么都没做」修好了 + 干活过程实时可见
+
+> 小志原话：「我让桌面应用帮我开发时，为什么没有任何动作」，
+> 以及「我还想让它能像 workbuddy 一样，不管是聊天，还是干活，均能显示过程」。
+
+### 一、真机症状的 5 个根因（全都有实测证据，不是推断）
+
+一句话要穿过 `_cap_question` → `_detect_agent`（**首个命中即返回**）→ 模式门 → `_plan_gate`
+→ 待确认墙 → `_agent_run`。**任何一道判错，表现都是"没动作"**。
+
+| # | 根因 | 判据 / 修法 |
+| --- | --- | --- |
+| 1 | **宽规则排在 project 之前**：`tableana`(11095) / `remote_push`(10776) 早于 project(11281) → 「帮我开发一个**数据分析**平台」「帮我开发一个**微信**小程序」被抢走 | 在 `_detect_agent` 开头插**软件开工早守卫**，**必须**排在这两条之前 |
+| 2 | **问句词劫持**：`_cap_question` 是最前面一道闸，含「能不能/你会不会」→ 返回 `askhelp` → 只输出能力菜单、不写任何文件 | 早守卫里加 `and not self._looks_like_build_order(text)` |
+| 3 | **关键词窗口 22 字太窄**：`[^，。！？!?\n]{0,22}?` 不允许跨标点 → 长需求 project 规则 **0 命中**，静默走纯聊天 | 放宽到 40 字 + **禁止跨标点** + 补"动词+量词+名词"第三形态 |
+| 4 | **反向误伤**：旧 2c 规则把「我昨天开发了一个网站 / 怎么开发一个网站 / 让电脑帮我开发网站」也当开工指令 | 加 `_order_narrative()` **叙述句守卫**（过去式自述 / 转述他人 / 求推荐求搜索 / 问怎么做） |
+| 5 | ★ **确认墙是死路**（最贵）：`_pending_work` 的**回收**写在 `if agent and agent[0] in _HEAVY_KINDS:` **里面**，而 `_detect_agent("开始")` 返回 `None` → 该分支**永远进不去** → 用户回「开始」既不执行、**连回复都没有**，待确认还挂着 | 把回收**提到 agent 判定之外**；加 `_confirmed` 哨兵防止"确认完又被问一次"；补 `pasm://confirmwork` 锚点 |
+
+**诚实边界**（比修好更重要的一条）：识别成重活、但因判据不成立被降级成聊天时，
+**必须显式说出来**（"这句话我按**聊天**处理了，**没有动手**…"）。
+旧版一声不响走聊天分支，用户**无从判断**"是没听懂还是没动手"，只能反复重说。
+
+### 二、过程流（步骤卡片）—— 「像 WorkBuddy 一样显示过程」
+
+改动前的真相：聊天有真流式与真思考（`on_delta` / `on_think`），**重活却全程静默** ——
+`_project_run` 只调一次 `_brain()`（无流式/思考回调），跑完才出结果；
+聊天区除了「⏳ 正在干活」那一句，中间什么都看不到（本地模型下可能是几分钟）。
+于是**"正在干活"和"卡死了"在界面上完全一样**。
+
+新增**步骤总线**（`_step` / `_step_ui` / `_steps_html` / `_step_files` / `_step_run`），
+并把 `_project_run` / `_script_plan` / `_genfile_run` / `_dev_build` 全部仪表化；
+`_brain` 增加 `on_think` 形参并透传给 `_llm_call`。三条纪律：
+
+1. **只报真实发生的事** —— 真跑的命令、真写的文件、真读的路径（不生成"假思考"凑视觉热闹）；
+2. **线程安全** —— worker 线程可直接调 `_step()`，内部统一派发到 UI 线程；
+3. **一轮一张卡片** —— `_patch_last_block` 原地重画，不刷成几十条气泡。
+
+★★ **这里连踩两轮，都记进技能了（坑 55）**：
+
+- **第一坑**：要重画的 HTML 必须**单块**（只用 `<span>` + `<br>`）。
+  实测 Qt：`<div>a</div><div>b</div>` → **2 个块**；`<span>a</span><br><span>b</span>` → **1 个块**。
+  多块 HTML 会让"最后一块"退化成最后一行，身份核对必然失败 → **实测 5 步把聊天文档从 1 块刷到 20 块**。
+- **第二坑（更隐蔽）**：块身份**不能用"最后一块"**。干活期间**别人也会往末尾追加** ——
+  `_append("系统","⏳ 正在干活")`、`_replay_history()` **整段重放**、`_turn_live_start()` 先
+  `append("")` 再填名牌。每一次都把"我那块"挤到上面去，下一次刷新便**另起一块** →
+  文档里出现 **2 张「过程 ·」卡片**（老卡片步数冻住、新卡片接着长）。
+  **定稿**：给块打标记 `blk.setUserState(_STEP_TAG_BASE + gen)`，**每轮换 TAG**
+  （跨轮不串卡、上一轮留作历史），认领后原地重画。
+  前提已验证：工程里**没有任何 `QSyntaxHighlighter`**，`userState` 无人占用。
+
+顺带接上 `WORKLOG.set_status(...)` —— 此前**全项目从未被调用过**，工作台"进度"一栏一直是空的。
+
+### 三、两仓同源（发行仓补上落下的东西）
+
+`diff -rq PASM/desktop pasm-qclaw/desktop` 实测发行仓落后：
+
+- 缺 `build_common.py`（构建参数 SSOT）与 `scenario.py`（场景导入）——**同步补齐**；
+- `build_linux.sh` / `build_macos.sh` 仍是**手写参数**旧版：漏了 **115 个懒加载 hiddenimports**
+  + `desktop/skills` + playwright 驱动 → 冻结版**静默丢能力、冒烟照样 PASS**（主仓早修的坑没同步）——**同步补齐**；
+- `pasm_companion.py` 少 700 行（**「📦 场景」页从未进过包**）——**同步补齐**。
+
+### 四、验证（本轮全部实跑）
+
+- 桌面守门套件：**33 个脚本 · 1104 项断言 · 0 失败**（此前 29 个 / 993 项）
+- 新增 4 个套件成员（共 111 项）：
+  | 脚本 | 项 | 覆盖 |
+  | --- | --- | --- |
+  | `verify_order_v0312.py` | 41 | 18 正例 + 20 反例 + 长需求 `_strong_order` |
+  | `verify_step_stream_v0312.py` | 24 | 单块 / 思考原地刷新 / 真 diff / 命令卡 / 异常吞掉 / **被插话不另起卡** / 跨轮不串卡 |
+  | `verify_dev_e2e_v0312.py` | 28 | 真走 `send()`：确认墙 → 回「开始」**真开工**、逐步上屏、恰好 1 块 |
+  | `verify_repo_sync_v0312.py` | 18 | **跨仓漂移守卫**（逐字节 + 子进程冒真） |
+- `tools/check_undefined_names.py`：26 个文件无未定义名；`tools/check_core_fork.py`：13 个薄壳
+  身份一致 · 0 警告 · 0 失败
+
+### 五、本版产物
+
+Windows 安装包（`PASMStudio-Setup-0.31.2.exe`，Gitee 侧为同名的 `-gitee` 分卷版）。
+macOS / Linux 本版**未重出**（需 CI 跑 PyInstaller，本机不能交叉编译）。
+
+## 0.31.1（2026-09-21）· 桌面端首次三平台同发（Windows / macOS / Linux）
+
+> 这一版的核心不是新功能，而是**同一份代码第一次在三个系统上都产出可安装的包**。
+> 详细发布说明见本仓 [`release_body_v0311.md`](release_body_v0311.md)（当时未同步进本文件）。
+
+- **修掉两个「导入期硬拦」**：`audio.py` 顶层 `import winreg` + `ctypes.OleDLL/HRESULT/WINFUNCTYPE`
+  只在 Windows 存在，而主程序顶层就 import 它 → Linux/macOS **启动即崩**。
+- macOS 出 `.dmg`（未签名未公证 → 首次打开需右键「打开」，或在安装指南里 `xattr -dr`）；
+  Linux 出 `.tar.gz` 与 `.deb`。
+- CI 工作流 `.github/workflows/build-desktop.yml`（**PyInstaller 不能交叉编译**，必须走 CI）；
+  产物按分发形式拆 artifact，避免体积翻倍。
 
 ## 0.31.0（2026-09-17）· 右栏接真浏览器 + 一个产物一页 · 每轮向下追加
 

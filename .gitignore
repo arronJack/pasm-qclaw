@@ -1,5 +1,9 @@
 # 安装包不入库（发行走 Releases 附件，Gitee 附件配额有限）
 PASMStudio-Setup-*.exe
+# ★ 分卷版（-gitee 的 .bin 切片）同样不入库 —— 体量和 exe 一样大，
+#   一旦提交进历史就再也删不掉（铁律：安装包只挂 Release 附件）
+PASMStudio-Setup-*.bin
+*.bin
 
 # 桌面端构建期生成的 latest.json（真正的更新清单在仓库根，不重复入库）
 desktop/latest.json

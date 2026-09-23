@@ -15,7 +15,7 @@
 | `pasm-mcp-server` | MCP 接入层：给任意 AI 客户端装长期记忆 | 公开 | 0.2.0 |
 | `PASM-Lite` | 教学版 + 认知引擎接口 | 公开 | — |
 | `PASM` | 核心引擎（七层仿生 / 世界模型） | **私有** | 0.7.2 |
-| **`pasm-qclaw`（本仓）** | **桌面应用（UI 外壳，已开源）** | 公开 | **0.31.0** |
+| **`pasm-qclaw`（本仓）** | **桌面应用（UI 外壳，已开源）** | 公开 | **0.31.2** |
 
 本仓**现在包含 PASM Studio 桌面端的开源源码**（[`desktop/`](desktop/README.md) 目录，基于 PySide6 的 Windows 桌面应用 UI/外壳层），
 同时仍是安装包与更新清单 `latest.json` 的**发行通道**。
@@ -27,7 +27,8 @@
 > 核心引擎的算法、记忆/世界模型/规划器等仍在闭源仓迭代（含即将到来的 PASM V2.0 深层重构）。
 
 地址：[Gitee](https://gitee.com/arronzheng/pasm-qclaw) ·
-[GitHub](https://github.com/arronJack/pasm-qclaw)
+[GitHub](https://github.com/arronJack/pasm-qclaw) ·
+[GitCode](https://gitcode.com/arronzheng/pasm-qclaw)
 
 ---
 
@@ -40,7 +41,69 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.30.16（2026-09-17）· 复制不再吃掉聊天正文 / 聊天慢的真凶：一个被 `except` 吞掉的 NameError
+## 最新：v0.31.2（2026-09-23）· 「我让它开发，它什么都没做」修好了 + 干活过程实时可见
+
+**这一版修的是桌面端最伤人的一个问题：你对它说「帮我开发一个记账系统」，它没有任何动作。**
+查下来不是执行器坏了，是**路由** —— 一句话要穿过一串判断门（能力问句 → 关键词路由 → 模式门
+→ 计划门 → 待确认墙 → 执行器），**任何一道判错，表现出来都是"没反应"**。
+
+### 一、5 个真根因（都有实测证据）
+
+| # | 根因 | 你看到的现象 |
+|---|---|---|
+| 1 | 开发指令被别的栏目抢走 | 「帮我开发一个**数据分析**平台」被判成"表格分析"；「帮我开发一个**微信**小程序」被判成"跨端推送" |
+| 2 | 疑问句劫持 | 「能不能帮我开发一个网站吗」→ 只回一段"我会这些"的能力清单，**不开发** |
+| 3 | 需求稍长就静默失效 | 关键词窗口只有 22 字，超长需求直接不命中 → 当纯聊天处理，**且一句提示都没有** |
+| 4 | 叙述句被当成命令 | 「我昨天开发了一个网站」「怎么开发一个网站」也会被当成"开工指令" |
+| 5 | ★ **确认墙是死路**（最贵） | 聊天模式先问你要不要开工；你回「**开始**」—— 它**既不开工、也不回话**，那句确认就永远挂着 |
+
+**现在**：开发指令一律认得准（18 条正例全中、20 条反例零误伤），回一句「开始」**立刻开工**。
+另外补了一条**诚实边界**：如果它把"重活"降级成了聊天，会明确告诉你
+「这句话我按**聊天**处理了，**没有动手**」——旧版一声不响走聊天分支，你无法判断
+"它是没听懂，还是没动手"，只能反复重说。
+
+### 二、干活过程实时可见（像 WorkBuddy 那样）
+
+以前重活是**全黑箱**：聊天里只有一句「⏳ 正在干活（可能要几十秒到几分钟）」。
+本地模型下真的可能几分钟，于是 —— **"正在干活"和"卡死了"在界面上完全一样**。
+现在聊天区会逐步长出**一张**过程卡片（同一轮只占一张，不刷屏）：
+
+```
+过程 · 7 步
+◇ 开工 🖥 开发
+◇ 让模型生成项目文件清单  新建项目
+◉ 已读取 …\记账系统\index.html   42 字
+◍ 深度思考  先把需求拆成前端页面与后端服务，再逐个文件生成
+＋ 新建 index.html   +5 行
+✎ 修改 app.py        +1 / -0 行
+›_ 运行项目  python app.py（自动探测入口）
+     ✅ 已在 http://127.0.0.1:5000 启动
+```
+
+三条纪律：**只报真实发生的事**（真跑的命令、真写的文件、真读的路径，不生成"假思考"凑热闹）；
+思考增量**原地刷新**（推 40 次也只占一行）；**一轮一张卡片**，上一轮的卡片留在历史里。
+
+### 三、顺带修好的
+
+- **「📦 场景」设置页首次真正进包**：把外部生成的智能体场景（人格 + 知识源）一键载入。
+  这个能力在 **v0.31.0 / v0.31.1 的安装包里其实没有** —— 代码在开发主仓，没同步到发行仓。
+- **工作台「进度」一栏终于有内容**：此前 `worklog.set_status` 全项目**从未被调用过**。
+- **构建链统一到单一真相源**（`desktop/build_common.py`）：发行仓的 Linux/macOS 构建脚本
+  此前是**手写参数**，漏了 115 个懒加载 hiddenimports + `desktop/skills` + playwright 驱动
+  → 那两平台的包里**这些能力静默失效，冒烟还照样通过**。
+
+### 四、验证与产物
+
+- 桌面守门套件 **33 个脚本 · 1104 项断言 · 0 失败**；新增**跨仓漂移守卫**
+  （两仓 `desktop/` 逐字节比对 + 子进程真起窗口冒真），以后"改完忘同步"会当场被抓出来。
+- 本版产物：`PASMStudio-Setup-0.31.2.exe`（Windows）。
+  Gitee 侧为**分卷版**（`-gitee.exe` + `.bin` 切片）：**全部下到同一目录后直接运行 exe 即可**，
+  安装程序会自己找分卷，不需要手动合并。
+  **macOS / Linux 本版未重出**（需 CI 跑 PyInstaller，本机不能交叉编译）。
+
+---
+
+### v0.30.16（2026-09-17）· 复制不再吃掉聊天正文 / 聊天慢的真凶：一个被 `except` 吞掉的 NameError
 
 **「输入『你好』过了一分钟还没反应」不是模型慢，是本地通路被静默降级了。**
 真机日志里的证据：`原生 /api/chat 不可用，回退兼容端点：name 'base_url' is not defined`
@@ -389,11 +452,18 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 ## 下载与安装
 
-最新版见仓库 **Releases**（v0.30.16，单文件约 86.8MB）：
+最新版见仓库 **Releases**（v0.31.2）：
 
-1. 下载 `PASMStudio-Setup-0.30.16.exe`
+1. 下载安装包。**GitHub / GitCode** 上下载 `PASMStudio-Setup-0.31.2.exe`（单文件整包）；
+   **Gitee** 上是**分卷版** `PASMStudio-Setup-0.31.2-gitee.exe` + `.bin` 切片 ——
+   请把 `.exe` 与**全部 `.bin` 分卷下到同一个目录**，然后直接运行 exe 即可
+   （安装程序会自己找同目录的分卷，**不需要手动合并**）。
 2. 双击安装 → 打开 PASM Studio → 点右上「设置」填 LLM Key（或留空用本地 Ollama）
 3. 开始聊天；要用「图像/视频/漫剧」真出片时，首次使用按提示接入出图引擎（约 1 分钟）
+
+> macOS / Linux 的包**本版未重出**（需要在 CI 上构建，本机不能交叉编译）；
+> 需要时可用上一版 v0.31.1 的 `.dmg` / `.tar.gz` / `.deb`，安装指南见
+> [`desktop/INSTALL-macos.md`](desktop/INSTALL-macos.md) 与 [`desktop/INSTALL-linux.md`](desktop/INSTALL-linux.md)。
 
 > 系统要求：**Windows 10/11 x64**（v0.16 起不再支持 Win7/8）· CPU 即可 · 首次安装解压约 1 分钟
 > 未填任何 Key 也能用（本地演示模式：同样会记忆与成长，只是话术朴素）
@@ -443,7 +513,56 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 > **It never loses what you typed, and never claims to have done something it didn't** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.30.16 (2026-09-17) · Copy no longer wipes the chat transcript / slow-chat root cause: a NameError swallowed by `except`
+## Latest: v0.31.2 (2026-09-23) · "I asked it to build something and nothing happened" — fixed, and you can watch it work
+
+**This release fixes the most painful desktop bug: you say "build me an expense tracker" and the
+app does nothing.** The cause was not the executor — it was **routing**. A sentence has to pass a
+chain of gates (capability question → keyword router → mode gate → plan gate → confirmation wall
+→ executor), and **any gate that misjudges looks exactly like "no reaction"**.
+
+Five root causes, all backed by measured evidence:
+
+| # | Root cause | What you saw |
+|---|---|---|
+| 1 | Build requests stolen by other modules | "build me a **data analysis** platform" → treated as spreadsheet analysis; "build me a **WeChat** mini-program" → treated as cross-device push |
+| 2 | Question wording hijacked the request | "can you build me a website?" → it just recited a capability list and **built nothing** |
+| 3 | A 22-character keyword window failed silently | Longer requirements never matched → treated as plain chat, **with no hint at all** |
+| 4 | Narrative sentences treated as orders | "I built a website yesterday" was also taken as a command to start work |
+| 5 | ★ **The confirmation wall was a dead end** | In chat mode it asked whether to start; replying "**开始**" neither ran anything nor replied — the confirmation just sat there forever |
+
+Now build requests are recognised reliably (**18 positives, 20 negatives, zero false positives**),
+and "开始" really starts the work. There is also an explicit **honesty guard**: when a heavy task
+gets downgraded to plain chat, it says so ("I treated this as chat and **did not act**") instead of
+staying silent and leaving you unable to tell "it didn't understand" from "it didn't act".
+
+**Watch the work happen.** Heavy tasks used to be a black box — a single "working…" line, where
+"working" and "frozen" looked identical (local models can take minutes). The chat pane now grows
+exactly one step card per turn: plan · model file list · read · deep-thinking · new file +N lines ·
+edit +N/-M lines · run command with real output. Three rules: only real events are reported (real
+commands, real files, real paths — no fake thinking for visual effect); thinking updates in place
+instead of flooding the pane; and one card per turn, with previous turns kept as history.
+
+**Also fixed:** the "📦 Scenarios" settings page ships for the first time (it existed in the main
+dev repo but was never synced to the release repo, so the v0.31.0 / v0.31.1 packages genuinely did
+not have it); the workbench progress column finally receives data (`worklog.set_status` had never
+been called anywhere in the project); and the Linux/macOS build scripts now read PyInstaller
+parameters from a single source of truth instead of hand-written lists that silently dropped 115
+lazy imports plus the playwright driver.
+
+**Verified:** 33 desktop gate scripts, **1104 assertions, 0 failures**. A new cross-repo drift guard
+byte-compares the dev and release `desktop/` trees (sha256 equality, reverse check for release-only
+edits, shared build params, version alignment) and boots the synced copy in a subprocess to prove it
+actually works.
+
+**Artifacts:** `PASMStudio-Setup-0.31.2.exe` (Windows). On Gitee the installer is uploaded as
+**split volumes** (`-gitee.exe` plus `.bin` slices) because of Gitee's 100 MB per-attachment limit —
+download all parts into one folder and run the `.exe`; it finds the volumes by itself, no manual
+merge needed. macOS / Linux packages are **not rebuilt** in this release (they require a CI build;
+PyInstaller cannot cross-compile from Windows).
+
+---
+
+### v0.30.16 (2026-09-17) · Copy no longer wipes the chat transcript / slow-chat root cause: a NameError swallowed by `except`
 
 **"I typed 你好 and nothing came back for a minute" was not a slow model — the local path was silently downgraded.**
 The log says it plainly: `native /api/chat unavailable, falling back to the compatible endpoint:

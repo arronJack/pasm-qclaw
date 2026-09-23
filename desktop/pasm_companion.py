@@ -1527,6 +1527,37 @@ class SettingsDialog(QDialog):
         # ── 第 7 页：🔗 接入（v0.30.14）────────────────────────────────────
         # 四个通道都是**双向**的：入站（这些平台能指挥这台电脑）+ 出站（结果推回去）。
         # 与支付页同一套打法：密钥掩码回显 + 未改动写回原值（别把真密钥覆盖成 ***）。
+        # ── 第 7 页：场景导入 ────────────────────────────────────────
+        # # PASM-SCENE-IMPORT v1
+        # 读 <数据目录>/scenarios/*.json（由 pasm-customer-service 的
+        # `pasm-cs studio` 产出），一键把「人格 + 知识源」载入本机。
+        # ⚠️ 目录走 scenario.scenarios_dir()（env PASM_STUDIO_DIR 优先），
+        #    必须与 Studio 其它数据同源 —— 否则隔离/第二实例态下
+        #    Studio 会找不到自己生成的场景。
+        _p_scene = _tab("📦 场景")
+        _sc_lay = _p_scene[0]
+        _sc_hint = QLabel("把外部生成的智能体场景（人格 + 知识库）一键载入本机。\n"
+                          "场景文件由 pasm-customer-service 的 `pasm-cs studio` 产出。")
+        _sc_hint.setWordWrap(True)
+        _sc_hint.setStyleSheet("color:#64748b;font-size:11px")
+        _sc_lay.addWidget(_sc_hint)
+        _sc_row = QHBoxLayout()
+        self.sc_list = QComboBox()
+        self.sc_list.setMinimumWidth(240)
+        self.sc_btn = QPushButton("导入此场景")
+        self.sc_btn.clicked.connect(self._scene_import)
+        _sc_reload = QPushButton("重新扫描")
+        _sc_reload.clicked.connect(self._scene_refresh)
+        _sc_row.addWidget(self.sc_list, 1)
+        _sc_row.addWidget(self.sc_btn)
+        _sc_row.addWidget(_sc_reload)
+        _sc_lay.addLayout(_sc_row)
+        self.sc_status = QLabel("")
+        self.sc_status.setWordWrap(True)
+        self.sc_status.setStyleSheet("color:#475569;font-size:11px")
+        _sc_lay.addWidget(self.sc_status)
+        self._sc_info = {"dir": "", "items": [], "errors": []}
+        self._scene_refresh()          # 打开设置即扫描一次，省得用户先点一下
         _p_conn = _tab("🔗 接入", cols=2)
         _con_l, _con_r = _p_conn[0], _p_conn[1]
         self._con_le = {}              # (group,key) -> QLineEdit
@@ -2085,6 +2116,77 @@ class SettingsDialog(QDialog):
         else:
             self.pay_status.setText("⚠ %s 未就绪：%s" % (_nm, why))
             self.pay_status.setStyleSheet("color:#dc2626;font-size:11px")
+
+    def _scene_refresh(self):
+        """扫描场景目录并刷新下拉列表。失败即降级为一行提示，绝不冒异常。"""
+        try:
+            import scenario as SC
+            info = SC.list_scenarios()
+        except Exception as ex:                                  # noqa: BLE001
+            try:
+                self.sc_list.clear()
+                self.sc_status.setText("场景模块不可用：%s" % ex)
+            except Exception:
+                pass
+            return
+        self._sc_info = info
+        self.sc_list.clear()
+        for _it in info["items"]:
+            self.sc_list.addItem("%s（%s，%d 个知识源）"
+                                 % (_it["display_name"], _it["agent_id"],
+                                    _it["source_count"]), _it["path"])
+        if info["items"]:
+            _msg = "找到 %d 个场景｜目录：%s" % (len(info["items"]), info["dir"])
+            _color = "#475569"
+        else:
+            _msg = ("暂无场景。在 pasm-customer-service 目录执行 `pasm-cs studio` "
+                    "生成后点「重新扫描」。\n目录：%s" % info["dir"])
+            _color = "#94a3b8"
+        if info["errors"]:
+            _msg += "\n⚠ " + "；".join(info["errors"][:3])
+            _color = "#d97706"
+        self.sc_status.setText(_msg)
+        self.sc_status.setStyleSheet("color:%s;font-size:11px" % _color)
+
+    def _scene_import(self):
+        """导入选中场景：名字填进「基本」页，知识源立即灌进资料库。
+
+        只做**确实有效**的两件事 —— 名字（QLineEdit，保存后生效）与知识
+        （真落盘进资料库）。角色/语气等描述性字段不做假动作：本机人格以
+        「🎭 基本」页为准，界面上如实说明。
+        """
+        _path = self.sc_list.currentData()
+        if not _path:
+            return
+        try:
+            import scenario as SC
+            _spec = SC.load_scenario(_path)
+        except Exception as ex:                                  # noqa: BLE001
+            self.sc_status.setText("⚠ 读取失败：%s" % ex)
+            self.sc_status.setStyleSheet("color:#dc2626;font-size:11px")
+            return
+        _patch = SC.persona_patch(_spec)
+        if _patch.get("name"):
+            self.name.setText(str(_patch["name"]))
+        try:
+            import knowledge as KB
+            _res = SC.ingest(_spec, os.path.dirname(_path), KB.record)
+        except Exception as ex:                                  # noqa: BLE001
+            self.sc_status.setText("⚠ 导入知识失败：%s" % ex)
+            self.sc_status.setStyleSheet("color:#dc2626;font-size:11px")
+            return
+        _ok = bool(_res.get("ok"))
+        _lines = ["%s 已导入 %d 条知识" % ("✓" if _ok else "⚠", _res.get("imported", 0))]
+        for _s in (_res.get("sources") or []):
+            _lines.append("· %s：%d 条" % (_s.get("name"), _s.get("count")))
+        if _res.get("errors"):
+            _lines.append("· 未导入：" + "；".join(_res["errors"][:3]))
+        if _patch.get("name"):
+            _lines.append("· 名字「%s」已填入「🎭 基本」页，点「保存」后生效" % _patch["name"])
+        _lines.append("· 角色/语气等描述见场景文件；本机人格以「🎭 基本」页为准。")
+        self.sc_status.setText("\n".join(_lines))
+        self.sc_status.setStyleSheet(
+            "color:%s;font-size:11px" % ("#16a34a" if _ok else "#dc2626"))
 
     def reject(self):
         """取消 → 把「小人」三项**回滚**成打开对话框时的值。
@@ -4156,6 +4258,99 @@ class CompanionWindow(QMainWindow):
         if not s or len(s) > 60:
             return False
         return bool(self._DIRECT_ORDER_RE.match(s))
+
+    # ---- v0.31.2 开工指令判定（不设 60 字上限）----
+    #: 开工动词（"要我动手做东西"）
+    _ORDER_VERB = (r"(?:开发|做一个|做个|做一?款|做一?套|搭一?个|搭个|建一?个|建个|"
+                   r"写一?个|写个|写一?份|设计一?个|生成一?个|搞一?个|整一?个|"
+                   r"来一?个|做|写|生成)")
+    #: 句首/句中引导词（有它才算"对我下的命令"，防叙述句被误判）
+    _ORDER_LEAD = (r"(?:帮我?|给我|替我|请|麻烦|拜托|劳驾|我想|我要|想要|"
+                   r"能不能|可不可以|可以帮|你会不会|会不会)")
+    #: 软件形态产物（→ 开发项目）。**刻意不含**脚本/代码/程序（那些归"写代码"工种）
+    _SOFT_GOODS = (r"(?:网站|官网|网页应用|网页|系统|平台|小程序|前后端|全栈|后台|"
+                   r"管理工具|工具软件|应用软件|应用|工具|软件|博客|商城|留言板|"
+                   r"管理系统|登录系统|计算器|画板|小游戏|机器人|客户端|页面|"
+                   r"数据库|服务端|前端|记账|待办|项目)")
+    #: 全部产物形态（→ 确认墙用，避免长需求被静默降级成聊天）
+    _ANY_GOODS = _SOFT_GOODS[:-1] + (
+        r"|文档|报告|方案|总结|说明|材料|纪要|清单|文稿|笔记|Word|word|PPT|ppt|"
+        r"Excel|excel|表格|脚本|代码|程序|图片|图像|视频|短片|漫剧|海报)")
+
+    @staticmethod
+    def _order_narrative(text: str) -> bool:
+        """叙述句守卫：转述他人 / 过去式自述 / 求推荐求搜索 —— 都不是对我下的命令。"""
+        t = text or ""
+        if re.search(r"(?:今天|昨天|刚才|之前|上次|以前|刚刚)[^，。！？]{0,18}?"
+                     r"(?:我)?[^，。！？]{0,6}(?:开发|做|搭|建|写|生成)"
+                     r"[^，。！？]{0,4}(?:了|过|完)", t):
+            return True
+        if re.search(r"(?:让|叫|请|托)(?:它|他|她|别人|电脑|系统|同事|朋友)"
+                     r"[^，。！？]{0,14}(?:开发|做|搭|建|写|生成)", t):
+            return True
+        # 「帮[我]找/搜/推荐/介绍/下载/安装…」是在**要东西/要答案**，不是要我造软件。
+        # 反例对照（必须抓住）：「帮我找一个开发工具」里的"开发"是名词的一部分，
+        # 旧写法会把它当开工动词 → 误判成开发项目。
+        if re.search(r"(?:帮我?|给我|替我)(?:找|搜|查一?下|推荐|介绍|下载|安装|了解|看看)", t):
+            return True
+        if re.search(r"怎么|如何|怎样|为什么|为何|是什么|啥意思", t):
+            return True
+        return False
+
+    def _order_hit(self, text: str, goods: str) -> bool:
+        """「引导词/句首动词 + 产物」是否同时成立（形态判定，供上面两条规则复用）。
+
+        为什么窗口放到 40 字且**不许跨标点**：真机事故里
+        「帮我开发一个能自动抓取价格、对比历史最低价、并在降价时提醒我的比价系统」
+        在旧的 `[^，。！？!?\n]{0,22}?` 窗口下 **0 命中** → 掉进普通聊天且无提示。
+        需求写得越具体反而越不可能开工，这是反的。
+        """
+        s = (text or "").strip()
+        if not s or len(s) > 200 or self._order_narrative(s):
+            return False
+        # 形态①：有引导词 —— 引导词 → 10 字内动词 → 40 字内产物
+        if re.search(self._ORDER_LEAD + r"[^，。！？!?\n]{0,10}?" + self._ORDER_VERB +
+                     r"[^，。！？!?\n]{0,40}?" + goods, s):
+            return True
+        # 形态②：句首即动词（祈使句可无引导词）—— "开发一个记账系统"
+        if re.match(r"^\s*" + self._ORDER_VERB + r"[^，。！？!?\n]{0,40}?" + goods, s):
+            return True
+        # 形态③：「开发 + 一个/一款/一套/个 + 自定名」——产物名认不出来也算。
+        #   "帮我开发一个记账本" 里的"记账本"是用户自造的名字，任何词表都盖不全；
+        #   而"开发 + 量词"本身就是软件开工的强信号。**只认"开发"**，不认"做/写" ——
+        #   否则「帮我做个海报」（该出走图）会被误抢成开发项目。
+        if re.search(self._ORDER_LEAD + r"[^，。！？!?\n]{0,6}?开发"
+                     r"[^，。！？!?\n]{0,6}?(?:一个|一款|一套|一版|个)"
+                     r"[\u4e00-\u9fa5A-Za-z]{2,}", s):
+            return True
+        return False
+
+    def _looks_like_build_order(self, text: str) -> bool:
+        """是不是"要我做一个**软件产品**"的开工指令（→ 直通 project）。
+
+        为什么必须单独有这道**高优先级早守卫**（小志 2026-09-23 真机反馈
+        「我让桌面应用帮我开发时，为什么没有任何动作」）—— 实测三条死路：
+          ① 含"能不能/你会不会" → 先被 `_cap_question` 抢成 `askhelp`，
+             只回一段能力菜单，**不写任何文件**；
+          ② 「帮我开发一个数据分析平台」先被 `tableana` 抢走、
+             「帮我开发一个微信小程序」先被 `remote_push` 抢走 ——
+             这两条规则在 `_detect_agent` 里都**排在 project 之前**（先命中者胜）；
+          ③ 长需求撑不住旧的 22 字窗口 → agent=None → 纯聊天。
+        所以开发需求必须在 `_detect_agent` **最前面**就认领。
+        """
+        return self._order_hit(text, self._SOFT_GOODS)
+
+    def _looks_like_order(self, text: str) -> bool:
+        """任意产物形态的开工指令（含文档/PPT/表格/脚本/图片…）。
+
+        只给"确认墙"用 —— 目的是别让 >60 字的具体需求被 `_is_direct_order`
+        的 60 字上限**静默降级**成普通聊天（同样是"什么都没发生"）。
+        """
+        return self._order_hit(text, self._ANY_GOODS)
+
+    def _strong_order(self, text: str) -> bool:
+        """本轮算不算"明确开工指令"（v0.31.2：把开发类的 60 字上限拿掉）。"""
+        return bool(self._is_direct_order(text) or self._looks_like_order(text))
 
     def _imperative(self, text: str) -> bool:
         """v0.27.2 串词守卫：这句话是不是**对我下的命令**？
@@ -7644,6 +7839,14 @@ class CompanionWindow(QMainWindow):
                    is_new: bool = True):
         import coder as CDR
         import workctx as WC
+        # v0.31.2：这一轮的过程流从零开始（本路径不经 send() 的 agent 分支，
+        # 所以重置要在这里自己做，否则上一轮的卡片会被续写）。
+        try:
+            self._step_reset()
+            self._step("plan", "开始%s「%s」" % ("创建" if is_new else "优化", name),
+                       CDR.lang_label(lang), (spec or "")[:80])
+        except Exception:
+            pass
         self._append("系统", "🛠 开始%s「%s」(%s)…（已记录本次需求，后续修改会自动对齐项目台账）"
                      % ("创建" if is_new else "优化", name, CDR.lang_label(lang)))
         # 续写：把台账摘要带给模型，防止"牛头不对马嘴"
@@ -7651,7 +7854,20 @@ class CompanionWindow(QMainWindow):
         def worker():
             import agent_tools as AT
             def say(m):
-                self._ui(lambda mm=m: self._append("系统", str(mm)))
+                # v0.31.2：核心 coder 的进度原本只刷成一条条散乱系统消息（无结构、
+                # 与聊天混在一起）；现在统一汇进过程流卡片，与自然语言开发路径
+                # 呈现**同一种**过程视图。kind 按内容粗分类，只影响图标颜色。
+                s = str(m)
+                k = "plan"
+                if re.search(r"写入|生成|创建|落盘|写文件|新建", s):
+                    k = "new"
+                elif re.search(r"修改|更新|改写|修", s):
+                    k = "edit"
+                elif re.search(r"冒烟|校验|检查|测试|运行|编译", s):
+                    k = "cmd"
+                elif re.search(r"失败|出错|报错|错误", s):
+                    k = "err"
+                self._step(k, s[:70])
             try:
                 if is_new:
                     res = CDR.gen_project(self._team_llm(), spec, lang, name, root,
@@ -8346,42 +8562,89 @@ class CompanionWindow(QMainWindow):
         # 模式门（v0.18.0 重做）：不再弹"要不要开工"的串岗提醒卡。
         # 聊天模式：强指令（帮我写/做个/生成/开发…）→ 直接开工、不打扰；
         #           弱提及（只是聊到"方案/PPT"这类词）→ 安心聊天，绝不提示、绝不动手。
+        # ★v0.31.2：判据从 `_is_direct_order`（**硬上限 60 字**）换成 `_strong_order`。
+        #   旧行为下"需求写得越具体越不可能开工"：真机事故
+        #   「帮我开发一个能自动抓取价格、对比历史最低价、并在降价时提醒我的比价系统」
+        #   38 字 → 命中 project，却因 60 字判据不成立被**静默**降级成聊天，
+        #   连一句"我没动手"都没有 —— 用户看到的就是"没有任何动作"。
+        _detected = agent                        # 留底：用来在降级后说清"我没动手"
+        _confirmed = False                       # 本轮是否刚消费掉一次"待确认"
         if agent and agent[0] in _HEAVY_KINDS and self.mode != "work":
-            if not self._is_direct_order(text):
+            if not self._strong_order(text):
                 agent = None
+        # ★★★ v0.31.2 最重要的一个修复：待确认（`_pending_work`）的**回收**必须
+        #   放在 agent 判定**之外**。
+        #
+        #   旧写法把回收嵌在 `if agent and agent[0] in _HEAVY_KINDS ...` 里面，
+        #   而用户回的确认口令是「开始」—— `_detect_agent("开始")` 返回 **None**，
+        #   于是整个 if 不成立 → 回收分支永远跑不到。后果（已在未改动的
+        #   pasm-qclaw 副本上实测复现）：
+        #     ① 说「帮我开发一个记账系统」→ 出确认墙，`_pending_work=True`，0 动作；
+        #     ② 回「开始」→ `_pending_work` **仍是 True**、**0 动作**、
+        #        **连一句回复都没有**（界面像死了）。
+        #   这正是小志反馈「我让桌面应用帮我开发时，为什么没有任何动作」的真凶：
+        #   确认墙是个死胡同 —— 唯一能开工的口令恰恰被路由忽略。
+        if self.mode != "work":
+            _pw = getattr(self, "_pending_work", None)
+            if _pw is not None:
+                _low = (text or "").strip()
+                if _RE_PLAN_CONFIRM.match(_low):
+                    self._pending_work = None
+                    agent = _pw                      # 确认 → 往下走立即执行
+                    # ⚠️ 必须记住"这轮已经确认过了"：否则下面那道确认墙会看
+                    #    `_strong_order("开始")` 为真（"开始"本身就在直接指令词表里）
+                    #    而**再问一次**，用户永远等不到开工 —— 实测就是这个症状。
+                    _confirmed = True
+                elif _RE_PLAN_REPLAN.match(_low):
+                    self._pending_work = None
+                    self._finish("好，这轮就只聊，不帮你动手啦～")
+                    return
+                else:
+                    # 又是一条新的请求：它自己也是"重活开工"→作废旧待确认、
+                    # 交给下面的确认墙按新需求重问一次；否则按聊天走（不执行上次的活）。
+                    self._pending_work = None
+                    if not (agent and agent[0] in _HEAVY_KINDS
+                            and self._strong_order(text)):
+                        agent = None
         # —— v0.22 计划先行：复杂任务先出计划待确认；待确认计划在此回收（开始/改） ——
         if self._plan_gate(text, agent, direct_copy):
             return
         # —— v0.28.x 干活前确认（聊天模式下的重活）——
         # 用户明确要"动手干活"（生成文件/写码/做项目等）时先问一句确认，避免误触发；
         # 纯讨论/问句不弹确认、不干活。干活栏目(work 模式)下仍直接开工（用户已在该栏目）。
-        if agent and agent[0] in _HEAVY_KINDS and self.mode != "work":
-            _pw = getattr(self, "_pending_work", None)
-            if _pw is not None:
-                _low = (text or "").strip()
-                if _RE_PLAN_CONFIRM.match(_low):
-                    agent = _pw
-                    self._pending_work = None
-                    # 确认 → 往下走立即执行
-                elif _RE_PLAN_REPLAN.match(_low):
-                    self._pending_work = None
-                    self._finish("好，这轮就只聊，不帮你动手啦～")
-                    return
-                else:
-                    # 其他输入：取消待确认，本轮按正常聊天走（不执行上次的活）
-                    self._pending_work = None
-                    agent = None
-            else:
-                if self._is_direct_order(text) and not self._askish(text):
-                    self._pending_work = agent
-                    self._finish(
-                        f"⚠️ 你这是要我**动手干活**（{WORKLOG.kind_label(agent[0])}）对吧？"
-                        f"确认的话回「开始」，我就直接做；不想做回「不用」；"
-                        f"如果只是想聊聊这个话题，回「聊聊」即可。")
-                    return
+        if (not _confirmed) and agent and agent[0] in _HEAVY_KINDS and self.mode != "work":
+            if self._strong_order(text) and not self._askish(text):
+                self._pending_work = agent
+                # v0.31.2：确认话术改成**可点**入口 —— 旧文案只说"回「开始」"，
+                # 真机上用户往往换个说法（"好的""做吧"之外的句子），
+                # 于是待确认被作废、这轮按聊天走，看着还是"没动作"。
+                self._finish(
+                    f"⚙️ 你这是要我**动手干活**（{WORKLOG.kind_label(agent[0])}）对吧？"
+                    f"（现在是💬聊天模式，重活我不会擅自开工）\n\n"
+                    f"回一句 **开始**，或点下面的入口，我立刻开做；"
+                    f"不想做回「不用」；只是想聊聊这个话题就回「聊聊」。\n\n"
+                    f"[⚙️ 立刻开工](pasm://confirmwork)")
+                return
+        # ★v0.31.2 诚实边界：这次识别成"重活"、但因为判据不成立被降级成聊天 ——
+        #   必须**说出来**。旧版一声不响地走聊天分支，用户完全无从判断
+        #   "它是没听懂，还是没动手"，只能反复重说（真机反馈的"没有任何动作"）。
+        if (agent is None and _detected and _detected[0] in _HEAVY_KINDS
+                and self.mode != "work"):
+            self._append(
+                "系统",
+                "💬 这句话我按**聊天**处理了，**没有动手**。"
+                "要我真干活的话，把要求说具体一点"
+                "（例：`帮我开发一个记账系统`），或切到「🔧 干活」栏目。")
         if agent:
             turn = self._begin_turn(self._slot_key(), self.conv_id,
                                     self.history, self.cog, text, "agent", agent)
+            # v0.31.2：开工前清空过程流 —— 这一轮的过程从零开始，卡片流不会串轮。
+            try:
+                self._step_reset()
+                self._step("plan", "开工", WORKLOG.kind_label(agent[0]) if WORKLOG else agent[0],
+                           "本轮动作会实时显示在这里")
+            except Exception:
+                pass
             # v0.27.4 工作任务：这次干活挂成一条任务（工作台可见、可点开就地讨论）
             _wid = self._work_open(text, agent)
             # v0.30.17：记下来 —— 产出页的「确认留存」要写回这条工作台账。
@@ -8535,6 +8798,14 @@ class CompanionWindow(QMainWindow):
         if s.startswith("pasm://quick/"):
             kind = s.rsplit("/", 1)[-1]
             self._quick_action(kind)
+        elif s.startswith("pasm://confirmwork"):
+            # v0.31.2：确认墙上的「⚙️ 立刻开工」——等价于用户回了一句"开始"，
+            # 直接复用既有确认口令通道（`_RE_PLAN_CONFIRM`），不另造一套状态机。
+            if getattr(self, "_pending_work", None) is None:
+                self._set_status("这条待确认已经过期了，请把要求再说一遍")
+                return
+            self.input.setPlainText("开始")
+            self.send(skip_busy=True)
         elif s.startswith("pasm://skillmgmt"):
             self._switch_page("skill")
         elif s.startswith("pasm://copy/"):
@@ -9655,6 +9926,218 @@ class CompanionWindow(QMainWindow):
         self.chat.append(f"<b>{html.escape(who)}</b>：{content}")
         self.chat.moveCursor(QTextCursor.End)
 
+    # ============ v0.31.2 过程流：把"干活的过程"实时落成卡片 ============
+    # 小志原话：「我还想让它能像 workbuddy 一样，不管是聊天，还是干活，均能显示过程」。
+    # 改动前的真相：聊天有真流式与真思考（`on_delta` / `on_think`），**重活却全程静默** ——
+    # `_project_run` 只调一次 `_brain()`（无流式/思考回调），跑完才出结果；
+    # 聊天区除了「⏳ 正在干活」那一句，中间什么都看不到（本地模型下可能是几分钟）。
+    # 于是"在干活"和"卡死了"在界面上完全一样。
+    #
+    # 这里补一条**步骤总线**：各工种把"我刚做了什么"播报过来，按 WorkBuddy 那种
+    # 卡片流呈现（运行命令 / 新建 / 修改 +N -M / 已读取 / 规划）。三条纪律：
+    #   ① 只报**真实发生**的事（真跑的命令、真写的文件、真读的路径）——
+    #      不生成"假思考"来凑视觉热闹；
+    #   ② 线程安全：worker 线程可直接调 `_step()`，内部统一派发到 UI 线程；
+    #   ③ 同一轮的步骤写进**同一个块**（`_patch_last_block` 原地重画），
+    #      不刷成几十条气泡。
+    _STEP_STYLE = {
+        "think": ("◍", "#5F5E5A"),
+        "plan":  ("◇", "#185FA5"),
+        "cmd":   ("›_", "#185FA5"),
+        "new":   ("＋", "#3B6D11"),
+        "edit":  ("✎", "#BA7517"),
+        "read":  ("◉", "#534AB7"),
+        "ok":    ("✓", "#0F6E56"),
+        "err":   ("✕", "#A32D2D"),
+    }
+    _STEP_HEAD = "过程"
+    #: 身份核对用的前缀（比 `_STEP_HEAD` 多一个分隔号，进一步降低误撞别人文本的概率）
+    _STEP_MARK = "过程 ·"
+    _STEP_MAX = 40                       # 一轮最多留这么多条（旧的自然折叠掉）
+    #: **过程块的块标记基址**（写进 `QTextBlock.setUserState`）。
+    #: 工程里没有任何 `QSyntaxHighlighter`，userState 无人占用，可安全自用。
+    #: 每开一轮 +1 —— 这样"本轮那一块"能被**精确找回**，跨轮绝不重用上一轮的历史卡片。
+    _STEP_TAG_BASE = 0x5B0C0000
+
+    def _step_reset(self):
+        """开一轮新的过程流（每次开工前调一次）。"""
+        self._steps = []
+        self._step_closed = False
+        # 换一个"轮次标记"：新的一轮会另起一块，上一轮的过程卡片**原样留在历史里**。
+        self._step_gen = int(getattr(self, "_step_gen", 0)) + 1
+        self._step_tag = self._STEP_TAG_BASE + (self._step_gen & 0xFFFF)
+
+    def _step(self, kind: str, title: str, target: str = "",
+              detail: str = "", status: str = "ok", key: str = ""):
+        """追加一条过程步骤并立刻上屏。**线程安全**：worker 线程可直接调。
+
+        `key` 非空时表示"这条是可原地刷新的"（例如模型思考增量）：末尾步骤的 key
+        相同就**替换**它，不重复追加 —— 否则思考流会把卡片流刷爆。
+        """
+        try:
+            self._ui(lambda: self._step_ui(kind, title, target, detail, status, key))
+        except Exception:
+            logging.exception("step dispatch failed")     # 播报失败绝不影响干活
+
+    def _step_ui(self, kind, title, target="", detail="", status="ok", key=""):
+        if not hasattr(self, "_steps") or self._steps is None:
+            self._step_reset()
+        item = {"kind": str(kind or "plan"), "title": str(title or ""),
+                "target": str(target or ""), "detail": str(detail or ""),
+                "status": str(status or "ok"), "key": str(key or "")}
+        if key and self._steps and self._steps[-1].get("key") == key:
+            self._steps[-1] = item                      # 原地刷新，不追加
+        else:
+            self._steps.append(item)
+        if len(self._steps) > self._STEP_MAX:
+            self._steps = self._steps[-self._STEP_MAX:]
+        self._steps_render()
+        # 同步落进工作台账（v0.31.2：`worklog.set_status` 在本项目里**从未被调用过**，
+        # 所以工作台的"进度"一栏一直是空的 —— 顺手补上，同一份事实两处可见）
+        try:
+            wid = getattr(self, "_cur_wid", "") or ""
+            if wid and WORKLOG:
+                WORKLOG.set_status(
+                    wid, "running",
+                    progress="第 %d 步 · %s" % (len(self._steps), self._steps[-1]["title"]))
+        except Exception:
+            pass
+
+    def _steps_html(self) -> str:
+        """整段步骤流的 HTML。
+
+        ⚠️ **必须只产出"单块"HTML**（只用 `<span>` + `<br>`，绝不用 `<div>`/`<p>`）。
+        实测（Qt 富文本）：`<div>a</div><div>b</div>` → **2 个块**，
+        `<span>a</span><br><span>b</span>` → **1 个块**。
+        而 `_patch_last_block` 的"这块是不是我的"判定是**按最后一块的文本前缀**做的 ——
+        多块 HTML 会让"最后一块"退化成最后那行（文本是"＋ 新建 x"而不是"过程 ·…"），
+        身份核对失败 → 每刷新一次就**另起一块**，实测 5 步把聊天文档从 1 块刷到 20 块，
+        老内容全部残留，越滚越长。收敛成单块后，整段过程流永远只有一块。
+        （第二层保险见 `_step_block()`：块身份用**轮次标记**认，而不是"是不是最后一块"。）
+        """
+        out = ["<span style='color:#64748b;font-size:12px;'>%s · %d 步</span>"
+               % (self._STEP_HEAD, len(self._steps))]
+        for st in self._steps:
+            icon, color = self._STEP_STYLE.get(st["kind"], ("·", "#5F5E5A"))
+            col = color
+            if st["status"] == "err":
+                col = "#A32D2D"
+            elif st["status"] == "run":
+                col = "#B45309"
+            line = ("<br><span style='color:%s;'>%s</span>"
+                    "<span style='color:#1e293b;'> %s</span>"
+                    % (col, html.escape(icon), html.escape(st["title"])))
+            if st["target"]:
+                line += ("<span style='font-family:monospace;font-size:12px;"
+                         "color:#334155;'> %s</span>"
+                         % html.escape(st["target"][:160]))
+            if st["detail"]:
+                _ind = "&nbsp;" * 5
+                line += ("<br>%s<span style='font-family:monospace;font-size:12px;"
+                         "color:#94a3b8;'>%s</span>"
+                         % (_ind, html.escape(st["detail"][:400]).replace("\n", "<br>" + _ind)))
+            out.append(line)
+        return "".join(out)
+
+    def _step_block(self):
+        """找回**本轮**那一块过程块；没有就返回 None。
+
+        ⚠️ 为什么不能再用"最后一块"定位（v0.31.2 实测的第二个坑）：
+        `_patch_last_block` 是"末尾块不是我的一律另起一块"。可干活期间**别人也会往
+        末尾追加** —— 实测一次真实开工里就有：`_append("系统","⏳ 正在干活")`、
+        `_replay_history()` 整段重放、`_turn_live_start()` 先 `append("")` 再填名牌。
+        每一次都会把"我那一块"挤到上面去；下一次 `_steps_render` 便**另起一块**，
+        于是老卡片（步数少）留在原地、新卡片接着长大 → 文档里出现 2 个「过程 ·」
+        开头的块（e2e 实测就是这么来的）。
+        改用**块标记**认领：只要块还在，永远原地重画；块被整段重放冲掉，才会新建一块。
+        """
+        tag = getattr(self, "_step_tag", None)
+        if tag is None:
+            return None
+        try:
+            b = self.chat.document().lastBlock()
+            while b.isValid():
+                if int(b.userState()) == int(tag):
+                    return b
+                b = b.previous()
+        except Exception:
+            logging.exception("step block lookup failed")
+        return None
+
+    def _steps_render(self):
+        """把当前步骤流原地重画进"过程块"（不新增气泡、不残留旧内容、跨轮不串卡）。"""
+        try:
+            html = self._steps_html()
+            blk = self._step_block()
+            if blk is not None and (blk.text() or "").lstrip().startswith(self._STEP_MARK):
+                # 认领成功 → 在这一块里原地重画（位置不动，始终是同一条卡片）
+                c = QTextCursor(blk)
+                c.movePosition(QTextCursor.StartOfBlock)
+                c.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
+                c.removeSelectedText()
+                c.insertHtml(html)
+                c.block().setUserState(self._step_tag)
+            else:
+                # 真找不到了（首次落位 / 文档被整段重放冲掉）→ 末尾另起一块并**做上标记**
+                c = self.chat.textCursor()
+                c.movePosition(QTextCursor.End)
+                if (c.block().text() or "").strip():
+                    c.insertBlock()
+                c.insertHtml(html)
+                c.block().setUserState(self._step_tag)
+            self.chat.verticalScrollBar().setValue(
+                self.chat.verticalScrollBar().maximum())
+        except Exception:
+            logging.exception("steps render failed")
+
+    def _diff_stat(self, old: str, new: str):
+        """旧文 → 新文 的 (+新增 / -删除) 行数（按最长公共子序列口径，粗略但诚实）。"""
+        try:
+            import difflib
+            a = (old or "").splitlines()
+            b = (new or "").splitlines()
+            add = dele = 0
+            for ln in difflib.unified_diff(a, b, n=0, lineterm=""):
+                if ln.startswith("+") and not ln.startswith("+++"):
+                    add += 1
+                elif ln.startswith("-") and not ln.startswith("---"):
+                    dele += 1
+            return add, dele
+        except Exception:
+            return (len((new or "").splitlines()), 0)
+
+    def _step_files(self, files: dict, base: str = "", backup: str = ""):
+        """把一批落盘文件播报成"新建/修改 +N -M"卡片。
+
+        `backup` 非空 = 原地更新模式（归档目录里**有**同名旧文件才算"修改"，
+        否则是新加的文件）；`backup` 为空 = 全新项目 → 一律"新建"。
+        """
+        for rel, content in list((files or {}).items())[:24]:
+            try:
+                full = os.path.join(base, *str(rel).lstrip("/ ").split("/")) if base else ""
+                old, is_edit = "", False
+                if backup and full and os.path.isfile(full):
+                    bp = os.path.join(backup, *str(rel).lstrip("/ ").split("/"))
+                    if os.path.isfile(bp):
+                        old = open(bp, encoding="utf-8", errors="ignore").read()
+                        is_edit = True
+                new = str(content or "")
+                if is_edit:
+                    add, dele = self._diff_stat(old, new)
+                    self._step("edit", "修改", str(rel),
+                               "+%d / -%d 行" % (add, dele))
+                else:
+                    self._step("new", "新建", str(rel),
+                               "+%d 行" % len(new.splitlines()))
+            except Exception:
+                continue
+
+    def _step_run(self, label: str, cmd: str, out: str, ok: bool = True):
+        """播报"运行命令 + 输出尾"。`cmd` 是真实执行的东西，`out` 是真实输出。"""
+        tail = (out or "").strip().splitlines()
+        tail = "\n".join(tail[-6:])[:400] if tail else "（无输出）"
+        self._step("cmd", label, cmd, tail, "ok" if ok else "err")
+
     def _render_mind(self, snap):
         e, p, d = snap["emotion"], snap["personality"], snap["development"]
         # 成长阶段统一以 pet_state.json 经验为准（与桌面小人完全一致）
@@ -10741,9 +11224,22 @@ class CompanionWindow(QMainWindow):
         import re as _re
         # ★疑问句拦截：问"能不能/会吗/可以吗" = 询问能力，不等于下令干活。
         #   （干活模式下 allow_cap=False：直接干活，不再弹"我能帮你…"清单）
+        #   v0.31.2：**但如果这句话本身就是一条完整的开发需求**（"能不能帮我开发一个
+        #   记账本" 有动词+产物），那就不是在泛问能力，而是换了种口气下单 —— 报菜单
+        #   是一个死胡同（用户还得再重说一遍），必须放行到下面的开工守卫。
         cap = self._cap_question(text) if allow_cap else ""
-        if cap:
+        if cap and not self._looks_like_build_order(text):
             return ("askhelp", cap)
+        # ★0) v0.31.2 软件开工早守卫 —— **必须排在 tableana / remote_push 之前**。
+        #   真机事故（小志 2026-09-23）：
+        #     · 「帮我开发一个数据分析平台」→ 被 tableana（"分析"+"数据"）抢走
+        #     · 「帮我开发一个微信小程序」→ 被 remote_push 抢走
+        #       （它的 `(推|发|送)...(手机|微信|…)` 命中的是 "开**发**一个**微信**"）
+        #     · 「帮我开发一个能自动抓取价格…的比价系统」→ 旧窗口 22 字撑不住，
+        #       **0 命中** → agent=None → 静默掉进普通聊天
+        #   这两条关键词规则原位置都早于 project（先命中者胜），开发需求永远排不上队。
+        if self._looks_like_build_order(text):
+            return ("project", text)
         # ★0b) v0.28.x 实时数据 / 浏览器自动化（对标 QClaw/OpenClaw 的"行动型"能力）
         if not self._askish(text):
             if re.search(r"天气|气温|温度|气候|下雨|降温|气象|空气质量|空气质量指数", text):
@@ -11278,6 +11774,11 @@ class CompanionWindow(QMainWindow):
                 r"客户端|软件|平台|管理系统)", text):
             return ("gendoc", text)
         # 2c) 全栈开发项目：强指令 + 具体产物才算"开工"；泛指"项目"不触发
+        #   v0.31.2：补一道**叙述句守卫**。改动前这条规则是裸 `re.search`，于是
+        #   「我昨天开发了一个网站」「怎么开发一个网站」「让电脑帮我开发网站」
+        #   「帮我搜一下有没有开发网站的工具」**全都**被判成开发项目 —— 在干活栏目里
+        #   会真的建出一个项目来（实测 5 条全部命中）。真正的开工需求现在由前面那道
+        #   早守卫（`_looks_like_build_order`）先认领，这里只管兜住漏网的。
         if _re.search(
                 r"(?:开发|做一个|做个|帮我做|帮我开发|搭一?个|写一?个|建一?个|弄一?个|"
                 r"设计一个|帮我建|帮我搭)\s*"
@@ -11285,7 +11786,8 @@ class CompanionWindow(QMainWindow):
                 r"(?:网站|官网|网页应用|网页|系统|平台|小程序|前后端|全栈|后台|数据库|"
                 r"管理工具|工具软件|应用软件|博客|商城|留言板|记账|待办应用|管理系统|"
                 r"登录系统|计算器|画板|小游戏|机器人|客户端|页面)", text,
-                flags=_re.I) and len(text) > 4:
+                flags=_re.I) and len(text) > 4 \
+                and not self._order_narrative(text):
             return ("project", text)
         # 2d) 领域创作：视频/分镜/漫剧/口播 等语境 + 脚本类字样 → 技能（创作），
         #     绝不误进"写代码"（用户痛点：说写视频脚本却跑去生成 python）
@@ -11497,10 +11999,15 @@ class CompanionWindow(QMainWindow):
         return local_ep or cloud          # 轻活本地优先
 
     def _brain(self, prompt, system="你是一位严谨可靠的 AI 助手，用中文回答。",
-               max_tokens=1500, task="brain", prefer=None):
+               max_tokens=1500, task="brain", prefer=None, on_think=None):
         """用当前可用模型回答（v0.27 起按任务轻重自动路由；云端→本地→离线，
         均尊重顶部"大脑切换"的固定选择）。task 走网关任务路由
-        （brain=分析/写码等重活；study=提炼轻活；filegen=生成文件）。"""
+        （brain=分析/写码等重活；study=提炼轻活；filegen=生成文件）。
+
+        v0.31.2：新增 `on_think` 透传 —— 重活（开发/写码/生成文件）以前**没有**
+        思考流，模型推理期间界面全黑（本地模型下可能就是几分钟）。现在调用方
+        可以接上，把真实的思考增量播报到过程流里（不是伪造的"假思考"）。
+        """
         if prefer:
             ep = self._route_endpoint(task=task, prompt=prompt, prefer=prefer)
         elif self.cfg.get("model_choice", "auto") in ("", "auto"):
@@ -11509,7 +12016,8 @@ class CompanionWindow(QMainWindow):
             ep = self._endpoint()
         if ep:
             return self._llm_call(system, prompt, ep[0], ep[1], ep[2],
-                                  max_tokens=max_tokens, task=task)
+                                  max_tokens=max_tokens, task=task,
+                                  on_think=on_think)
         raise RuntimeError("没有可用模型（请配置云端 Key 或启动本地 Ollama）")
 
     def _skill_run(self, name: str, req: str) -> str:
@@ -12931,6 +13439,16 @@ class CompanionWindow(QMainWindow):
         """
         lang = AT.detect_lang(req=req)
         lang_label = AT.LANGS.get(lang, ("", "", "Python"))[2]
+        # v0.31.2 过程流：起手一句 + 真思考增量（写码期间不再全黑）
+        self._step("plan", "写脚本", lang_label, (req or "")[:80])
+        _th = {"t": 0.0}
+
+        def _on_think(_d, full):
+            now = time.time()
+            if now - _th["t"] >= 0.4:
+                _th["t"] = now
+                self._step("think", "深度思考", detail=(full or "")[-320:], key="think")
+
         ctx = ""
         if self.work_ctx:
             parts = [f"[工作文件：{os.path.basename(p)} 内容摘要]\n{t[:800]}"
@@ -12941,17 +13459,22 @@ class CompanionWindow(QMainWindow):
         code = self._brain(
             f"根据需求写一段可直接运行的 {lang_label} 代码。只输出代码，不要解释。\n需求：" + req + ctx,
             system=f"你是严谨的 {lang_label} 工程师，代码健壮、有注释、无敏感操作；代码注释用中文，需要向用户解释时一律用中文。"
-                   "若需求是'实现/完成/修改'文件里描述的功能，请参考文件内容写出能落地的代码。")
+                   "若需求是'实现/完成/修改'文件里描述的功能，请参考文件内容写出能落地的代码。",
+            on_think=_on_think)
         m = re.search(r"```(?:\w+)?\n?(.*?)```", code, flags=re.S)
         code = (m.group(1) if m else code).strip()
+        self._step("plan", "代码已生成", "%d 行" % len(code.splitlines()),
+                   "正在做语法/配平/占位符校验")
         # v0.22 输出验证器：语法/配平/占位符规则校验，不通过带具体问题重生成一次
         ok, probs = VAL.check_code(code, lang_label)
         if not ok:
+            self._step("edit", "校验未过，重生成一次", "；".join(probs)[:120])
             fix = self._brain(
                 f"根据需求写一段可直接运行的 {lang_label} 代码。只输出代码，不要解释。\n"
                 f"需求：{req}{ctx}\n\n"
                 f"你上一次的代码有这些问题，必须修正：\n- " + "\n- ".join(probs),
-                system=f"你是严谨的 {lang_label} 工程师，代码健壮、有注释、无敏感操作；代码注释用中文，需要向用户解释时一律用中文。")
+                system=f"你是严谨的 {lang_label} 工程师，代码健壮、有注释、无敏感操作；代码注释用中文，需要向用户解释时一律用中文。",
+                on_think=_on_think)
             m2 = re.search(r"```(?:\w+)?\n?(.*?)```", fix, flags=re.S)
             fix_code = (m2.group(1) if m2 else fix).strip()
             ok2, _ = VAL.check_code(fix_code, lang_label)
@@ -12959,26 +13482,36 @@ class CompanionWindow(QMainWindow):
                 code = fix_code
                 logging.info("validator: code regenerated and fixed (%s)", "; ".join(probs))
         path = AT.write_script(req[:24], code, lang)
+        self._step("new", "脚本已落盘", path, "+%d 行" % len(code.splitlines()))
         if not run:
             return (f"写好了（{lang_label}）：`{path}`\n"
                     f"要运行的话对我说“运行 刚才的脚本”，或重发时带上运行。")
 
         # —— Act 2 + Check：运行并检查 ——
         out = AT.run_script(path)
+        self._step_run("运行脚本", os.path.basename(path), out,
+                       ok=not _looks_error(out))
         if not _looks_error(out):
             return f"写好了并运行成功（{lang_label}）：`{path}`\n\n运行结果：\n{out}"
 
         # —— Act 3：带报错自动修复一次（执行-验证环） ——
         try:
+            self._step("edit", "运行报错，自动定位并修复一次",
+                       (out or "").strip().splitlines()[-1][:120] if (out or "").strip() else "")
             fix = self._brain(
                 "你刚写的脚本运行报错了。下面是运行输出（含报错信息）。"
                 f"请定位错误并输出**修复后的完整代码**，只输出代码。\n需求：{req}\n运行输出：\n{out[:1200]}",
-                system=f"你是严谨的 {lang_label} 工程师，定位报错并给出可运行的完整代码；注释与解释用中文。")
+                system=f"你是严谨的 {lang_label} 工程师，定位报错并给出可运行的完整代码；注释与解释用中文。",
+                on_think=_on_think)
             m2 = re.search(r"```(?:\w+)?\n?(.*?)```", fix, flags=re.S)
             code2 = (m2.group(1) if m2 else fix).strip()
             if code2 and code2 != code:
                 path = AT.write_script(req[:24], code2, lang)
+                add, dele = self._diff_stat(code, code2)
+                self._step("edit", "修复版已落盘", path, "+%d / -%d 行" % (add, dele))
                 out2 = AT.run_script(path)
+                self._step_run("重跑脚本", os.path.basename(path), out2,
+                               ok=not _looks_error(out2))
                 if not _looks_error(out2):
                     return (f"第一次运行报错了，我自动修了一版并跑通了：`{path}`\n\n"
                             f"修复后运行结果：\n{out2}")
@@ -13023,6 +13556,8 @@ class CompanionWindow(QMainWindow):
                     try:
                         txt = open(fp, encoding="utf-8", errors="ignore").read()
                         ctx.append("【" + f + "】\n" + txt[:6000])
+                        self._step("read", "已读取", os.path.join(proj, f),
+                                   "%d 字" % len(txt))
                     except Exception:
                         pass
             base_sys += ("\n\n用户是要在**已有项目上修改/继续开发**。"
@@ -13033,7 +13568,21 @@ class CompanionWindow(QMainWindow):
                            "没改动的文件不要重复输出。改动时保留原有逻辑与风格，"
                            "不要整体推倒重写。")
         base_sys += self._work_mem(req)       # v0.26.2：开发也带上相关记忆/偏好
-        bundle = self._brain("项目需求：" + req, system=base_sys, max_tokens=3000)
+        # v0.31.2：模型推理期间不再全黑 —— 计划先说清楚，真思考接上过程流。
+        self._step("plan", "让模型生成项目文件清单",
+                   "已有项目原地改" if edit_mode else "新建项目",
+                   "max_tokens=3000（本地模型可能要几十秒到几分钟）")
+        _th = {"t": 0.0}
+
+        def _on_think(_d, full):
+            # 真实思考增量（网关回调），不是伪造的"假思考"；节流 0.4s 只控刷新频率
+            now = time.time()
+            if now - _th["t"] >= 0.4:
+                _th["t"] = now
+                self._step("think", "深度思考", detail=(full or "")[-320:], key="think")
+
+        bundle = self._brain("项目需求：" + req, system=base_sys, max_tokens=3000,
+                             on_think=_on_think)
         files = AT.parse_bundle(bundle)
         if not files:
             code = re.sub(r"```(?:\w+)?\n?", "", bundle).replace("```", "").strip()
@@ -13041,9 +13590,12 @@ class CompanionWindow(QMainWindow):
                 ext = ".html" if "<html" in code[:300].lower() else ".py"
                 files = {"main" + ext: code + "\n"}
         if not files:
+            self._step("err", "模型没给出可用文件", detail=(bundle or "")[:200])
             return ("这次没生成出项目文件（模型可能没理解需求）。"
                     "可以把需求说得更具体些再试一次，例如：帮我开发一个 叫记账本 的 "
                     "待办应用，前端网页+Python后端+SQLite数据库。")
+        self._step("plan", "文件清单已就绪", "%d 个文件" % len(files),
+                   "、".join(list(files)[:6]))
         if edit_mode:
             # —— 原地更新：旧文件先进「旧版_时间」归档，再写新内容 ——
             n_updated = n_new = 0
@@ -13068,10 +13620,14 @@ class CompanionWindow(QMainWindow):
                     n_new += 1
                 with open(full, "w", encoding="utf-8") as f:
                     f.write(content)
+            # 过程流：逐个文件播报"修改 +N -M / 新建 +N"（与归档件做真 diff）
+            self._step_files(files, base=proj, backup=bk)
             tree = "📁 " + proj + "\n" + AT._tree(proj)
             AT._register_project(os.path.basename(proj.rstrip("/\\")), proj,
                                  list(files))
             runmsg = AT.run_project(proj)
+            self._step_run("运行项目", "python app.py（自动探测入口）", runmsg,
+                           ok=not _looks_error(runmsg))
             self._mark_effect_dev(proj)
             return (f"🛠 已在项目「{os.path.basename(proj.rstrip('/\\\\')) or name}」上"
                     f"完成更新：改 {n_updated} 个 / 新增 {n_new} 个文件"
@@ -13082,7 +13638,11 @@ class CompanionWindow(QMainWindow):
         pdir, tree = AT.save_project(name, files)
         self._ses_proj_dir = pdir
         self._stamp_conv_meta(proj_dir=pdir)
+        self._step("new", "项目目录已创建", pdir, "%d 个文件落盘" % len(files))
+        self._step_files(files, base=pdir)
         runmsg = AT.run_project(pdir)
+        self._step_run("运行项目", "python app.py（自动探测入口）", runmsg,
+                       ok=not _looks_error(runmsg))
         self._mark_effect_dev(pdir)
         return (f"🏗 项目「{name}」搭好了！共 {len(files)} 个文件：\n\n{tree}\n\n"
                 f"{runmsg}\n\n"
@@ -13412,7 +13972,20 @@ class CompanionWindow(QMainWindow):
                        f"除非用户明确说重做。\n"
                        f"【上一版完整内容】\n{old_md[:9000]}")
         system += self._work_mem(req)          # v0.26.2：带上与你相关的记忆/偏好
-        md = self._brain("需求：" + req, system=system, max_tokens=3000, task="filegen")
+        # v0.31.2 过程流：文件生成以前也是全程静默（一次大生成 + 落盘）
+        _kcn = {"genppt": "PPT", "genxls": "表格", "gendoc": "文档"}.get(kind, "文件")
+        self._step("plan", "创作%s正文" % _kcn, "改上一版" if edit_mode else "新做一份",
+                   (req or "")[:80])
+        _th = {"t": 0.0}
+
+        def _on_think(_d, full):
+            now = time.time()
+            if now - _th["t"] >= 0.4:
+                _th["t"] = now
+                self._step("think", "深度思考", detail=(full or "")[-320:], key="think")
+
+        md = self._brain("需求：" + req, system=system, max_tokens=3000,
+                         task="filegen", on_think=_on_think)
         # 审计加固：模型偶尔会在 Markdown 外套代码块或先答“好的/能力清单”，剥掉并做产出校验，
         # 避免把“空壳/废话”也生成成一个无效文件（既占地方又让用户以为成功了）。
         md = re.sub(r"```(?:markdown|md|text|txt)?\s*", "", (md or "").strip())
@@ -13441,11 +14014,16 @@ class CompanionWindow(QMainWindow):
                 else:
                     path = AT.make_docx(md, new_dest or AT.desktop_dir(), imgs)
         except Exception as ex:
+            self._step("err", "生成文件失败", detail=str(ex)[:200])
             return ("生成文件失败了：" + str(ex) +
                     "。可以换个说法再试，或告诉我把文件存到哪个文件夹。")
         if not (os.path.isfile(path) and os.path.getsize(path) > 0):
+            self._step("err", "文件生成出来是空的", detail=str(path))
             return ("文件生成到了路径但没有有效内容，可能是模型给的格式没解析好。"
                     "再发一次（说得更具体些），或换「文案」模式先出文字稿。")
+        self._step("edit" if edit_mode else "new",
+                   "已覆盖上一版" if edit_mode else "已生成%s" % _kcn,
+                   str(path), "%.0f KB" % (os.path.getsize(path) / 1024.0))
         # 真实执行台账：文件确实存在且非空才记 —— 防幻觉守卫靠它核对
         # "模型说已生成"到底有没有真做（chat 栏目没有执行手段，必是幻觉）。
         try:

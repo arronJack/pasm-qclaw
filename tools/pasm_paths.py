@@ -43,10 +43,13 @@ TOKEN_FILES = {
               "gitee_token.txt", "gitee-token.txt"),
     "github": ("github_token.txt", "github-token.txt",
                "github-pasm-token.txt", "github_pasm_token.txt"),
+    # GitCode（2026-09-23 加入三端分发）：注意它的认证是 **Bearer**，不是 Gitee 的 token
+    "gitcode": ("gitcode令牌.txt", "gitcode_token.txt", "gitcode-token.txt"),
 }
 
 #: 令牌环境变量名
-TOKEN_ENVS = {"gitee": "GITEE_TOKEN", "github": "GITHUB_TOKEN"}
+TOKEN_ENVS = {"gitee": "GITEE_TOKEN", "github": "GITHUB_TOKEN",
+              "gitcode": "GITCODE_TOKEN"}
 
 #: 打包/运行用的 venv 目录名候选
 VENV_NAMES = (".buildvenv", "venv", ".venv")
