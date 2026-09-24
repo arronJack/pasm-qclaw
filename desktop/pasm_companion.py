@@ -75,6 +75,7 @@ except Exception:
 import skillstore as SKL
 import llm_gateway as GW
 import creators as CRE
+import option_prompt as OPT       # v0.31.4 聊天「多选项确认卡」（解析/渲染/判定，零 Qt）
 import prompts as PRT             # v0.22 结构化提示词模板
 import validator as VAL           # v0.22 输出验证器
 import planner as PLN             # v0.22 任务规划器
@@ -8723,6 +8724,21 @@ class CompanionWindow(QMainWindow):
         self.history.append({"role": "user", "content": ctx})
         self.history = self.history[-500:]
         self._persist_conv()                     # 用户这句立刻落盘（聊天永不丢）
+        # v0.31.3：破坏性操作前，先弹选项卡让用户确认范围 / 方式（"破坏性操作前强制弹选项"）。
+        #   只覆盖"破坏性动词 + 明确文件/系统对象"的清晰情形，宁可少弹不误弹；
+        #   选"就按你说的来"会原样重发并跳过本拦截（既有删除/授权流程照常走，不回归）。
+        _skip_force = getattr(self, "_skip_force_option", False)
+        if _skip_force:
+            self._skip_force_option = False
+        else:
+            try:
+                _opt_req = OPT.should_offer(text)
+            except Exception:
+                _opt_req = None
+            if _opt_req is not None:
+                self._option_orig_text = text
+                self._present_options(_opt_req)
+                return
         # 拟人情绪即时反应（P3）：在 UI 线程立刻触发头像表情 + 桌面小人事件
         try:
             self._react_affect(text)
@@ -9000,6 +9016,8 @@ class CompanionWindow(QMainWindow):
             # 认知皮层：先想好"此刻怎么回话"（意图/情绪姿态/检索词/温度），再动嘴
             dec = COG.decide(req, cog0, snap, score)
             system = self._build_system(snap, user_text=text, cogd=dec)
+            # v0.31.3：允许模型在"真的拿不准"时用 <<OPTIONS>> 主动弹选项卡（用户要分步确认）
+            system += "\n" + OPT.OPTION_SCHEMA_HINT
             temp = dec["temperature"]
             reply = None
             u = req if direct_copy else text        # 文案任务把"直接出稿"指令带给模型
@@ -9014,6 +9032,7 @@ class CompanionWindow(QMainWindow):
 
                 def on_delta(_d, full):
                     turn["live_full"] = full          # 无节流，保证最终态完整
+                    turn["thinking"] = False          # 思考阶段结束，进入正式作答
                     now = time.time()
                     if now - _st["t"] >= 0.12:      # 节流 ~120ms，刷屏不抖
                         _st["t"] = now
@@ -9021,6 +9040,11 @@ class CompanionWindow(QMainWindow):
 
                 def on_think(_d, full):
                     # v0.28.3 DeepSeek 式思考：灰度实时上屏（节流只控刷新，不丢数据）
+                    # v0.31.3：思考一开始就在状态栏点亮「💭 深度思考中…」（用户要看过程）
+                    if not turn.get("thinking"):
+                        turn["thinking"] = True
+                        self._ui(lambda: self.status.setText(
+                            "💭 深度思考中… （正在推理，马上开始作答）"))
                     turn["think_text"] = full
                     now = time.time()
                     if now - _stt["t"] >= 0.20:
@@ -9088,7 +9112,12 @@ class CompanionWindow(QMainWindow):
                 logging.exception("reply failed")
                 reply = ("（我这边出错了，没有成功回应你。请查看日志：\n"
                          f"{LOG_PATH}\n错误：{ex}）")
-            self._ui(lambda: self._turn_done(turn, reply))
+            # v0.31.3：把模型可能嵌在回复里的「选项卡」剥离出来单独渲染成卡片
+            try:
+                clean_reply, opt_req = OPT.parse_options(reply)
+            except Exception:
+                clean_reply, opt_req = reply, None
+            self._ui(lambda: self._turn_done(turn, clean_reply, opt_req))
         threading.Thread(target=job, daemon=True).start()
 
     # ---------- 快捷开工 & 聊天内可点链接 ----------
@@ -9111,6 +9140,9 @@ class CompanionWindow(QMainWindow):
             self.send(skip_busy=True)
         elif s.startswith("pasm://skillmgmt"):
             self._switch_page("skill")
+        elif s.startswith("pasm://option/"):
+            # v0.31.3：聊天里的「多选项确认卡」点击 → 把用户的选择回填并继续。
+            self._on_option_click(s.rsplit("/", 1)[-1])
         elif s.startswith("pasm://copy/"):
             # v0.30.6：「📋 复制」按钮（QTextBrowser 里的控件只能用锚点实现）
             tok = s.rsplit("/", 1)[-1]
@@ -9130,6 +9162,54 @@ class CompanionWindow(QMainWindow):
                 qt_compat.QtGui.QDesktopServices.openUrl(qt_compat.QtCore.QUrl(s))
             except Exception:
                 pass
+
+    # ---------- v0.31.3 聊天「多选项确认卡」 ----------
+
+    def _present_options(self, req):
+        """把模型/应用侧给的选项请求渲染成可点卡片，挂到聊天末尾并记下待选状态。
+
+        卡片里的每一项都是 ``pasm://option/<i>`` 链接，用户点哪条就回填哪条继续。
+        """
+        try:
+            if req is None or not getattr(req, "valid", lambda: False)():
+                return
+            html = OPT.render_cards(req)
+            if not html:
+                return
+            self._pending_option = req
+            self.chat.moveCursor(QTextCursor.End)
+            self.chat.append(html)
+            self.chat.verticalScrollBar().setValue(
+                self.chat.verticalScrollBar().maximum())
+            self._set_status("请选择一项，或直接在下面说你的想法")
+        except Exception:
+            logging.exception("present options failed")
+
+    def _on_option_click(self, idx):
+        """用户点了某张选项卡：把选择回填到输入框并当作下一条消息发出。
+
+        等价于用户在下面打了一句"我选：X"——复用既有 send() 流程，上下文自然延续。
+        "就按你说的来"（破坏性场景）会原样重发最初那句话，既有删除/授权流程照常走。
+        """
+        req = getattr(self, "_pending_option", None)
+        if req is None or not req.valid():
+            self._set_status("这个选项已经过期了，请把要求再说一遍")
+            return
+        try:
+            i = int(str(idx).strip())
+        except Exception:
+            return
+        if i < 0 or i >= len(req.options):
+            return
+        opt = req.options[i]
+        self._pending_option = None
+        if opt.get("key") == "ok" and getattr(self, "_option_orig_text", None):
+            # 破坏性场景：用户确认"就按你说的来" → 原样重发（跳过二次强制弹卡）
+            self.input.setPlainText(self._option_orig_text or "")
+            self._skip_force_option = True
+        else:
+            self.input.setPlainText("我选：%s" % opt["label"])
+        self.send(skip_busy=True)
 
     def _quick_action(self, kind: str):
         """把工作选项变成可见的确认步骤：先问清关键参数 → 生成明确指令 → 执行。
@@ -9830,6 +9910,8 @@ class CompanionWindow(QMainWindow):
             self.chat.verticalScrollBar().maximum())
 
     def _finish(self, reply, turn=None):
+        if turn is not None:
+            turn["thinking"] = False          # v0.31.3：兜底，确保「💭 深度思考中…」复位
         self._set_busy(False)
         try:
             streamed = bool(turn and turn.get("live_started") and turn.get("name_html"))
@@ -10101,7 +10183,10 @@ class CompanionWindow(QMainWindow):
             return
         secs = int(time.time() - t["t0"])
         tip = "　⏹ 点右侧「停止」可中断" if secs > 8 else ""
-        self.status.setText(f"⏳ 思考中… {secs}s（{self._status_base or '…'}）{tip}")
+        if t.get("thinking"):
+            self.status.setText(f"💭 深度思考中… {secs}s（{self._status_base or '…'}）{tip}")
+        else:
+            self.status.setText(f"⏳ 思考中… {secs}s（{self._status_base or '…'}）{tip}")
 
     def _set_status(self, s):
         self._status_base = s
@@ -10131,7 +10216,7 @@ class CompanionWindow(QMainWindow):
         except Exception:
             pass
 
-    def _turn_done(self, turn: dict, reply: str):
+    def _turn_done(self, turn: dict, reply: str, opt_req=None):
         """回合线程把回复交回来：按"还在不在原会话"决定 正常展示 / 收进原会话 / 丢弃。
 
         认知收尾（cog.after / 情景归档 / 程序记忆）也在此统一收敛，
@@ -10153,6 +10238,12 @@ class CompanionWindow(QMainWindow):
                 self._drain_pend()
             except Exception:
                 pass
+        # v0.31.3：模型在回复里嵌了「选项卡」→ 渲染成可点选卡片，等用户拍板再继续
+        if opt_req is not None:
+            try:
+                self._present_options(opt_req)
+            except Exception:
+                logging.exception("present options failed")
 
     def _turn_done_impl(self, turn: dict, reply: str):
         cur = self._turns.get(turn["slot"])

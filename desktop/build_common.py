@@ -118,6 +118,7 @@ HIDDEN_IMPORTS = [
     'permission',
     'transition',
     'wakeword',
+    'option_prompt',
     'migrate',
     'autostart',
     'docsuite',

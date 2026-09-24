@@ -512,9 +512,13 @@ def _local_guard_note(origin: str, model: str) -> None:
 # study 车道实测被推翻过：它主要是"资料提炼/任务拆分/成品评审"这类活，开思考 44.2s、
 # 关思考 11.8s，**提炼质量没有差别** → 直接归入"不思考"。
 # （若给它 auto，长资料里出现"分析/为什么"等词会误触发——实测确认过。）
-_THINK_OFF = ("chat", "tool", "warm", "skill", "study")   # 用户直面 + 机械提炼 → 不思考
+# v0.31.3：聊天栏「深度思考」默认开启（用户明确要求能看见思考过程）。
+#   把 chat 从 _THINK_OFF 移到 _THINK_AUTO：只在"值得推理"的问题上才深思
+#   （数学/排错/因果/方案…），闲聊不思考，避免 30~140 倍延迟。
+#   想要"每句话都深思"可在设置「思考链」里选「始终开启」。
+_THINK_OFF = ("tool", "warm", "skill", "study")   # 机械提炼/技能/暖场 → 不思考
 _THINK_ON = ("selftest",)                        # 学后自测是"诚实自检" → 必须想（后台，延迟不可见）
-_THINK_AUTO = ("brain", "filegen")               # 按问题是否"值得想"决定
+_THINK_AUTO = ("brain", "filegen", "chat")        # 按问题是否"值得想"决定（chat 默认可见深思）
 # 开思考时额外预留的输出配额。实测思考正文 1200~4000 字 ≈ 1000~3000 tok，
 # 与正文共用 num_predict —— 不预留就是"想完了没额度说话"（正文 0 字）。
 _THINK_RESERVE = 1600
