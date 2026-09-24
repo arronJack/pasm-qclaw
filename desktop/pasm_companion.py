@@ -9512,22 +9512,36 @@ class CompanionWindow(QMainWindow):
             outs = []
             coop_notes = []
             n = len(steps)
+            # v0.31.6：多步执行是重活（每步都是完整生成）—— 接上真实思考流，
+            #   别让本地模型推理期间界面全黑（与开发/写码流对齐）。
+            _th = {"t": 0.0, "step": 0}
+
+            def _on_think(_d, full):
+                now = time.time()
+                if now - _th["t"] >= 0.4:
+                    _th["t"] = now
+                    self._step("think", "深度思考", "%s轮" % (marks[_th["step"]] if
+                               _th["step"] < len(marks) else ""),
+                               detail=(full or "")[-320:], key="think")
             try:
                 for i, st in enumerate(steps):
                     if turn["cancel"].is_set():
                         break
+                    _th["step"] = i
                     up, sp = PRT.build_step_prompt(st.get("title", ""), st.get("detail", ""), text)
                     if fewshot:
                         sp += "\n" + fewshot
                     # v0.25 PASM×LLM 真协同：规划好的步骤都是重活，保留协同但只复核一轮
                     if self.cfg.get("coop", True):
-                        ans, ev = self._brain_coop(up, system=sp, max_tokens=1800, rounds=1)
+                        ans, ev = self._brain_coop(up, system=sp, max_tokens=1800,
+                                                   rounds=1, on_think=_on_think)
                         if ev:
                             coop_notes.append(f"{marks[i]}{st.get('title','')[:12]}："
                                               + ("起草→评审→修正→采纳" if len(ev) > 3
                                                  else "一次过✓"))
                     else:
-                        ans = self._brain(up, system=sp, max_tokens=1800)
+                        ans = self._brain(up, system=sp, max_tokens=1800,
+                                          on_think=_on_think)
                     outs.append(f"**{marks[i]} {st.get('title', '')}**\n\n{(ans or '').strip()}")
                     part = ("\n\n---\n\n".join(outs) +
                             (f"\n\n（正在做：{marks[i + 1]} {steps[i + 1].get('title', '')}…）"
@@ -12531,7 +12545,7 @@ class CompanionWindow(QMainWindow):
         return len(t) >= 150                           # 未分类的超长输入兜底
 
     def _brain_coop(self, req: str, system: str = "", max_tokens: int = 1500,
-                    rounds: int = 1) -> tuple:
+                    rounds: int = 1, on_think=None) -> tuple:
         """PASM×LLM 真互补交叉作业（重活专用）：
 
         1. **LLM 起草** 第一版成品；
@@ -12544,7 +12558,8 @@ class CompanionWindow(QMainWindow):
         """
         events = []
         try:
-            draft = (self._brain(req, system=system, max_tokens=max_tokens) or "").strip()
+            draft = (self._brain(req, system=system, max_tokens=max_tokens,
+                                 on_think=on_think) or "").strip()
         except Exception:
             return "", []
         events.append("起草")
@@ -12587,7 +12602,8 @@ class CompanionWindow(QMainWindow):
                     "\n\n你上一版草稿：\n" + ans[:4000] +
                     "\n\n【评审意见】\n" + verdict[:1800] +
                     "\n\n请针对意见修订后，重新输出**完整成品**（只输出成品本身）。",
-                    system=system, max_tokens=max_tokens) or "").strip()
+                    system=system, max_tokens=max_tokens,
+                    on_think=on_think) or "").strip()
                 if len(revised) >= max(20, int(len(ans) * 0.3)):
                     ans = revised
             except Exception:
@@ -14298,6 +14314,127 @@ class CompanionWindow(QMainWindow):
         return (f"写好了但自动复查 %d 轮后仍报错（{lang_label}）：`{path}`\n\n"
                 f"最新输出：\n{last_out}\n\n把报错发给我，我再修。")
 
+    def _project_self_verify(self, base: str, req: str, on_think=None,
+                             rounds: int = 2, err_text: str = "") -> str:
+        """v0.31.6：项目落盘后的**自我复查闭环**（对标 WorkBuddy，干活类与聊天对齐）。
+
+        ① 语法级验证（.py → py_compile / .js → node --check / .json → 解析）；
+        ② 有错就让模型只输出**出错文件**的完整新内容（===FILE: rel=== 格式），
+           原地覆盖后**再验证**，最多 `rounds` 轮（每轮都上过程卡）；
+        ③ `err_text` 非空（运行期报错）→ 跳过①直接进修复轮；
+        ④ 修复轮没产出新文件就**诚实停止**，不装成功。
+
+        返回最后一次的失败摘要（空串 = 通过；调用方据此决定要不要重跑/如实告知）。
+        """
+        try:
+            targets = []
+            for root, dirs, fs in os.walk(base):
+                dirs[:] = [d for d in dirs
+                           if not d.startswith(("旧版_", ".git", "__pycache__", "node_modules"))]
+                for f in fs:
+                    if f.lower().endswith((".py", ".js", ".mjs", ".cjs", ".json")):
+                        targets.append(os.path.join(root, f))
+            targets = targets[:40]
+            if not targets and not err_text:
+                return ""
+        except Exception:
+            logging.exception("project self-verify: 收集文件失败")
+            return ""
+        err_sum = ""
+        for r in range(1, int(rounds) + 2):        # 首验 + 最多 rounds 轮修复 + 末验
+            bad = []
+            if err_text and r == 1:
+                err_sum = err_text[:1500]
+            else:
+                res = SV.run_cmds(SV.plan_verify(targets), timeout=40)
+                n_bad = len([x for x in res if not x["ok"]])
+                if n_bad == 0:
+                    self._step("ok", "自我复查：语法校验 %d 个文件" % len(res),
+                               "全部通过", sync_wl=False)
+                    return ""
+                lbl, tail = SV.first_error(res)
+                err_sum = tail
+                self._step("err", "自我复查：语法校验 %d 个文件未过" % n_bad,
+                           (lbl or "")[:140], sync_wl=False)
+                _names = {os.path.basename(p) for p in targets}
+                for x in res:
+                    if x["ok"]:
+                        continue
+                    _bn = (x.get("label") or "").split(" ")[-1]
+                    for p in targets:
+                        if os.path.basename(p) == _bn:
+                            bad.append(p)
+            if r > int(rounds):
+                break
+            # 带报错让模型修：只输出出错文件（含首轮运行报错时挑最可能的入口文件）
+            if not bad:
+                bad = [p for p in targets if p.lower().endswith((".py", ".js"))][:2]
+            ctx = []
+            for p in bad[:3]:
+                try:
+                    txt = open(p, encoding="utf-8", errors="ignore").read()
+                    ctx.append("===FILE: %s===\n%s\n===END==="
+                               % (os.path.relpath(p, base).replace("\\", "/"), txt[:6000]))
+                except Exception:
+                    pass
+            if not ctx:
+                break
+            self._step("edit", "复查第 %d 轮：带报错自动修复" % r,
+                       "%d 个文件" % len(bad), sync_wl=False)
+            try:
+                fix = self._brain(
+                    "你刚生成的项目没有通过自动复查（第 %d 轮）。下面是原始需求、报错、"
+                    "以及出错文件的当前内容。请**只输出需要修正的文件**的完整新内容，"
+                    "严格用 ===FILE: 相对路径=== 与 ===END=== 包裹，不要输出解释。\n\n"
+                    "【需求】%s\n\n【报错】\n%s\n\n【当前文件】\n%s"
+                    % (r, (req or "")[:400], err_sum[:1200], "\n".join(ctx)),
+                    system="你是严谨的全栈工程师：定位报错、给出可直接运行的完整文件，"
+                           "不要改动与报错无关的部分；注释与界面文案用中文。",
+                    max_tokens=2600, on_think=on_think)
+                newf = AT.parse_bundle(fix) or {}
+                if not newf:
+                    self._step("err", "修复轮没有产出可用文件", "停止重试，如实汇报",
+                               sync_wl=False)
+                    break
+                for rel, content in newf.items():
+                    rel = str(rel).lstrip("/ ")
+                    if ".." in rel:
+                        continue
+                    full = os.path.join(base, *rel.split("/"))
+                    os.makedirs(os.path.dirname(full) or base, exist_ok=True)
+                    with open(full, "w", encoding="utf-8") as f:
+                        f.write(content)
+                    self._step("edit", "修复版已落盘", full, sync_wl=False)
+                err_text = ""                     # 后续轮次回到"先验证"
+            except Exception:
+                logging.exception("project self-repair round failed")
+                break
+        return err_sum
+
+    def _project_verify_and_run(self, base: str, req: str, on_think=None) -> str:
+        """v0.31.6：项目流收口 = 自我复查 → 运行 → 运行失败再修一轮重跑。
+
+        比旧版（直接跑一次、报错就交给用户）多了两层兜底；返回最终运行输出
+        （修复后跑通会带上"（运行报错 → 自动修复后重跑通过）"的诚实标注）。
+        """
+        self._project_self_verify(base, req, on_think=on_think)
+        runmsg = AT.run_project(base)
+        self._step_run("运行项目", "python app.py（自动探测入口）", runmsg,
+                       ok=not _looks_error(runmsg))
+        if _looks_error(runmsg):
+            tail = (runmsg or "").strip().splitlines()[-1][:160] \
+                if (runmsg or "").strip() else ""
+            self._step("edit", "运行报错，带报错自动修一轮", tail, sync_wl=False)
+            if not self._project_self_verify(base, req, on_think=on_think,
+                                            rounds=1, err_text=runmsg):
+                r2 = AT.run_project(base)
+                self._step_run("复查后重跑项目", "python app.py（自动探测入口）", r2,
+                               ok=not _looks_error(r2))
+                if not _looks_error(r2):
+                    return "（运行报错 → 自动复查修复后重跑通过）\n" + r2
+                return (runmsg + "\n\n自动复查修复后仍报错：\n" + r2)
+        return runmsg
+
     def _project_run(self, req: str) -> str:
         """全栈开发：生成多文件项目（前端+后端+数据库，按需求取舍）→ 保存 → 尝试运行。
 
@@ -14443,9 +14580,7 @@ class CompanionWindow(QMainWindow):
             tree = "📁 " + proj + "\n" + AT._tree(proj)
             AT._register_project(os.path.basename(proj.rstrip("/\\")), proj,
                                  list(files))
-            runmsg = AT.run_project(proj)
-            self._step_run("运行项目", "python app.py（自动探测入口）", runmsg,
-                           ok=not _looks_error(runmsg))
+            runmsg = self._project_verify_and_run(proj, req, _on_think)
             self._mark_effect_dev(proj)
             return (f"🛠 已在项目「{os.path.basename(proj.rstrip('/\\\\')) or name}」上"
                     f"完成更新：改 {n_updated} 个 / 新增 {n_new} 个文件"
@@ -14458,9 +14593,7 @@ class CompanionWindow(QMainWindow):
         self._stamp_conv_meta(proj_dir=pdir)
         self._step("new", "项目目录已创建", pdir, "%d 个文件落盘" % len(files))
         self._step_files(files, base=pdir)
-        runmsg = AT.run_project(pdir)
-        self._step_run("运行项目", "python app.py（自动探测入口）", runmsg,
-                       ok=not _looks_error(runmsg))
+        runmsg = self._project_verify_and_run(pdir, req, _on_think)
         self._mark_effect_dev(pdir)
         return (f"🏗 项目「{name}」搭好了！共 {len(files)} 个文件：\n\n{tree}\n\n"
                 f"{runmsg}\n\n"
@@ -15171,9 +15304,18 @@ class CompanionWindow(QMainWindow):
             _kb = ""
         if _kb:
             system += "\n【资料库自学知识（与题材相关时自然融入创作，更专业）】\n" + _kb
+        # v0.31.6：创作企划/正文是大生成（本地模型要跑一会）→ 接上真实思考流，
+        #   别让推理期间界面全黑（与开发/写码/文件生成流对齐）。
+        _th = {"t": 0.0}
+
+        def _on_think(_d, full):
+            now = time.time()
+            if now - _th["t"] >= 0.4:
+                _th["t"] = now
+                self._step("think", "深度思考", detail=(full or "")[-320:], key="think")
         try:
             ans = self._brain("题材：" + req, system=system,
-                              max_tokens=2800, task="filegen")
+                              max_tokens=2800, task="filegen", on_think=_on_think)
         except Exception as ex:
             return ("创作需要“大脑”在线（云端 Key 或本地 Ollama）才能写企划，"
                     "当前不可用：" + str(ex))
@@ -15505,9 +15647,18 @@ class CompanionWindow(QMainWindow):
             _kb = ""
         if _kb:
             system += "\n【资料库自学知识（与题材相关时自然融入创作，更专业）】\n" + _kb
+        # v0.31.6：创作企划/正文是大生成（本地模型要跑一会）→ 接上真实思考流，
+        #   别让推理期间界面全黑（与开发/写码/文件生成流对齐）。
+        _th = {"t": 0.0}
+
+        def _on_think(_d, full):
+            now = time.time()
+            if now - _th["t"] >= 0.4:
+                _th["t"] = now
+                self._step("think", "深度思考", detail=(full or "")[-320:], key="think")
         try:
             ans = self._brain("题材：" + req, system=system,
-                              max_tokens=2800, task="filegen")
+                              max_tokens=2800, task="filegen", on_think=_on_think)
         except Exception as ex:
             return ("写企划需要「大脑」在线（云端 Key 或本地 Ollama）："
                     + str(ex))
