@@ -76,6 +76,7 @@ import skillstore as SKL
 import llm_gateway as GW
 import creators as CRE
 import option_prompt as OPT       # v0.31.4 聊天「多选项确认卡」（解析/渲染/判定，零 Qt）
+import process_narration as PN    # v0.31.4 过程卡 WorkBuddy 式叙述层（时长/叙述句，零 Qt）
 import prompts as PRT             # v0.22 结构化提示词模板
 import validator as VAL           # v0.22 输出验证器
 import planner as PLN             # v0.22 任务规划器
@@ -4899,6 +4900,10 @@ class CompanionWindow(QMainWindow):
         #   有些活儿（如创作栏目直连引擎）没有工作台账 id，同样需要收口。
         try:
             if getattr(self, "_steps", None) and not getattr(self, "_step_closed", False):
+                # 先收口可能挂着的「✍ 生成回复中…」（v0.31.4：别让它变僵尸行）
+                if self._steps and self._steps[-1].get("key") == "gen":
+                    self._steps[-1] = dict(self._steps[-1], status="ok",
+                                           title="生成回复完成", key="")
                 self._step_closed = True
                 # sync_wl=False：这行是"播报"，不是"状态变更" —— 见 `_step_ui` 注释
                 self._step("ok" if ok else "err",
@@ -9038,6 +9043,18 @@ class CompanionWindow(QMainWindow):
                         # （真机实录：brain 输出走工作台时聊天栏没动静，旧文案
                         #   「还在等待模型响应」在生成期间是误导）
                         turn["generating"] = True
+                        # v0.31.4：把「✍ 生成回复中…」作为过程卡环节上屏（WorkBuddy 式）
+                        def _gen_step():
+                            try:
+                                if getattr(self, "_steps", None) and \
+                                        not getattr(self, "_step_closed", True):
+                                    self._step("gen", "生成回复中…", status="run", key="gen")
+                                else:
+                                    self._step_reset()
+                                    self._step("gen", "生成回复中…", status="run", key="gen")
+                            except Exception:
+                                pass
+                        self._ui(_gen_step)
                         self._ui(lambda: self.status.setText(
                             "✍️ 生成中… （正在写回答，可随时停止）"))
                     now = time.time()
@@ -10198,6 +10215,15 @@ class CompanionWindow(QMainWindow):
             self.status.setText(f"✍️ 生成中… {secs}s（{self._status_base or '…'}）{tip}")
         else:
             self.status.setText(f"⏳ 等待模型响应… {secs}s（{self._status_base or '…'}）{tip}")
+        # ── v0.31.4 过程卡头部计时：干活中每秒原地重画（WorkBuddy 式"处理中 36s"跳动）。
+        #    用户滚上去翻历史时不打扰（只在贴近底部时刷新）；收口后的卡片不再动。
+        try:
+            if getattr(self, "_steps", None) and not getattr(self, "_step_closed", True):
+                _sb = self.chat.verticalScrollBar()
+                if _sb.value() >= _sb.maximum() - 48:
+                    self._steps_render()
+        except Exception:
+            pass
 
     def _set_status(self, s):
         self._status_base = s
@@ -10257,6 +10283,14 @@ class CompanionWindow(QMainWindow):
                 logging.exception("present options failed")
 
     def _turn_done_impl(self, turn: dict, reply: str):
+        # ── v0.31.4：「✍ 生成回复中…」收口为「✓ 生成回复完成」（WorkBuddy 式闭环）。
+        #    只在"最后一步确实是 gen"时替换，避免误改别的卡；无卡（如首字前就失败）则跳过。
+        try:
+            if getattr(self, "_steps", None) and self._steps and \
+                    self._steps[-1].get("key") == "gen":
+                self._step("gen", "生成回复完成", status="ok", key="gen", sync_wl=False)
+        except Exception:
+            pass
         cur = self._turns.get(turn["slot"])
         if cur is turn:
             del self._turns[turn["slot"]]
@@ -10404,6 +10438,7 @@ class CompanionWindow(QMainWindow):
         "new":   ("＋", "#3B6D11"),
         "edit":  ("✎", "#BA7517"),
         "read":  ("◉", "#534AB7"),
+        "gen":   ("✍", "#4F46E5"),       # v0.31.4：生成回复中（WorkBuddy 式环节上屏）
         "ok":    ("✓", "#0F6E56"),
         "err":   ("✕", "#A32D2D"),
     }
@@ -10420,6 +10455,7 @@ class CompanionWindow(QMainWindow):
         """开一轮新的过程流（每次开工前调一次）。"""
         self._steps = []
         self._step_closed = False
+        self._steps_t0 = time.time()      # v0.31.4：本轮开工时刻 → 头部"已处理 2m36s"
         # 换一个"轮次标记"：新的一轮会另起一块，上一轮的过程卡片**原样留在历史里**。
         self._step_gen = int(getattr(self, "_step_gen", 0)) + 1
         self._step_tag = self._STEP_TAG_BASE + (self._step_gen & 0xFFFF)
@@ -10447,7 +10483,8 @@ class CompanionWindow(QMainWindow):
             self._step_reset()
         item = {"kind": str(kind or "plan"), "title": str(title or ""),
                 "target": str(target or ""), "detail": str(detail or ""),
-                "status": str(status or "ok"), "key": str(key or "")}
+                "status": str(status or "ok"), "key": str(key or ""),
+                "t": time.time()}          # v0.31.4：每步落点 → 行尾"· 3s"
         if key and self._steps and self._steps[-1].get("key") == key:
             self._steps[-1] = item                      # 原地刷新，不追加
         else:
@@ -10486,8 +10523,18 @@ class CompanionWindow(QMainWindow):
         老内容全部残留，越滚越长。收敛成单块后，整段过程流永远只有一块。
         （第二层保险见 `_step_block()`：块身份用**轮次标记**认，而不是"是不是最后一块"。）
         """
-        out = ["<span style='color:#64748b;font-size:12px;'>%s · %d 步</span>"
-               % (self._STEP_HEAD, len(self._steps))]
+        # ── v0.31.4 WorkBuddy 式头部：干活中「⏳ 处理中 36s」实时跳动，
+        #    收口「✓ 已处理 2m36s」。⚠️ 头部文本必须仍以 _STEP_MARK("过程 ·")
+        #    开头 —— `_steps_render` 的块认领核对就认这个前缀，不能改。
+        _t0 = getattr(self, "_steps_t0", None)
+        _run = not getattr(self, "_step_closed", True)
+        _last_err = bool(self._steps) and self._steps[-1]["status"] == "err"
+        if _t0:
+            _hdr = PN.header_suffix(time.time() - _t0, running=_run, err=_last_err)
+        else:
+            _hdr = "⏳ 处理中" if _run else "✓ 已完成"
+        out = ["<span style='color:#64748b;font-size:12px;'>%s · %d 步 · %s</span>"
+               % (self._STEP_HEAD, len(self._steps), html.escape(_hdr))]
         for st in self._steps:
             icon, color = self._STEP_STYLE.get(st["kind"], ("·", "#5F5E5A"))
             col = color
@@ -10495,13 +10542,20 @@ class CompanionWindow(QMainWindow):
                 col = "#A32D2D"
             elif st["status"] == "run":
                 col = "#B45309"
+            # 叙述句兜底：标题为空时用 kind 映射的自然语言（"执行命令"），不覆盖原标题
+            _title = st["title"] or PN.narrate(st["kind"])
             line = ("<br><span style='color:%s;'>%s</span>"
                     "<span style='color:#1e293b;'> %s</span>"
-                    % (col, html.escape(icon), html.escape(st["title"])))
+                    % (col, html.escape(icon), html.escape(_title)))
             if st["target"]:
                 line += ("<span style='font-family:monospace;font-size:12px;"
                          "color:#334155;'> %s</span>"
                          % html.escape(st["target"][:160]))
+            if _t0 and st.get("t"):
+                _sfx = PN.step_suffix(_t0, st["t"])
+                if _sfx:
+                    line += ("<span style='color:#94a3b8;font-size:11px;'> %s</span>"
+                             % html.escape(_sfx))
             if st["detail"]:
                 _ind = "&nbsp;" * 5
                 line += ("<br>%s<span style='font-family:monospace;font-size:12px;"
