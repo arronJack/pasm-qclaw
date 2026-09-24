@@ -120,6 +120,7 @@ HIDDEN_IMPORTS = [
     'wakeword',
     'option_prompt',
     'process_narration',
+    'self_verify',
     'migrate',
     'autostart',
     'docsuite',

@@ -98,6 +98,9 @@ ALLOWED_UNIQUE = {
                   # v0.31.4 新增：过程卡 WorkBuddy 式叙述层（时长格式化/叙述句/步尾耗时），
                   # 零 Qt 依赖、纯文本输出；核心侧无同名实现。
                   "process_narration",
+                  # v0.31.5 新增：自我复查闭环纯逻辑层（验证计划/执行/修复prompt），
+                  # 零 Qt 依赖；核心侧无同名实现。
+                  "self_verify",
                   }
 
 

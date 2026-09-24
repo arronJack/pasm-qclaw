@@ -77,6 +77,7 @@ import llm_gateway as GW
 import creators as CRE
 import option_prompt as OPT       # v0.31.4 聊天「多选项确认卡」（解析/渲染/判定，零 Qt）
 import process_narration as PN    # v0.31.4 过程卡 WorkBuddy 式叙述层（时长/叙述句，零 Qt）
+import self_verify as SV          # v0.31.5 自我复查闭环（验证计划/执行/修复prompt，零 Qt）
 import prompts as PRT             # v0.22 结构化提示词模板
 import validator as VAL           # v0.22 输出验证器
 import planner as PLN             # v0.22 任务规划器
@@ -4917,6 +4918,19 @@ class CompanionWindow(QMainWindow):
             WORKLOG.finish(tid, reply or "", ok=ok)
         except Exception:
             pass
+        # ── v0.31.5 连接器关联应用：任务完成 → 推送给已连接的第三方通道 ──
+        #   （飞书/Discord/微信/Webhook；没配的通道 hub.push 安静跳过，零副作用。
+        #     网络推送放守护线程，绝不拖慢收尾；失败只进日志。）
+        try:
+            _hub = getattr(self, "_hub", None)
+            if _hub is not None and getattr(_hub, "started", None):
+                _txt = "✅ 任务完成：%s" % (reply or "").strip().splitlines()[0][:80] if reply \
+                    else ("✅ 任务完成" if ok else "⚠️ 任务中止")
+                import threading as _th
+                _th.Thread(target=lambda: _hub.push(_txt, title="PASM Studio"),
+                           daemon=True).start()
+        except Exception:                                        # noqa: BLE001
+            logging.exception("connector push failed")
 
         def _upd():
             try:
@@ -9848,6 +9862,29 @@ class CompanionWindow(QMainWindow):
         "scaffold_project": "真装框架", "payment_status": "查支付状态",
     }
 
+    def _mcp_status_reply(self) -> str:
+        """v0.31.5：MCP 连接器状态（只读，不含密钥）。桥通不通、有哪些工具，一次说清。"""
+        if MCPB is None:
+            return ("🔌 **MCP 连接器**：模块未加载（mcp_bridge 缺失）。\n"
+                    "把 `mcp_bridge.py` 放回 desktop/ 即可恢复。")
+        b = MCPB.get_bridge()
+        if b is None:
+            return ("🔌 **MCP 连接器**：未连接 —— pasm-mcp-server 未安装或启动失败。\n"
+                    "安装后对我说“重连 MCP”或在设置里检查。")
+        try:
+            tools = sorted(b.tool_names() or [])
+        except Exception:
+            tools = []
+        out = ["🔌 **MCP 连接器**：✅ 已连接（pasm-mcp-server）"]
+        if tools:
+            out.append("· 可用工具 %d 个：%s" % (len(tools), "、".join(tools[:12])))
+            if len(tools) > 12:
+                out.append("　…等共 %d 个" % len(tools))
+            out.append("· 说“帮我干 <任务>”时，工作类意图会自动带上这些工具。")
+        else:
+            out.append("· 已连接但没拿到工具清单（服务端可能没注册工具）。")
+        return "\n".join(out)
+
     def _tool_step_label(self, name: str):
         """工具名 → (图标, 中文标签)。MCP 工具统一显示成"调用 MCP 工具 X"。"""
         n = str(name or "")
@@ -11793,6 +11830,10 @@ class CompanionWindow(QMainWindow):
                 if re.search(r"测试|检测|试一下|通不通|能不能连|连得上", text):
                     return ("connector_test", text)
                 return ("connector_status", text)
+            # —— v0.31.5：MCP 连接器状态（"MCP 通了吗/连接器状态"直接给桥状态+工具清单）——
+            if re.search(r"mcp|MCP", text) and re.search(
+                    r"状态|通|连|工具|列表|有哪些|可用", text):
+                return ("mcp_status", text)
             # —— 跨端推送放最前：含"手机/微信/钉钉/飞书"的推送诉求更具体 ——
             if re.search(r"(推|发|送)(送)?(到|给|往)?[^，。]{0,6}(手机|微信|钉钉|飞书|telegram)|"
                          r"(手机|微信|钉钉|飞书)[^，。]{0,4}(推送|发我|提醒我)", text, re.I):
@@ -13796,6 +13837,8 @@ class CompanionWindow(QMainWindow):
                 return hub.status_text()
             except Exception as ex:                          # noqa: BLE001
                 return "接入状态读不出来：%s" % ex
+        if kind == "mcp_status":           # v0.31.5 MCP 连接器状态（桥 + 工具清单）
+            return self._mcp_status_reply()
         if kind == "connector_test":       # v0.30.14 真连一次（用你自己的凭据）
             return self._connector_test_reply(agent[1] if len(agent) > 1 else "")
         if kind == "evolve_save":
@@ -14132,39 +14175,46 @@ class CompanionWindow(QMainWindow):
             return (f"写好了（{lang_label}）：`{path}`\n"
                     f"要运行的话对我说“运行 刚才的脚本”，或重发时带上运行。")
 
-        # —— Act 2 + Check：运行并检查 ——
-        out = AT.run_script(path)
-        self._step_run("运行脚本", os.path.basename(path), out,
-                       ok=not _looks_error(out))
-        if not _looks_error(out):
-            return f"写好了并运行成功（{lang_label}）：`{path}`\n\n运行结果：\n{out}"
-
-        # —— Act 3：带报错自动修复一次（执行-验证环） ——
-        try:
-            self._step("edit", "运行报错，自动定位并修复一次",
-                       (out or "").strip().splitlines()[-1][:120] if (out or "").strip() else "")
-            fix = self._brain(
-                "你刚写的脚本运行报错了。下面是运行输出（含报错信息）。"
-                f"请定位错误并输出**修复后的完整代码**，只输出代码。\n需求：{req}\n运行输出：\n{out[:1200]}",
-                system=f"你是严谨的 {lang_label} 工程师，定位报错并给出可运行的完整代码；注释与解释用中文。",
-                on_think=_on_think)
-            m2 = re.search(r"```(?:\w+)?\n?(.*?)```", fix, flags=re.S)
-            code2 = (m2.group(1) if m2 else fix).strip()
-            if code2 and code2 != code:
+        # —— Act 2 + Check：自我复查闭环（v0.31.5 self_verify，对标 WorkBuddy） ——
+        #   每轮：① 语法级验证（py_compile 等秒回，不真跑）→ ② 真跑 → ③ 失败带报错修复
+        #   最多 SV.MAX_REPAIR_ROUNDS 轮（3）；每轮都上过程卡，用户全程看得到。
+        code0 = code
+        last_out = ""
+        for r in range(1, SV.MAX_REPAIR_ROUNDS + 2):      # 1 次初跑 + 最多 3 轮修复
+            vres = SV.run_cmds(SV.plan_verify([path]))
+            vl, vt = SV.first_error(vres)
+            if vl is None:
+                out = AT.run_script(path)
+                last_out = out
+                self._step_run("重跑脚本" if r > 1 else "运行脚本",
+                               os.path.basename(path), out, ok=not _looks_error(out))
+                if not _looks_error(out):
+                    if r > 1:
+                        return (f"复查 {r - 1} 轮后跑通了：`{path}`\n\n运行结果：\n{out}")
+                    return f"写好了并运行成功（{lang_label}）：`{path}`\n\n运行结果：\n{out}"
+                vl, vt = "运行脚本", (out or "")[:1200]
+            if r > SV.MAX_REPAIR_ROUNDS:
+                break
+            self._step("edit", "复查第 %d 轮：验证未过，自动修复" % r,
+                       (vt or "").strip().splitlines()[-1][:120] if (vt or "").strip() else "")
+            try:
+                fix = self._brain(
+                    SV.repair_prompt(req, vl, vt, r),
+                    system=f"你是严谨的 {lang_label} 工程师，定位报错并给出可运行的完整代码；注释与解释用中文。",
+                    on_think=_on_think)
+                m2 = re.search(r"```(?:\w+)?\n?(.*?)```", fix, flags=re.S)
+                code2 = (m2.group(1) if m2 else fix).strip()
+                if not code2 or code2 == code0:
+                    self._step("err", "修复轮没有产出新代码", "停止重试，把报错交给你")
+                    break
                 path = AT.write_script(req[:24], code2, lang)
-                add, dele = self._diff_stat(code, code2)
+                add, dele = self._diff_stat(code0, code2)
                 self._step("edit", "修复版已落盘", path, "+%d / -%d 行" % (add, dele))
-                out2 = AT.run_script(path)
-                self._step_run("重跑脚本", os.path.basename(path), out2,
-                               ok=not _looks_error(out2))
-                if not _looks_error(out2):
-                    return (f"第一次运行报错了，我自动修了一版并跑通了：`{path}`\n\n"
-                            f"修复后运行结果：\n{out2}")
-                return (f"写好了（{lang_label}），自动修复后仍报错：`{path}`\n\n"
-                        f"最新输出：\n{out2}\n\n把报错贴给我，我再接着修。")
-        except Exception:
-            pass
-        return f"写好了但运行报错（{lang_label}）：`{path}`\n\n输出：\n{out}\n\n把报错发给我，我再修。"
+            except Exception:
+                logging.exception("self-repair round failed")
+                break
+        return (f"写好了但自动复查 %d 轮后仍报错（{lang_label}）：`{path}`\n\n"
+                f"最新输出：\n{last_out}\n\n把报错发给我，我再修。")
 
     def _project_run(self, req: str) -> str:
         """全栈开发：生成多文件项目（前端+后端+数据库，按需求取舍）→ 保存 → 尝试运行。
