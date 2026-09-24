@@ -3,7 +3,7 @@ from __future__ import annotations
 
 APP_NAME = "PASM Studio"
 APP_SHORT = "PASM Studio"
-APP_VERSION = "0.31.5"          # 同步修改此值即触发安装包与升级通道
+APP_VERSION = "0.31.6"          # 同步修改此值即触发安装包与升级通道
 APP_PUBLISHER = "arronZheng"
 APP_COPYRIGHT = "Copyright (c) 2026 arronZheng"
 APP_HOMEPAGE = "https://gitee.com/arronzheng/pasm-qclaw"   # 产品说明/下载页（公开仓库）

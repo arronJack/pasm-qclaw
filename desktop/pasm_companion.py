@@ -2296,6 +2296,11 @@ class SettingsDialog(QDialog):
             GW.set_local_think(self.cfg["local_think_mode"])
         except Exception:
             pass
+        # v0.31.6：思考预算（秒；0/空 = 自动）。用户显式设过就以用户为准（见 think_budget_of）
+        try:
+            GW.set_think_budget(self.cfg.get("think_budget_sec") or 0)
+        except Exception:
+            pass
         try:
             _st = GROWTH.pet_state()
             _st["gender"] = g
@@ -3090,6 +3095,11 @@ class CompanionWindow(QMainWindow):
         try:
             GW.set_local_think(self.cfg.get("local_think_mode") or (
                 "on" if self.cfg.get("local_think") else "auto"))
+        except Exception:
+            pass
+        # v0.31.6：思考预算（秒，0/空 = 自动按速度收口；慢机自动档 20s）
+        try:
+            GW.set_think_budget(self.cfg.get("think_budget_sec") or 0)
         except Exception:
             pass
         if not self.cfg.get("ws_dir"):
@@ -7316,11 +7326,27 @@ class CompanionWindow(QMainWindow):
                 self._ui(lambda: self._note_slow_start(_p))
         except Exception:
             pass
+        _t_call = time.time()
         try:
-            return GW.gw.complete(base_url, model, api_key or "local", msgs,
-                                  task=task, max_tokens=max_tokens,
-                                  temperature=temperature, stop=stop,
-                                  on_delta=on_delta, on_think=on_think)
+            _r = GW.gw.complete(base_url, model, api_key or "local", msgs,
+                                task=task, max_tokens=max_tokens,
+                                temperature=temperature, stop=stop,
+                                on_delta=on_delta, on_think=on_think)
+            # v0.31.6：思考被"超预算"掐断就如实上屏 —— 用户实测反馈「深度思考到
+            #   一小段就断了」，根因是慢机 8s 预算太紧（现已放宽到 20s 且强制开不砍）。
+            #   即便如此，掐断仍可能发生（用户自己设了更短预算/真的想不完），
+            #   这时必须**说清楚**：想了几秒、多少字、已带着思路收敛作答。
+            try:
+                _lc = GW.last_think_cut()
+                if _lc and float(_lc.get("at") or 0) >= _t_call:
+                    _b = int(round(float(_lc.get("budget") or 0)))
+                    self._step("think", "思考到预算上限，已带着思路收敛作答",
+                               "%ds / %d 字%s" % (_b, int(_lc.get("chars") or 0),
+                                                  "（可在设置里调长思考预算）"),
+                               status="run", sync_wl=False)
+            except Exception:
+                pass
+            return _r
         except GW.ModelUnavailable as ex:
             return (f"⚠️ {ex}\n\n"
                     f"可在底部「大脑」下拉重新选一个模型，或先配置云端 Key。")
@@ -9885,6 +9911,56 @@ class CompanionWindow(QMainWindow):
             out.append("· 已连接但没拿到工具清单（服务端可能没注册工具）。")
         return "\n".join(out)
 
+    def _thinkbudget_reply(self, text: str) -> str:
+        """v0.31.6：思考预算的查/设（真机实录「深度思考到一小段就断了」的正面解法）。
+
+        说「思考预算 30」→ 30 秒；说「思考预算自动」→ 恢复自动（慢机 20s、强制开 45s）。
+        """
+        import re as _re
+        m = _re.search(r"(\d{1,3})\s*(秒|s|S)?", text or "")
+        auto = bool(_re.search(r"自动|默认|恢复", text or ""))
+        if m and not auto:
+            sec = max(5, min(300, int(m.group(1))))
+            try:
+                GW.set_think_budget(sec)
+            except Exception as ex:                          # noqa: BLE001
+                return "思考预算设置失败：%s" % ex
+            self.cfg["think_budget_sec"] = sec
+            try:
+                _save_json(CONFIG, self.cfg)
+            except Exception:
+                pass
+            return ("✅ 思考预算已设为 **%d 秒**（下次思考开始生效）。\n"
+                    "· 想更深就说更大的数（上限 300）；\n"
+                    "· 说「思考预算 自动」恢复自动：慢机 20 秒、强制开 45 秒。" % sec)
+        if auto:
+            try:
+                GW.set_think_budget(0)
+            except Exception:
+                pass
+            self.cfg["think_budget_sec"] = 0
+            try:
+                _save_json(CONFIG, self.cfg)
+            except Exception:
+                pass
+            return "✅ 思考预算已恢复**自动**（按本机速度收口：慢机 20 秒；强制开思考 45 秒）。"
+        # 只问不改：报当前策略
+        cur = 0.0
+        try:
+            cur = float(GW.get_think_budget() or 0)
+        except Exception:
+            cur = 0.0
+        mode = str(self.cfg.get("local_think_mode") or "auto")
+        if cur > 0:
+            return ("当前思考预算是**你手动设的 %d 秒**。改法：说「思考预算 60」；"
+                    "恢复自动说「思考预算 自动」。" % int(cur))
+        return ("当前思考预算是**自动**（按本机速度收口）：\n"
+                "· 慢机（生成 <15 tok/s，你现在这台就是）→ **20 秒**；\n"
+                "· 思考档设为「强制开」→ 45 秒（用户明确要看深度思考，不再按慢机砍）；\n"
+                "· 想固定时间就说「思考预算 60」；想恢复自动说「思考预算 自动」。\n"
+                "当前思考档：%s。注：真到上限会**带着已想出的思路收敛作答**（不会卡死），"
+                "过程卡里会写明想了几秒/多少字。" % mode)
+
     def _tool_step_label(self, name: str):
         """工具名 → (图标, 中文标签)。MCP 工具统一显示成"调用 MCP 工具 X"。"""
         n = str(name or "")
@@ -11830,6 +11906,10 @@ class CompanionWindow(QMainWindow):
                 if re.search(r"测试|检测|试一下|通不通|能不能连|连得上", text):
                     return ("connector_test", text)
                 return ("connector_status", text)
+            # —— v0.31.6：思考预算（"思考到一小段就断了"的正面解法）——
+            if re.search(r"思考|深度思考|想太久|想的时间", text) and \
+                    re.search(r"预算|多久|多长时间|时长|上限|限制|多少秒|调长|调短|加长", text):
+                return ("thinkbudget", text)
             # —— v0.31.5：MCP 连接器状态（"MCP 通了吗/连接器状态"直接给桥状态+工具清单）——
             if re.search(r"mcp|MCP", text) and re.search(
                     r"状态|通|连|工具|列表|有哪些|可用", text):
@@ -13839,6 +13919,8 @@ class CompanionWindow(QMainWindow):
                 return "接入状态读不出来：%s" % ex
         if kind == "mcp_status":           # v0.31.5 MCP 连接器状态（桥 + 工具清单）
             return self._mcp_status_reply()
+        if kind == "thinkbudget":          # v0.31.6 思考预算（真机"思考断太早"的解法）
+            return self._thinkbudget_reply(agent[1] if len(agent) > 1 else "")
         if kind == "connector_test":       # v0.30.14 真连一次（用你自己的凭据）
             return self._connector_test_reply(agent[1] if len(agent) > 1 else "")
         if kind == "evolve_save":

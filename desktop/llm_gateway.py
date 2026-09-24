@@ -283,15 +283,27 @@ def prefill_sample_ok(pf: float, ped: float, span: float) -> bool:
 
 
 def think_budget_of(task: str, model: str, host: str = "") -> float:
-    """思考阶段的秒级预算（v0.30.13：按本机生成速度收口）。
+    """思考阶段的秒级预算（v0.31.6：用户显式设置 > 强制开 > 按本机速度收口）。
 
-    朋友机日志（2026-09-17）里，思考开时首字稳定在 43.6~45.5s，**7 次全部撞在
-    固定 45s 预算上**；而那台机器每分钟只能想约 400 字 —— 把预算等满并没有换来
-    更好的答案，只是让用户多等半分钟。所以慢机按 8 秒收口（想不完的照样会被
-    "强制收敛"机制带着已有思路继续答，那条路已经存在）。
+    优先级（v0.31.6 新增前两条——真机实录「思考到一小段就断了」就是第三条 8s 太短）：
+      1. 界面/命令显式设过预算 → **以用户为准**（想多久用户说了算）；
+      2. 思考档为**强制开**（"on"）→ 用户明确要看深度思考，不再按慢机砍到 20s，
+         给足重活预算（45s）；
+      3. 否则按本机生成速度收口：慢机（<15 tok/s 或没实测过）取 min(车道预算, 20s)。
+
+    背景（保留 v0.30.13 的取舍）：朋友机日志里思考开时首字稳定 43.6~45.5s、7 次全撞
+    45s 预算；那台机器想满预算也没换来更好答案，只是让用户多等。所以**自动档**仍收口，
+    但 8s 太短（小志机 9.7 tok/s 只想了 313 字就被掐），20s 是更合理的折中。
     """
+    if _THINK_BUDGET_OVERRIDE > 0:
+        return float(_THINK_BUDGET_OVERRIDE)
     base = (_THINK_BUDGET_SEC_HEAVY if task in _THINK_AUTO
             else _THINK_BUDGET_SEC)
+    try:
+        if str(get_local_think() or "").lower() == "on":
+            return base                     # 用户强制开 → 别替用户省时间
+    except Exception:                       # noqa: BLE001
+        pass
     try:
         sp = speed_of(model, host)
         if (not sp.get("measured")) or float(sp.get("gen") or 0.0) < 15.0:
@@ -528,7 +540,38 @@ _THINK_RESERVE = 1600
 # 预算按车道给：后台提炼/自测被打断还能重来，重活（brain/filegen）多给一点更稳。
 _THINK_BUDGET_SEC = 30.0        # study / selftest（后台，可重来）
 _THINK_BUDGET_SEC_HEAVY = 45.0  # brain / filegen（重活，用户已在等）
-_THINK_BUDGET_SEC_SLOW = 8.0    # v0.30.13：慢机（生成 <15 tok/s）的思考上限
+# v0.31.6：慢机（生成 <15 tok/s）的思考上限。8s → 20s ——
+#   真机实录（小志 2026-09-24 14:52，本机 9.7 tok/s）：思考刚想 8 秒 / 313 字就被
+#   "超预算"掐断，用户观感是"深度思考到一小段就断了"。8s 在慢机上确实太短：
+#   想不完的照样要收敛（多等 12s 换来更完整的思路，比反复收敛更值）。
+_THINK_BUDGET_SEC_SLOW = 20.0
+# v0.31.6：预算覆盖（0 或非正数 = 用自动策略）。设置里的"思考预算(秒)"与
+#   chat 命令都写这里；用户在界面上明确设过就**以用户为准**。
+_THINK_BUDGET_OVERRIDE = 0.0
+#: 上一次调用里"思考被掐断收敛"的事实（供界面上屏，别让用户觉得"莫名断了"）。
+#: {"at": 时间戳, "cut": bool, "chars": 思考字数, "budget": 预算秒, "task": 车道}
+LAST_THINK_CUT: Dict[str, Any] = {}
+
+
+def set_think_budget(sec) -> float:
+    """设思考预算秒数（0/None/负数 = 恢复自动）。返回生效值（0 表示自动）。"""
+    global _THINK_BUDGET_OVERRIDE
+    try:
+        v = float(sec or 0)
+    except Exception:                                        # noqa: BLE001
+        v = 0.0
+    _THINK_BUDGET_OVERRIDE = v if v > 0 else 0.0
+    return _THINK_BUDGET_OVERRIDE
+
+
+def get_think_budget() -> float:
+    """当前显式预算（0 = 自动）。"""
+    return _THINK_BUDGET_OVERRIDE
+
+
+def last_think_cut() -> Dict[str, Any]:
+    """上一次调用里思考是否被掐断（含字数/预算），供界面如实播报。"""
+    return dict(LAST_THINK_CUT or {})
 # 超预算后的"强制收敛"提示。实测关键：要求它**列等式并代入原题检验**，
 # 能补回被截断的那部分思考（同一题 25s 预算下，普通提示给出过错误答案「3 元」）。
 _CONVERGE_PROMPT = ("（以上是你的分析过程）请结束分析、直接给出最终答案。"
@@ -1312,6 +1355,17 @@ class Gateway:
                     {"role": "user", "content": _CONVERGE_PROMPT}]
             log.info("思考链未吐正文（%s，已想 %d 字）→ 关思考强制收敛",
                      "超预算" if cut else "配额被吃光", think_chars)
+            # v0.31.6：把"被掐断"这件事记下来 —— 界面据此如实播报
+            # 「💭 思考超预算（20s/313字）→ 已带着思路收敛作答」，
+            # 别再让用户以为"深度思考莫名断了一小段"。
+            try:
+                LAST_THINK_CUT.clear()
+                LAST_THINK_CUT.update({"at": time.time(), "cut": bool(cut),
+                                       "chars": int(think_chars),
+                                       "budget": float(think_budget),
+                                       "task": str(task or "")})
+            except Exception:                                # noqa: BLE001
+                pass
             text, tcs, stats, finish, t_first, _tk, _c = _run(False, extra)
             think_txt = think_txt + _tk
             converged = True
