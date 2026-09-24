@@ -248,7 +248,14 @@ def _tail_re():
 
 
 def _path_candidates(text: str) -> list:
-    """从聊天文本中抽出可能的路径候选（引号内路径 → 盘符绝对路径 → ~ 用户目录）。"""
+    r"""从聊天文本中抽出可能的路径候选（引号内路径 → 盘符绝对路径 → ~ 用户目录）。
+
+    v0.31.4 追加**空格容错候选**：输入侧（输入法/剪贴板）会在英文与中文之间插空格
+    （真机实录："D:\Code 副\business"，真实目录 D:\Code副）。旧正则字符类里有 \s，
+    候选在空格处截断成 "D:\Code" → 父目录回退一路退到盘根，readfolder 把整个盘
+    根目录当成分析对象。这里对带空格的区间补两条候选：带空格原样 + 去空格变体。
+    两者都只在**真实存在**时才会被 resolve_path 采用，不会误返回。
+    """
     out = []
     for m in re.finditer(r"[\"“'‘]([A-Za-z]:[\\/][^\"”'’]+)[\"”'’]", text):
         out.append(m.group(1).strip().rstrip("\\/"))
@@ -256,31 +263,46 @@ def _path_candidates(text: str) -> list:
         out.append(m.group(0).strip().rstrip("\\/"))
     for m in re.finditer(r"~[\\/][^，。；、！？\s\"“”'’<>|*?]*", text):
         out.append(os.path.expanduser(m.group(0).strip().rstrip("\\/")))
+    # 空格容错：允许空格的宽松区间（只被句读/引号等终止，不 \s 截断）；
+    # 去空格变体放在最后 —— 优先级：引号路径 > 精确无空格 > 带空格原文 > 去空格。
+    for m in re.finditer(r"[A-Za-z]:[\\/][^，。；、！？\"“”'’<>|*?]*", text):
+        c = m.group(0).strip().rstrip("\\/")
+        if c and re.search(r"[ \u00a0\u3000]", c):
+            out.append(c)
+            out.append(re.sub(r"[ \u00a0\u3000]+", "", c))
     return out
 
 
 def resolve_path(text: str) -> str:
     """从聊天文本解析出**真实存在**的路径（文件或文件夹）；没有则返回空串。
-    策略：候选串先做精确匹配；失败且看起来是"文件路径"（带扩展名）则不回退目录；
-    否则从末尾逐字剥掉中文尾巴（覆盖各种口语说法），一旦存在立即返回；
-    剥到非中文字符仍不存在，再逐级向上找"最深已存在父目录"。"""
-    for cand in _path_candidates(text):
-        cand = cand.strip()
-        if not cand:
-            continue
-        if os.path.exists(cand):                      # 1) 完整路径就在
+    策略（v0.31.4 两阶段）：
+      阶段一：候选里**哪个真实存在**就用哪个（引号 > 精确 > 带空格原文 > 去空格）——
+              存在性是唯一裁判，绝不会返回不存在的路径；
+      阶段二：全都存在不了，才做"剥中文尾巴 / 逐级找最深已存在父目录"的回退，
+              且**绝不回退到盘根**（真机实录：回退到 "D:/"，readfolder 把整个
+              D 盘根目录当成分析对象，模型只能拿根目录清单编故事）。"""
+    cands = [c.strip() for c in _path_candidates(text) if c.strip()]
+    # ── 阶段一：存在即胜 ──
+    for cand in cands:
+        if os.path.exists(cand):
             return cand
-        if re.search(r"\.[A-Za-z0-9]{1,6}$", cand):   # 2) 自带扩展名但不存在 → 不猜目录
-            return ""
+    # ── 阶段二：回退（仅当没有任何候选真实存在）──
+    for cand in cands:
+        if re.search(r"\.[A-Za-z0-9]{1,6}$", cand):   # 自带扩展名但不存在 → 不猜目录
+            continue
         probe = cand.rstrip("\\/ ")
-        # 3) 逐字剥掉末尾中文（"下的文件/里的内容/有没有问题"等任意说法），存在即停
+        # 逐字剥掉末尾中文（"下的文件/里的内容/有没有问题"等任意说法），存在即停
         while probe and "\u4e00" <= probe[-1] <= "\u9fff":
             probe = probe[:-1]
             if os.path.exists(probe):
                 return probe
-        # 4) 中文剥完仍不存在：逐级找最深已存在父目录（应对 ASCII 尾巴等）
-        while len(probe) > len(os.path.splitdrive(probe)[0]) + 1:
+        # 中文剥完仍不存在：逐级找最深已存在父目录（应对 ASCII 尾巴等），
+        # 剥到盘根（"D:\"）为止 —— **盘根不许拿来充数**。
+        _drv = len(os.path.splitdrive(probe)[0]) + 1
+        while len(probe) > _drv:
             probe = os.path.dirname(probe)
+            if len(probe) <= _drv:
+                break          # 已经退到盘根 → 弃这个候选，试下一个
             if os.path.exists(probe):
                 return probe
     return ""

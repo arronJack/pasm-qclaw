@@ -9033,6 +9033,13 @@ class CompanionWindow(QMainWindow):
                 def on_delta(_d, full):
                     turn["live_full"] = full          # 无节流，保证最终态完整
                     turn["thinking"] = False          # 思考阶段结束，进入正式作答
+                    if not turn.get("generating"):
+                        # v0.31.4：首字已到 → 状态条从「等待响应」切「生成中」
+                        # （真机实录：brain 输出走工作台时聊天栏没动静，旧文案
+                        #   「还在等待模型响应」在生成期间是误导）
+                        turn["generating"] = True
+                        self._ui(lambda: self.status.setText(
+                            "✍️ 生成中… （正在写回答，可随时停止）"))
                     now = time.time()
                     if now - _st["t"] >= 0.12:      # 节流 ~120ms，刷屏不抖
                         _st["t"] = now
@@ -9912,6 +9919,7 @@ class CompanionWindow(QMainWindow):
     def _finish(self, reply, turn=None):
         if turn is not None:
             turn["thinking"] = False          # v0.31.3：兜底，确保「💭 深度思考中…」复位
+            turn["generating"] = False        # v0.31.4：同步复位「✍️ 生成中…」
         self._set_busy(False)
         try:
             streamed = bool(turn and turn.get("live_started") and turn.get("name_html"))
@@ -10185,8 +10193,11 @@ class CompanionWindow(QMainWindow):
         tip = "　⏹ 点右侧「停止」可中断" if secs > 8 else ""
         if t.get("thinking"):
             self.status.setText(f"💭 深度思考中… {secs}s（{self._status_base or '…'}）{tip}")
+        elif t.get("generating"):
+            # v0.31.4：首字已到、正文在写 —— 别再说"等待响应"（真机实录误导）
+            self.status.setText(f"✍️ 生成中… {secs}s（{self._status_base or '…'}）{tip}")
         else:
-            self.status.setText(f"⏳ 思考中… {secs}s（{self._status_base or '…'}）{tip}")
+            self.status.setText(f"⏳ 等待模型响应… {secs}s（{self._status_base or '…'}）{tip}")
 
     def _set_status(self, s):
         self._status_base = s
@@ -12079,7 +12090,8 @@ class CompanionWindow(QMainWindow):
                 return ("openpath", p)
             if os.path.isdir(p):
                 return ("readfolder", p,
-                        "分析" if _re.search(r"分析|总结|检查|审查|问题|异常", text) else "")
+                        "分析" if _re.search(r"分析|总结|检查|审查|问题|异常", text) else "",
+                        text)          # v0.31.4 带上原话：分析轮要紧扣用户真实意图
             return ("readfile", p, "分析" if _re.search(r"分析|总结|检查|审查", text) else "")
         # ★0a) 聊天文本里存在**真实路径** → 按动词分流：打开=系统打开；读/分析=读内容
         #      （"怎么打开/为什么读不了"这类疑问句不抢答，交给模型解释）
@@ -12095,7 +12107,8 @@ class CompanionWindow(QMainWindow):
                         _re.search(r"(?:里面|下面|下|里|中).{0,6}(?:什么|啥|哪些|有没有|文件|内容|目录)", text)
                     if dir_ask:
                         return ("readfolder", _p,
-                                "分析" if _re.search(r"分析|总结|检查|审查|问题|异常", text) else "")
+                                "分析" if _re.search(r"分析|总结|检查|审查|问题|异常", text) else "",
+                                text)  # v0.31.4 带上原话：分析轮要紧扣用户真实意图
                 elif _re.search(r"读|看|查看|分析|总结|检查|扫|看看|提取|内容", text):
                     return ("readfile", _p,
                             "分析" if _re.search(r"分析|总结|检查", text) else "")
@@ -13847,6 +13860,7 @@ class CompanionWindow(QMainWindow):
         if kind == "readfolder":
             p = agent[1]
             want = agent[2] if len(agent) > 2 else ""
+            user_ask = agent[3] if len(agent) > 3 else ""   # v0.31.4：用户原话
             info = AT.read_folder(p)
             if not info:
                 return f"我试着读 `{p}` 没成功，请确认这个文件夹存在、且我能访问。"
@@ -13854,11 +13868,31 @@ class CompanionWindow(QMainWindow):
             self.work_ctx[p] = info[:4000]
             self.work_ctx = dict(list(self.work_ctx.items())[-3:])
             if want:
+                # v0.31.4 修复真机幻觉链：旧版把固定话术当 prompt，模型看不到用户
+                # 原话（"值得想"判定也因此落空 → 思考关），只能拿清单+旧记忆编
+                # （真机实录：编出不存在的 sql 文件名、把 Laravel 认成 Node.js）。
+                # 现在：① 带上用户原话；② 明令"清单里没有的绝不许编"；
+                # ③ 思考增量上屏（复用写脚本的同款 _on_think）。
+                _ask = (user_ask or "").strip() or "概括这个文件夹里有什么，指出问题、给出建议"
+                _th = {"t": 0.0}
+
+                def _on_think(_d, full):
+                    now = time.time()
+                    if now - _th["t"] >= 0.4:
+                        _th["t"] = now
+                        self._step("think", "深度思考", detail=(full or "")[-320:], key="think")
+
                 ans = self._brain(
-                    "下面是用户给的一个文件夹的清单与其中部分文件的内容。"
-                    "请围绕用户意图（概括里面有什么 / 找问题 / 提建议）作答，分条列点、具体可执行。\n\n"
-                    + info[:6000],
-                    system="你是擅长文件与代码审查的 AI 助手，能抓住关键、直指问题。")
+                    "用户原话：" + _ask + "\n\n"
+                    "下面是这个文件夹的**真实清单**与其中部分文件的内容。请紧扣用户原话作答，"
+                    "分条列点、具体可执行。\n\n"
+                    "硬性要求：只依据清单与文件内容里**真实存在**的东西作答；清单里没有的"
+                    "文件名、技术栈、结论一律不许推测或编造——不确定就明说「清单里没看到，"
+                    "需要我进一步读取某个文件」。若要下技术栈结论，必须引用清单/composer.json、"
+                    "package.json 等清单内证据。\n\n" + info[:6000],
+                    system="你是擅长文件与代码审查的 AI 助手，能抓住关键、直指问题，"
+                           "并且**绝不编造清单里不存在的内容**。",
+                    on_think=_on_think)
                 return f"分析文件夹《{os.path.basename(p)}》：\n\n" + ans
             head = "\n".join(info.splitlines()[:40])
             more = (f"\n……共 {len(info)} 字，内容已进入我的工作上下文，可继续问"
