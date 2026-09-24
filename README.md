@@ -581,9 +581,13 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 2. 双击安装 → 打开 PASM Studio → 点右上「设置」填 LLM Key（或留空用本地 Ollama）
 3. 开始聊天；要用「图像/视频/漫剧」真出片时，首次使用按提示接入出图引擎（约 1 分钟）
 
-> macOS / Linux 的包**本版未重出**（需要在 CI 上构建，本机不能交叉编译）；
-> 需要时可用上一版 v0.31.1 的 `.dmg` / `.tar.gz` / `.deb`，安装指南见
-> [`desktop/INSTALL-macos.md`](desktop/INSTALL-macos.md) 与 [`desktop/INSTALL-linux.md`](desktop/INSTALL-linux.md)。
+> **macOS / Linux 下载**：本版未重出（需要在 CI 上构建，本机不能交叉编译）；
+> 可用上一版 **v0.31.1** 的 `.dmg` / `.tar.gz` / `.deb` —— 请到
+> **[GitCode Releases](https://gitcode.com/arronzheng/pasm-qclaw/releases)**（国内速度最好）
+> 或 [GitHub Releases](https://github.com/arronJack/pasm-qclaw/releases) 下载，那里是**整包单文件**
+> （**不需要 `cat` 合并分卷**）。Gitee 侧只放 Windows 分卷版，不再放 macOS/Linux 包。
+> 安装指南见 [`desktop/INSTALL-macos.md`](desktop/INSTALL-macos.md) 与
+> [`desktop/INSTALL-linux.md`](desktop/INSTALL-linux.md)。
 
 > 系统要求：**Windows 10/11 x64**（v0.16 起不再支持 Win7/8）· CPU 即可 · 首次安装解压约 1 分钟
 > 未填任何 Key 也能用（本地演示模式：同样会记忆与成长，只是话术朴素）
@@ -757,6 +761,10 @@ stopping.
 **split volumes** (`-gitee.exe` plus `.bin` slices) because of Gitee's 100 MB per-attachment limit —
 download all parts into one folder and run the `.exe`; it finds the volumes by itself, no manual
 merge needed. macOS / Linux packages are **not rebuilt** in this release (they require a CI build;
+use the **v0.31.1** `.dmg` / `.tar.gz` / `.deb` from
+**[GitCode Releases](https://gitcode.com/arronzheng/pasm-qclaw/releases)** — fastest from mainland
+China — or [GitHub Releases](https://github.com/arronJack/pasm-qclaw/releases), where they are
+**single intact files** (**no `cat` merging needed**). Gitee only carries the Windows split volumes.
 
 ---
 
