@@ -15,7 +15,7 @@
 | `pasm-mcp-server` | MCP 接入层：给任意 AI 客户端装长期记忆 | 公开 | 0.2.0 |
 | `PASM-Lite` | 教学版 + 认知引擎接口 | 公开 | — |
 | `PASM` | 核心引擎（七层仿生 / 世界模型） | **私有** | 0.7.2 |
-| **`pasm-qclaw`（本仓）** | **桌面应用（UI 外壳，已开源）** | 公开 | **0.31.3** |
+| **`pasm-qclaw`（本仓）** | **桌面应用（UI 外壳，已开源）** | 公开 | **0.31.6** |
 
 本仓**现在包含 PASM Studio 桌面端的开源源码**（[`desktop/`](desktop/README.md) 目录，基于 PySide6 的 Windows 桌面应用 UI/外壳层），
 同时仍是安装包与更新清单 `latest.json` 的**发行通道**。
@@ -41,7 +41,56 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.31.3（2026-09-23）· 「请立即开始」接得上上文了 + 「只答应、不动手」也治了
+## 最新：v0.31.6（2026-09-24）· 过程看得见、干活会自我复查、连接器真的接上了
+
+**这一版把「像 WorkBuddy 一样工作」这件事补齐了：过程实时可见 → 干完自动复查 → 复查不过自己重来。**
+
+### 一、过程卡对齐 WorkBuddy（聊天 + 干活都可见）
+
+| 展示 | 效果 |
+|---|---|
+| **头部实时计时** | 干活中「过程 · N 步 · ⏳ 处理中 36s」每秒跳动 → 收口定格「✓ 已处理 2m36s」；你翻历史时不会被强制拉到底部 |
+| **✍ 生成回复中…** | 首字一到就上屏，回复完成自动收口 |
+| **每步耗时** | 每步行尾灰字「· 3s」，一眼看出哪步最慢 |
+| **深度思考上屏** | 推理型问题请求思考（闲聊不请求，保住响应速度）；思考过程灰度实时显示 |
+
+### 二、深度思考不再「想一小段就断了」
+
+真机反馈：思考只跑了 8 秒、313 字就被强制收敛。根因是**慢机（生成 <15 tok/s）的思考预算被硬压到 8 秒**。
+
+| 改动 | 旧 | 新 |
+|---|---|---|
+| 慢机思考预算 | 8 秒 | **20 秒** |
+| 思考档设为「强制开」 | 照样被砍到 8 秒 | **给足 45 秒**（你明确要看深度思考，不替你省时间） |
+| 手动设预算 | 无 | 说「**思考预算 60**」固定 60 秒、「**思考预算 自动**」恢复自动、问「思考预算多久」给当前策略 |
+| 收敛透明化 | 只在日志里（用户以为莫名断了） | 过程卡写明「思考到预算上限，已带着思路收敛作答 · 20s / 313 字」 |
+
+### 三、自我复查闭环（干活类与聊天对齐）
+
+| 链路 | 旧 | 新 |
+|---|---|---|
+| **写脚本** | 失败只自动修 1 次 | 新模块 `self_verify`：最多 **3 轮**「语法验证（py_compile / node --check / json 解析）→ 真跑 → 带报错修复」 |
+| **项目开发（多文件）** | 写完只跑一次，报错就交给你 | **语法校验 → 最多 2 轮只修出错文件 → 运行 → 运行失败再修一轮重跑** |
+| **多步计划执行 / 协作评审 / 创作企划** | 推理期间界面全黑 | 全部接上真实思考流 |
+
+修复轮若没产出新代码会**诚实停止**，不假装修好、不无限重试。
+
+### 四、连接器真正关联应用
+
+- **MCP 状态可查**：聊一句「MCP 状态」→ 桥连接状态 + 可用工具清单
+- **任务完成自动推送**：向已连接的**飞书 / Discord / 微信 / Webhook** 通道推送「✅ 任务完成」（没配的通道安静跳过，推送在后台线程，不影响应用速度）
+- **破坏性操作前强制弹选项卡**：删除/清空/格式化文件、目录、项目前先确认范围；「删掉这句话里的错别字」这类文字修改不会误拦
+
+### 五、产物
+
+`PASMStudio-Setup-0.31.6.exe`（Windows，单文件，约 191MB）。
+Gitee 侧为**分卷版**（`-gitee.exe` + `.bin` 切片）：**全部下到同一目录后直接运行 exe 即可**，
+安装程序会自己找分卷，不需要手动合并。
+**macOS / Linux 本版未重出**（需 CI 跑 PyInstaller，本机不能交叉编译）。
+
+---
+
+## v0.31.3（2026-09-23）· 「请立即开始」接得上上文了 + 「只答应、不动手」也治了
 
 **这一版补的是 PASM 最该有的两样东西：记得住上下文、说到做到。**
 
@@ -107,6 +156,8 @@
 Gitee 侧为**分卷版**（`-gitee.exe` + `.bin` 切片）：**全部下到同一目录后直接运行 exe 即可**，
 安装程序会自己找分卷，不需要手动合并。
 **macOS / Linux 本版未重出**（需 CI 跑 PyInstaller，本机不能交叉编译）。
+
+> 后续版本见上方 **v0.31.6**（最新）。
 
 ---
 
@@ -521,10 +572,10 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 ## 下载与安装
 
-最新版见仓库 **Releases**（v0.31.3）：
+最新版见仓库 **Releases**（v0.31.6）：
 
-1. 下载安装包。**GitHub / GitCode** 上下载 `PASMStudio-Setup-0.31.3.exe`（单文件整包）；
-   **Gitee** 上是**分卷版** `PASMStudio-Setup-0.31.3-gitee.exe` + `.bin` 切片 ——
+1. 下载安装包。**GitHub / GitCode** 上下载 `PASMStudio-Setup-0.31.6.exe`（单文件整包）；
+   **Gitee** 上是**分卷版** `PASMStudio-Setup-0.31.6-gitee.exe` + `.bin` 切片 ——
    请把 `.exe` 与**全部 `.bin` 分卷下到同一个目录**，然后直接运行 exe 即可
    （安装程序会自己找同目录的分卷，**不需要手动合并**）。
 2. 双击安装 → 打开 PASM Studio → 点右上「设置」填 LLM Key（或留空用本地 Ollama）
@@ -582,7 +633,56 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 > **It never loses what you typed, and never claims to have done something it didn't** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.31.3 (2026-09-23) · "Please start now" now remembers what you asked, and "all talk, no action" is fixed
+## Latest: v0.31.6 (2026-09-24) · Visible process, self-reviewing work, connectors actually wired up
+
+**This release completes the "work like WorkBuddy" story: live process → automatic self-review → fix-and-retry on failure.**
+
+### 1. Process card now matches WorkBuddy (in both Chat and Work areas)
+
+| Display | Effect |
+|---|---|
+| **Live timer in the header** | While working: `Process · N steps · ⏳ running 36s`, ticking every second → settles on `✓ done in 2m36s`. Your scroll position is respected (no forced jump to bottom). |
+| **✍ Generating reply…** | Appears as soon as the first token arrives, closes itself when the reply lands. |
+| **Per-step elapsed time** | A grey `· 3s` on each line, so you can see which step was slow. |
+| **Deep thinking on screen** | Reasoning questions request thinking (small talk does not, keeping replies fast); the reasoning stream is shown live in grey. |
+
+### 2. Deep thinking no longer gets cut off after a moment
+
+Real-world report: thinking ran for only 8 seconds / 313 characters before being force-converged. Root cause: **on slow machines (generation < 15 tok/s) the thinking budget was hard-capped at 8 seconds.**
+
+| Change | Before | After |
+|---|---|---|
+| Slow-machine thinking budget | 8 s | **20 s** |
+| Thinking mode set to "always on" | Still capped at 8 s | **Full 45 s** (you asked to see deep thinking — the app stops saving time for you) |
+| Manual budget | Not available | Say "**thinking budget 60**" to fix it at 60 s, "**thinking budget auto**" to reset, or ask "how long is the thinking budget" for the current policy |
+| Transparency | Log only (looked like it just stopped) | The process card states "thinking hit the budget, converging with what it has · 20s / 313 chars" |
+
+### 3. Self-review loop (work flows now aligned with chat)
+
+| Flow | Before | After |
+|---|---|---|
+| **Script writing** | Auto-fixed once on failure | New `self_verify` module: up to **3 rounds** of "syntax check (py_compile / node --check / JSON parse) → actually run → repair with the error" |
+| **Project development (multi-file)** | Ran once; errors handed back to you | **Syntax check → up to 2 rounds repairing only the failing files → run → one more repair-and-rerun if the run fails** |
+| **Multi-step plans / cooperative review / story & manga planning** | Blank screen while the model reasoned | All now stream their real thinking |
+
+If a repair round produces no new code, the app **stops honestly** instead of pretending success or retrying forever.
+
+### 4. Connectors genuinely wired up
+
+- **MCP status**: ask "MCP status" to see the bridge connection state and available tool list
+- **Automatic completion push**: sends "✅ task done" to any connected **Feishu / Discord / WeChat / Webhook** channel (unconfigured channels are skipped silently; the push runs on a background thread and does not slow the app down)
+- **Option cards before destructive actions**: deleting / clearing / formatting files, folders or projects asks you to confirm the scope first — text edits like "fix the typos in this sentence" are not blocked
+
+### 5. Artifacts
+
+`PASMStudio-Setup-0.31.6.exe` (Windows, single file, ~191 MB).
+On Gitee the installer is uploaded as **split volumes** (`-gitee.exe` + `.bin` slices): download all
+parts into the same folder and run the `.exe` — the installer finds the volumes itself, no manual merging.
+**macOS / Linux builds are not re-issued in this release** (they need CI to run PyInstaller; this machine cannot cross-compile).
+
+---
+
+## v0.31.3 (2026-09-23) · "Please start now" now remembers what you asked, and "all talk, no action" is fixed
 
 **This release adds the two things PASM should be best at: it remembers the context, and it actually
 does what it says.**
@@ -652,7 +752,8 @@ stopping.
 | Skills on ClawHub / WorkBuddy | **no re-upload** | no skill body changed (last change to any `skill/` tree was 09-20/21, matching the platforms) |
 | Desktop installer | **released** | all fixes are in the desktop app |
 
-**Artifacts:** `PASMStudio-Setup-0.31.3.exe` (Windows). On Gitee the installer is uploaded as
+> **Artifacts:** the current release is `PASMStudio-Setup-0.31.6.exe` (Windows, ~191 MB) — see the
+> v0.31.6 section above. On Gitee the installer is uploaded as
 **split volumes** (`-gitee.exe` plus `.bin` slices) because of Gitee's 100 MB per-attachment limit —
 download all parts into one folder and run the `.exe`; it finds the volumes by itself, no manual
 merge needed. macOS / Linux packages are **not rebuilt** in this release (they require a CI build;
