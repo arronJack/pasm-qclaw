@@ -217,7 +217,10 @@ def _repo_root() -> str:
 
 def cli_args() -> list:
     """把上面这些参数转成 PyInstaller **命令行**参数（供 shell 脚本用）。"""
-    args = ["--pathex", _repo_root()]
+    # ⚠️ 必须是命令行的 `--paths`（不是 spec 字段名 `--pathex`）。
+    #    Linux/macOS 通过 `build_common.py lines` 把这些参数直接喂给 pyinstaller 命令行，
+    #    `--pathex` 不是合法命令行参数 → pyinstaller 直接报 unrecognized arguments。
+    args = ["--paths", _repo_root()]
     for m in EXCLUDES:
         args += ["--exclude-module", m]
     # ⚠️ `--hidden-import` 在 PyInstaller 里是 `action='append'`，**不按逗号拆分** ——

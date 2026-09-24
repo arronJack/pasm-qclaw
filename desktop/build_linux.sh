@@ -33,7 +33,12 @@ echo "[2/5] PyInstaller 打包（onedir）..."
 # 全部来自 desktop/build_common.py —— 与 Windows 的 PASMStudio.spec 是**同一份**。
 # ⚠️ 曾经这里手写一份参数，漏了 desktop/skills、115 个懒加载 hiddenimports 与
 #    playwright 驱动 → 冻结版里那些能力**静默失效**（冒烟照样 PASS）。别再手写。
-mapfile -t BUILD_EXTRA < <(python3 desktop/build_common.py lines)
+# ⚠️ 不能用 mapfile（macOS /bin/bash 是 3.2，mapfile 是 bash 4+ 才有 → command not found）。
+#    改用所有 bash 版本都支持的 while-read 数组填充。
+BUILD_EXTRA=()
+while IFS= read -r line; do
+  [ -n "$line" ] && BUILD_EXTRA+=("$line")
+done < <(python3 desktop/build_common.py lines)
 echo "      build_common 提供 ${#BUILD_EXTRA[@]} 个额外参数"
 
 python3 -m PyInstaller --noconfirm --onedir --windowed \
