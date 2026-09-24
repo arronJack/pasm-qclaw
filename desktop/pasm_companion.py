@@ -78,6 +78,7 @@ import creators as CRE
 import option_prompt as OPT       # v0.31.4 聊天「多选项确认卡」（解析/渲染/判定，零 Qt）
 import process_narration as PN    # v0.31.4 过程卡 WorkBuddy 式叙述层（时长/叙述句，零 Qt）
 import self_verify as SV          # v0.31.5 自我复查闭环（验证计划/执行/修复prompt，零 Qt）
+import repo_metrics as RM          # v0.31.7 目录事实卡（量化/风险素材，喂给分析提示词，零 Qt）
 import prompts as PRT             # v0.22 结构化提示词模板
 import validator as VAL           # v0.22 输出验证器
 import planner as PLN             # v0.22 任务规划器
@@ -14077,16 +14078,37 @@ class CompanionWindow(QMainWindow):
                         _th["t"] = now
                         self._step("think", "深度思考", detail=(full or "")[-320:], key="think")
 
+                _facts = ""
+                _hints = "（无）"
+                try:
+                    _mm = RM.scan(p)
+                    _facts = RM.facts_block(_mm)
+                    _hh = RM.risk_hints(_mm)
+                    if _hh:
+                        _hints = "\n".join("· " + x for x in _hh)
+                except Exception:
+                    logging.exception("repo_metrics scan failed")
                 ans = self._brain(
                     "用户原话：" + _ask + "\n\n"
-                    "下面是这个文件夹的**真实清单**与其中部分文件的内容。请紧扣用户原话作答，"
+                    + (_facts + "\n\n" if _facts else "")
+                    + "下面是这个文件夹的**真实清单**与其中部分文件的内容。请紧扣用户原话作答，"
                     "分条列点、具体可执行。\n\n"
-                    "硬性要求：只依据清单与文件内容里**真实存在**的东西作答；清单里没有的"
-                    "文件名、技术栈、结论一律不许推测或编造——不确定就明说「清单里没看到，"
-                    "需要我进一步读取某个文件」。若要下技术栈结论，必须引用清单/composer.json、"
-                    "package.json 等清单内证据。\n\n" + info[:6000],
-                    system="你是擅长文件与代码审查的 AI 助手，能抓住关键、直指问题，"
-                           "并且**绝不编造清单里不存在的内容**。",
+                    "硬性要求：\n"
+                    "1) 只依据事实卡 / 清单 / 文件内容里**真实存在**的东西作答；没有的一律不许"
+                    "推测或编造——不确定就明说「清单里没看到，需要我进一步读取某个文件」。\n"
+                    "2) **必须量化**：至少引用事实卡里 3 个具体数字（文件数 / 代码行数 / 建表数 / "
+                    "依赖项数 / 占位标记数等），不许用「很多、大量、较为完善」这类形容词代替数字。\n"
+                    "3) **必须给「风险与差距」小节**，逐条列。下列素材由工具按事实生成，"
+                    "请结合项目类型取舍（**不要对单体项目挑微服务的缺**），也不要照抄：\n"
+                    + _hints + "\n"
+                    "4) **证据分级**：区分【一手证据】（源码 / 配置原文 / 依赖清单）与"
+                    "【二手证据】（README 等文档自述）。结论优先引一手证据；只能引用二手证据时"
+                    "必须写明「依据某文档自述，未经源码交叉验证」。\n"
+                    "5) 若用户在问「你和别的工具谁更好」这类比较问题，**禁止自我褒贬**，"
+                    "只列可核验的指标（能力项、证据来源、量化数据、局限），让用户自己判断。\n\n"
+                    + info[:6000],
+                    system="你是擅长文件与代码审查的 AI 助手：**结论必须量化、必须给风险、"
+                           "必须标注证据来源**，绝不编造清单里不存在的内容，也不自我吹捧。",
                     on_think=_on_think)
                 return f"分析文件夹《{os.path.basename(p)}》：\n\n" + ans
             head = "\n".join(info.splitlines()[:40])

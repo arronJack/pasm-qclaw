@@ -120,6 +120,7 @@ HIDDEN_IMPORTS = [
     'wakeword',
     'option_prompt',
     'process_narration',
+    'repo_metrics',
     'self_verify',
     'migrate',
     'autostart',
