@@ -21,7 +21,7 @@
 
 | 文件 | 大小 | SHA256 |
 |---|---|---|
-| `PASMStudio-Setup-0.31.10.exe`（安装包） | 200,403,673 B（191.1 MB） | `E9C55BEFE5E0EFC5BA5457A4346A178C1110327FE3E75EE55D102D6B8D57F4BF` |
+| `PASMStudio-Setup-0.31.10.exe`（安装包） | 200,376,452 B（191.1 MB） | `359273CBBFDCFDB0577E2C071BEDB0CA00C0E7AEC7E33906C7C5CB974D3ECEE1` |
 | `PASMStudio.exe`（主程序，解包于安装目录） | 15,977,352 B | 发版后用 `sha256sum dist_v03110/PASMStudio/PASMStudio.exe` 补填 |
 
 ## 二、第一步：VirusTotal 摸底（提交申诉前必做）
