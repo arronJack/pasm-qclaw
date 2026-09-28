@@ -3,8 +3,31 @@
 > **版本号说明**：本仓有两条版本轴，别混 ——
 > · **引擎/内核** `pasm.__version__`（当前 `0.7.2`）+ `pasm.cognitive.__version__`（`0.8.0`），
 >   与 `pyproject.toml` 的 `version` 必须一致；
-> · **桌面产品** PASM Studio `APP_VERSION`（当前 `0.31.9`，见 `desktop/appinfo.py`），
+> · **桌面产品** PASM Studio `APP_VERSION`（当前 `0.31.10`，见 `desktop/appinfo.py`），
 >   驱动安装包与升级通道，其发行记录见 `pasm-qclaw/CHANGELOG.md`。
+
+## 0.31.10（2026-09-28）· 防杀软误报防护版
+
+> 本版**不新增功能**，主题只有一个：不再被 360 等杀毒软件误报。
+
+### 一、消除三个"被误判为木马"的特征
+
+| 旧版特征 | 本版改进 |
+| --- | --- |
+| 主程序 VERSIONINFO 全空（公司/产品/版本） | 注入完整版本资源（ctypes 回读五字段实测就位，`0.31.10.0`） |
+| 启用 UPX 加壳（木马高发特征） | `--noupx` 彻底停用，全程不加壳（SSOT `build_common.py` 接线） |
+| 安装包本体无版本信息 | Inno 侧补 `VersionInfoProductName/ProductVersion`，安装包同样带身份 |
+
+### 二、配套工程
+
+- `installer.iss` 新增 `/DSignToolName` 条件签名开关（购证后一条命令签安装包+卸载器，未定义零影响）。
+- 新增 `desktop/ANTIVIRUS-WHITELIST.md`（用户放行三步 + 各杀软申诉入口 + 证书选型 + 发版自查清单）与
+  `desktop/WHITELIST-SUBMISSION-KIT.md`（加白申诉提交材料包：产品表/SHA256/可粘贴模板）。
+- 验证：全新目录构建 → 主 exe 版本资源回读 ✅ → 冻结冒烟 12s 存活 ✅ → Inno 编译成功（191.1MB，SHA256 `E9C55BEF…F4BF`）。
+
+### 三、包含 0.31.9 全部能力
+
+能力协作总线（27 项能力统一目录 + 多意图编排）、常驻语音免界面快办、模型解锁、0.31.8 全部修复（确认墙/含糊干活/思考兜底/成长路由/资料库专业化）——详见 0.31.9 节。
 
 ## 0.31.9（2026-09-28）· 系统活起来：全栏目协作总线 + 关掉聊天框也能语音办事 + 模型解锁
 
