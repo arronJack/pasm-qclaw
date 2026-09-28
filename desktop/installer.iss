@@ -32,6 +32,18 @@ AppCopyright=Copyright (c) 2026 arronZheng
 VersionInfoVersion={#AppVersion}
 VersionInfoCompany=arronZheng
 VersionInfoDescription=PASM Studio - Desktop pet AI
+VersionInfoProductName=PASM Studio
+VersionInfoProductVersion={#AppVersion}
+; ★ 防杀软误报（2026-09-28）：代码签名接线（有证书才启用，未定义时零影响）。
+;   用法：① 注册签名工具（Inno IDE「工具→配置签名工具」注册为 signtool，
+;   或 ISCC /S"signtool=C:\path\signtool.exe sign /fd SHA256
+;   /tr http://timestamp.digicert.com /td SHA256 $p"）；
+;   ② 构建时加 /DSignToolName=signtool（值=注册名）→ 安装包与卸载器
+;   都带 Authenticode 签名，杀软/SmartScreen 信誉直通。
+#ifdef SignToolName
+SignTool={#SignToolName} $f
+SignedUninstaller=yes
+#endif
 ; per-user install: no admin needed -> avoids MoveFile code5 on Program Files
 DefaultDirName={localappdata}\Programs\PASMStudio
 DefaultGroupName=PASM Studio

@@ -246,6 +246,14 @@ def cli_args() -> list:
         args += ["--collect-all", "playwright"]
     for f in UPX_EXCLUDE:
         args += ["--upx-exclude", f]
+    # ★ 防杀软误报（2026-09-28）：① 彻底关 UPX —— 加壳是木马高发特征，
+    #   压缩省的空间远不值误报风险（--upx-exclude 保留仅为兼容旧 spec）。
+    #   ② 注入 VERSIONINFO —— 公司名/产品名/版本全空的 exe 是启发式引擎
+    #   的头号怀疑对象（实测 0.31.9 主 exe 三个字段全空）。
+    args.append("--noupx")
+    args.append("--version-file")
+    args.append(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "version_info.txt"))
     return args
 
 
