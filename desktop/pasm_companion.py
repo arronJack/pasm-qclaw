@@ -63,6 +63,7 @@ from knowledge import learned_bullets, record as kb_record, summarize as kb_summ
 import knowledge
 import todo as todo_mod
 import agent_tools as AT
+import capability_bus as BUS          # v0.31.9 能力协作总线（跨模块按需协作 + 语音免界面快办）
 import growth as GROWTH
 import autostart as AUTOSTART      # v0.29 开机自动启动（HKCU Run 键，免提权）
 import permission as PERM          # v0.29 权限三档（安全/标准/完全访问）
@@ -189,6 +190,17 @@ _RE_PLAN_CONFIRM = re.compile(
 _RE_PLAN_REPLAN = re.compile(
     r"^(不(行|要|用|对|改|了)|先不|换个?|改一下|改改|重新?(规划|计划|想)|算了)"
     r"[吧啊呀~！!。.\s]*$")
+# v0.31.8：宽容版「确认开工」核心词（修确认墙死胡同）。
+#   旧 `_RE_PLAN_CONFIRM` 是整句正则，只认「开始/好的/好嘞」这种干净确认词；
+#   用户说「好的，开始吧」「那开始做吧」「行，开干」「就按你说的来」
+#   「执行方案A吧」「请马上开发」——带逗号/前导词/催办口令——全部匹配不上，
+#   于是上一轮待确认被悄无声息丢弃、本轮按聊天走（「聊了半天没动作」真凶之一）。
+#   新规则：句首礼貌填充词先剥、命中核心词即算、含否定词一律不算确认。
+_CONFIRM_CORE = re.compile(
+    r"(开始|开工|确认|同意|执行|动手|开做|开干|照办|干吧|做吧|就这么办|按计划|"
+    r"按方案|按你|照你|听你|随你|你说的|就这|开发|好的?|行|嗯+|ok|go|yes|好呀|好嘞)", re.I)
+_CONFIRM_NEG = re.compile(
+    r"(不|别|算了|不用|暂|先不|等会|改一下|改改|重新?|换一个?|再想想|考虑|慢着)", re.I)
 # v0.22 智能总线：这些话才值得走"工具轮"回忆个人相关内容（其余直通，省一趟生成）
 _RE_RECALL_HINT = re.compile(
     r"(记得|上次|之前|前几天|说过|提到过|喜欢|讨厌|偏好|学过|答应|说好|我叫|我的名字|"
@@ -3706,16 +3718,52 @@ class CompanionWindow(QMainWindow):
         return _asr.listen_once(timeout=timeout)
 
     def _on_wake_hit(self, cmd):
-        """被叫醒了：带指令就直接发出去，只喊了名字就应一声。"""
+        """被叫醒了（常驻语音入口，v0.31.9 升级）：
+        · 只喊名字 → 应一声（并用语音念出来，不依赖聊天框）。
+        · 命中"免界面快指令"（开应用/查天气/看邮箱/搜索/提醒/看电脑…）→
+          直接执行，把结果**念给你听**，全程不需要打开聊天框。
+        · 其它（聊天 / 重活）→ 切到对应栏目后按原管线走（带确认墙等安全机制）。
+        """
+        def _strip_md(s):
+            s = re.sub(r"[*_`#]", "", s or "")
+            s = re.sub(r"\s+", " ", s).strip()
+            return s[:160]
+
         def go():
             try:
                 c = str(cmd or "").strip()
-                if c:
-                    self._append("你", html.escape(c))
-                    self.input.setPlainText(c)
-                    self.send()
-                else:
+                if not c:
                     self._append("系统", "🔔 我在，说吧～")
+                    try:
+                        tts_mod.speak_text("我在，说吧。")
+                    except Exception:
+                        pass
+                    return
+                # ① 免界面快指令：直接办 + 念结果
+                fr = BUS.fast_route(c)
+                if fr:
+                    kind, payload = fr
+                    self._append("你", html.escape(c))
+                    res = self._agent_run((kind, payload))
+                    res = res or ""
+                    # 记录 + 朗读（即使聊天框没开，也能听到、事后也能翻记录）
+                    self._append("系统", res)
+                    try:
+                        tts_mod.speak_text(_strip_md(res))
+                    except Exception:
+                        pass
+                    return
+                # ② 其它：切到合适栏目，再走原管线（保留确认墙等安全机制）
+                r = BUS.route(c)
+                page = BUS.needs_page(r[0]) if r else None
+                if page:
+                    try:
+                        self._switch_page(page)
+                    except Exception:
+                        pass
+                self._append("你", html.escape(c))
+                self.input.setPlainText(c)
+                self.send()
             finally:
                 # 处理完再把耳朵打开（延迟 2.6s，避开助手语音播报，防自唤醒）
                 try:
@@ -7455,6 +7503,23 @@ class CompanionWindow(QMainWindow):
             self._last_route = {"fallback": True}
         if rel:
             notes = (notes or "（暂无相关记忆）") + "\n" + rel
+        # v0.31.8：资料库专业化回流——把"学过且相关"的专业知识（带可证伪分数、
+        # 够分才回、用不上别硬凑）拼进上下文，让回答更专业准确，而非凭空发挥。
+        try:
+            import kb_bridge as KB
+            _kb_dig = KB.digest(user_text or "", limit=3)
+            if _kb_dig:
+                rel = (rel + "\n" if rel else "") + _kb_dig
+                notes = (notes or "（暂无相关记忆）") + "\n" + _kb_dig
+                # 专业守则：有"学过的内容"才强调"引用所学、不编造"，
+                # 无资料库积累时不追加——既保住功能，又避免无谓膨胀系统提示
+                # （也保住慢机预算比例，见 verify_v307 的快/慢×1.5 断言）。
+                notes += ("\n【专业守则】上面「你学过…」段是资料库里**学过且相关**的专业知识，"
+                          "回答专业问题时优先引用并自然体现；对不确定的术语、数据、版本号、"
+                          "API 名称，**明确说「我不太确定／没查到」**，不要编造。"
+                          "没有相关积累就坦承不知，宁可少答、不可胡答。")
+        except Exception as _ex3:
+            logging.debug("kb_bridge 回流失败(忽略): %s", _ex3)
         # v0.27.1 诚实守则：没有真实执行成功的操作，绝不允许宣称"已完成"。
         notes += ("\n【诚实守则（最高优先级）】你只在用户明确看到你执行了真实工具"
                   "（删除/清理/打开/读取有✅结果回执）时才能说「做了」；"
@@ -8075,6 +8140,50 @@ class CompanionWindow(QMainWindow):
         if self._RE_INHERIT_EXECPLAN.fullmatch(t):
             return True
         return bool(self._RE_WORK_ORDER.fullmatch(t))
+
+    def _is_plan_confirm(self, text: str) -> bool:
+        """v0.31.8：宽容版「确认开工」识别（修确认墙死胡同）。
+
+        旧 `_RE_PLAN_CONFIRM` 是整句正则，只认「开始/好的/好嘞」这类干净确认词；
+        用户一旦说「好的，开始吧」「那开始做吧」「行，开干」「就按你说的来」
+        「执行方案A吧」「请马上开发」——带逗号、带前导词、或用了催办口令——全部
+        **匹配不上**，于是上一轮待确认被悄无声息丢弃、本轮按聊天走，界面像死了一样
+        （这正是「让小U干活，聊了半天没动作」的真凶之一）。
+
+        新规则：句首礼貌填充词（那/然后/好/行/就/直接/我/你/咱…）先剥掉再比；
+        命中确认核心词即算（contains，不必整句）；含否定词（不/别/算了/不用/改/
+        重新/换…）一律不算确认（交给 replan 分支）。
+        """
+        t = (text or "").strip()
+        if not t or len(t) > 40:
+            return False
+        if _CONFIRM_NEG.search(t):
+            return False
+        t2 = re.sub(r"^(那|然后|所以|好|行|嗯|就|直接|现在|赶紧|我|你|咱|小[Uu伴]|霖伴)"
+                    r"[，,。.\s]*", "", t, flags=re.I)
+        return bool(_CONFIRM_CORE.search(t2) or _CONFIRM_CORE.search(t))
+
+    def _vague_work_intent(self, text: str) -> bool:
+        """v0.31.8：用户是不是在含糊地喊「干活」（没说具体做什么）。
+
+        真机痛点：用户喊「小U你帮我干点活 / 干活 / 做事 / 动起来」，旧版完全没反应、
+        静默掉进聊天——看着就是「聊了半天没动作」。既然用户点名要「干活」，就切到
+        干活模式并请他说具体点（不直接执行，避免凭空造）。
+
+        判据：含干活意图词 + 不含任何具体产物 + 非问句。
+        """
+        t = (text or "").strip()
+        if not t or len(t) > 40:
+            return False
+        if not re.search(r"(干活|做事|动起来|干点活|入手|开干|开始工作|去忙|忙起来|"
+                         r"帮我弄|帮我搞|给我弄|干一票)", t):
+            return False
+        # 已经带了具体产物 → 不拦，交给正常检测（避免「帮我做事前先分析下」误判）
+        if re.search(self._ANY_GOODS, t) or re.search(r"脚本|代码|程序|网页|页面", t):
+            return False
+        if self._askish(t) or re.search(r"\?|？|吗|呢|怎么|如何|为什么", t):
+            return False
+        return True
 
     def _is_inherit_req(self, text: str) -> bool:
         """这句话**本身**含不含"要做什么"的信息？不含 → 必须从上文继承。
@@ -8953,7 +9062,7 @@ class CompanionWindow(QMainWindow):
             _pw = getattr(self, "_pending_work", None)
             if _pw is not None:
                 _low = (text or "").strip()
-                if _RE_PLAN_CONFIRM.match(_low):
+                if self._is_plan_confirm(_low):
                     self._pending_work = None
                     agent = _pw                      # 确认 → 往下走立即执行
                     # ⚠️ 必须记住"这轮已经确认过了"：否则下面那道确认墙会看
@@ -9000,6 +9109,20 @@ class CompanionWindow(QMainWindow):
                 "💬 这句话我按**聊天**处理了，**没有动手**。"
                 "要我真干活的话，把要求说具体一点"
                 "（例：`帮我开发一个记账系统`），或切到「🔧 干活」栏目。")
+        # v0.31.8：含糊「干活/做事」意图 → 直接切到干活模式并索要具体需求。
+        #   真机痛点：用户喊「小U你帮我干点活 / 干活 / 做事」，旧版完全没反应、
+        #   静默掉进聊天，看着就是「聊了半天没动作」。既然用户点名要「干活」
+        #   （这本就是🔧干活栏目的名字），就进干活模式——下一句具体需求会直接开做，
+        #   不用再被确认墙卡一道。不直接执行，避免凭空造。
+        if (agent is None and self.mode == "chat" and self._vague_work_intent(text)):
+            self._set_chip("work")     # 切到🔧干活模式（无工种，说需求即开做）
+            self._finish(
+                "🔧 已切到**干活模式**。想让我做什么，直接说具体点就行，例如：\n"
+                "· 帮我做一个记账系统\n· 写个 python 脚本 批量重命名文件\n"
+                "· 帮我开发一个个人博客网站\n\n"
+                "（说清楚要什么，我就真的动手写代码 / 建项目并跑起来；"
+                "不想干就说「聊聊」。）")
+            return
         if agent:
             turn = self._begin_turn(self._slot_key(), self.conv_id,
                                     self.history, self.cog, text, "agent", agent)
@@ -9388,7 +9511,7 @@ class CompanionWindow(QMainWindow):
         low = (text or "").strip()
         if pend:
             self._pending_plan = None
-            if _RE_PLAN_CONFIRM.match(low):
+            if self._is_plan_confirm(low):
                 self._planned_execute(pend)
                 return True
             if _RE_PLAN_REPLAN.match(low):
@@ -11893,6 +12016,29 @@ class CompanionWindow(QMainWindow):
         #   这两条关键词规则原位置都早于 project（先命中者胜），开发需求永远排不上队。
         if self._looks_like_build_order(text):
             return ("project", text)
+        # ★0-self) v0.31.8：自我成长路由——先查程序记忆里"这类请求以前怎么干成的"。
+        #   高置信度命中且能可靠取出载荷（路径）时，直接走那条处理器，弱化对硬编码
+        #   keyword 的依赖（少预设、靠系统自我成长）。只认能重建载荷的 action（readfolder/
+        #   readfile），其余 action 仍交给下面的预设规则，避免误路由。
+        try:
+            _la, _ls = ML.recall_route(text, min_score=6)
+            if _la in ("readfolder", "readfile"):
+                _rp = AT.resolve_path(text)
+                if not _rp and self.path_refs:
+                    _rp = self.path_refs[-1]
+                if _rp:
+                    _is_dir = os.path.isdir(_rp)
+                    if _la == "readfolder" and _is_dir:
+                        logging.info("自我成长路由命中：%r(置信%.1f) → readfolder %s",
+                                     text[:24], _ls, _rp)
+                        return ("readfolder", _rp,
+                                "分析" if _re.search(r"分析|总结|检查|审查|问题|异常", text)
+                                else "", text)
+                    if _la == "readfile" and not _is_dir:
+                        return ("readfile", _rp,
+                                "分析" if _re.search(r"分析|总结|检查", text) else "")
+        except Exception:
+            logging.debug("recall_route 调用异常（忽略，走预设规则）", exc_info=True)
         # ★0b) v0.28.x 实时数据 / 浏览器自动化（对标 QClaw/OpenClaw 的"行动型"能力）
         if not self._askish(text):
             if re.search(r"天气|气温|温度|气候|下雨|降温|气象|空气质量|空气质量指数", text):
@@ -13423,6 +13569,15 @@ class CompanionWindow(QMainWindow):
         判定 → 学过的用知识真做 / 不会的先上网学再真做 / 做不了说真话。
         难度自适应：易任务主体直做；难任务拆子步骤逐个执行+台账+主体复核。"""
         import sysops as SYS
+        # v0.31.9：用户问"你能做什么/你都会什么"这类**广域能力询问**时，
+        # 直接回能力总线目录（系统自己列得清，不靠预设话术）。
+        _BROAD = re.compile(r"你能?做(什么|哪些|啥)|你都会什么|你有哪些?能力|"
+                            r"你(能|可以)干啥|你(有|会)什么(功能|本领)")
+        if not text or _BROAD.search(text):
+            try:
+                return BUS.catalog_text()
+            except Exception:                               # noqa: BLE001
+                pass
         if _CD is None:
             return "（能力判定模块未加载）"
         verdict = _CD.assess(text, learned_search=knowledge.search_snippets)
@@ -13970,6 +14125,8 @@ class CompanionWindow(QMainWindow):
                     "\n".join(lines))
         if kind == "cando":               # v0.27.1 能力判定：能做/学过做/学着做/说不能
             return self._cando_reply(agent[1])
+        if kind == "caps":                # v0.31.9 能力目录（"你能做什么"的统一答复）
+            return BUS.catalog_text()
         if kind == "askhelp":
             return self._askhelp_reply(agent[1])
         if kind == "tableana":

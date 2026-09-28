@@ -141,6 +141,7 @@ HIDDEN_IMPORTS = [
     'workflow_engine',
     'ad_design',
     'capability',
+    'capability_bus',
     'autopilot',
     'context_assembly',
     'ui_tech',

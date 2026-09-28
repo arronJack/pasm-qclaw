@@ -545,6 +545,11 @@ _THINK_BUDGET_SEC_HEAVY = 45.0  # brain / filegen（重活，用户已在等）
 #   "超预算"掐断，用户观感是"深度思考到一小段就断了"。8s 在慢机上确实太短：
 #   想不完的照样要收敛（多等 12s 换来更完整的思路，比反复收敛更值）。
 _THINK_BUDGET_SEC_SLOW = 20.0
+# v0.31.8：极慢模型（实测生成速度低于此值）开思考必 0 输出 → 自动关思考。
+# 真机铁证（2026-09-28 10:36，gemma4:12b 实测 3.9~5.1 tok/s）：思考开 → 只吐 4 字就
+# 强制收敛 → 首字 213s、总 225s、**生成 0 tok**。慢到这种程度，思考链根本吐不完，
+# 只会把预算全吃掉还饿死正文。因此 auto 模式下直接禁思考（用户显式"始终开启"仍尊重）。
+_THINK_GEN_SLOW = 6.0
 # v0.31.6：预算覆盖（0 或非正数 = 用自动策略）。设置里的"思考预算(秒)"与
 #   chat 命令都写这里；用户在界面上明确设过就**以用户为准**。
 _THINK_BUDGET_OVERRIDE = 0.0
@@ -1217,6 +1222,15 @@ class Gateway:
         tools = kw.get("tools")
         streaming = on_delta is not None or not tools
         think_on = _want_think(task, messages)
+        # v0.31.8：慢模型思考兜底——极慢本地模型开思考必 0 输出（见 _THINK_GEN_SLOW 注释）。
+        # 只在 auto 模式生效；用户显式选「始终开启」时尊重其选择（哪怕会慢/空转）。
+        if think_on and str(get_local_think() or "").lower() != "on":
+            _sp = speed_of(model, _speed_host(origin))
+            if _sp.get("measured") and float(_sp.get("gen") or 0.0) < _THINK_GEN_SLOW:
+                think_on = False
+                log.warning("本地模型 %s 实测仅 %.1f tok/s（<%.1f），开思考必 0 输出 → "
+                            "自动关思考（用户可手动「始终开启」覆盖）",
+                            model, _sp["gen"], _THINK_GEN_SLOW)
         # v0.30.13：思考预算按本机速度收口（慢机上"想满 45 秒"只是让用户白等）
         # ⚠️ v0.30.15 修：这里以前写的是 `_speed_host(base_url)`，而本函数的形参叫
         #    `origin` —— 于是**每次本地请求都在这一行 NameError**，被 `_create_hb`
