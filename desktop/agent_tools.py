@@ -24,6 +24,28 @@ def _sp(*a, **kw):
         kw = dict(kw, creationflags=kw.get("creationflags", 0) | 0x08000000)
     return subprocess.run(*a, **kw)
 
+
+def _smart_decode(b):
+    """字节 → 文本（v0.31.10）：先按 UTF-8 严格解；失败依次回落 GBK/mbcs。
+
+    背景（chat 实录 2026-09-28）：Windows 子进程往**管道**写的是本地编码（中文
+    Windows = GBK），父进程若按 UTF-8 解码，用户在聊天里看到的全是乱码。
+    """
+    if not b:
+        return ""
+    if isinstance(b, str):
+        return b
+    try:
+        return b.decode("utf-8")
+    except UnicodeDecodeError:
+        pass
+    for enc in ("mbcs", "gbk"):
+        try:
+            return b.decode(enc)
+        except (UnicodeDecodeError, LookupError):
+            continue
+    return b.decode("utf-8", errors="replace")
+
 import time
 import urllib.parse
 import urllib.request
@@ -942,8 +964,15 @@ def run_script(path: str, timeout: int = 60) -> str:
     try:
         if ext == ".py":
             py = os.environ.get("PASM_PY", "python")
-            r = _sp([py, path], capture_output=True, text=True,
-                               timeout=timeout, encoding="utf-8", errors="replace")
+            # v0.31.10 修复：强制子进程以 UTF-8 往管道写（中文 Windows 默认 GBK，
+            # 父进程按 UTF-8 解码 → 聊天里运行结果全是乱码）；字节级接收后仍做
+            # _smart_decode 兜底（子进程自己重设编码时也能救回来）。
+            _env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
+            _raw = _sp([py, path], capture_output=True,
+                       timeout=timeout, env=_env)
+            r = subprocess.CompletedProcess(_raw.args, _raw.returncode,
+                                            _smart_decode(_raw.stdout),
+                                            _smart_decode(_raw.stderr))
         elif ext == ".js":
             node = which("node")
             if not node:
@@ -974,9 +1003,12 @@ def run_script(path: str, timeout: int = 60) -> str:
             if _argv is None:
                 return ("这是 Windows 批处理脚本（.bat），%s 上无法直接运行。"
                         % platform_ops.platform_name())
-            r = _sp(_argv, capture_output=True,
-                               text=True, timeout=timeout, encoding="utf-8",
-                               errors="replace")
+            # v0.31.10：bat 输出是 OEM/ANSI（中文 Windows = GBK），按 UTF-8 解必乱码
+            # → 字节级接收 + _smart_decode（UTF-8 严格解不过自动落 GBK）。
+            _raw = _sp(_argv, capture_output=True, timeout=timeout)
+            r = subprocess.CompletedProcess(_raw.args, _raw.returncode,
+                                            _smart_decode(_raw.stdout),
+                                            _smart_decode(_raw.stderr))
         elif ext == ".html":
             _ok, _msg = platform_ops.open_path(path)   # 用默认浏览器打开看效果
             if _ok:
