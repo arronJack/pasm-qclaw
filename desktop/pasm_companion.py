@@ -7404,7 +7404,27 @@ class CompanionWindow(QMainWindow):
             pass
 
     # ---------- 引擎：对话 → 成长 ----------
+    def _is_v2(self) -> bool:
+        """当前是否在跑 PASM v2 实验引擎（engine_v2 开关 + pasm2 可用）。
+
+        只认引擎自述名，不做猜测；任何异常都当 False（不影响老路径）。
+        """
+        try:
+            info = self.agent.info()
+            return getattr(info, "name", "") == "pasm2"
+        except Exception:                      # noqa: BLE001
+            return False
+
     def _grow(self, score: float, text: str):
+        # v0.31.13：V2 引擎先"听到"这句话 —— 把**用户原话**喂进认知引擎
+        # （象量感知 + 外部指称绑定）。此前只喂过 GridWorld 的随机观测，
+        # 于是"上下文预测/记忆图/自传体"在真实对话里永远没料可长。
+        if self._is_v2():
+            try:
+                self.agent.perceive_text(text)
+            except Exception:                  # noqa: BLE001
+                logging.debug("v2 perceive_text 失败（不影响本轮回复）",
+                              exc_info=True)
         # v0.26.2：情绪反馈系数加大——你这条消息是开心/抱怨会明显带动它的心情
         # （此前 0.35 且被 6 步随机游走稀释，用户感知不到情绪在变化）
         rw = 0.85 * score if abs(score) > 0.02 else 0.0
@@ -7662,6 +7682,16 @@ class CompanionWindow(QMainWindow):
             except Exception as ex:
                 logging.warning("brain.build_context_prompt 失败: %s", ex)
                 brain_block = ""
+        # v0.31.13：V2 认知引擎的**真实状态**（上下文预测 / 记忆图联想 / 自传体
+        # 经历 / 双系统慢思）—— 只在 v2 引擎时注入。V1 走上面的 brain_block，
+        # 二者互斥（同一时刻只有一个引擎在跑），不会重复。
+        v2_block = ""
+        if self._is_v2():
+            try:
+                v2_block = self.agent.cognition_brief(user_text or "") or ""
+            except Exception as ex:            # noqa: BLE001
+                logging.debug("v2 cognition_brief 失败（忽略）: %s", ex)
+                v2_block = ""
         # —— 此刻状态（认知皮层 dec）：让情绪/意图/话题/目标真正调制这轮表达 ——
         cog_block = ""
         if cogd:
@@ -7811,6 +7841,7 @@ class CompanionWindow(QMainWindow):
             (45, 11, "workctx", f"{wctx}"),
             (30, 12, "assemble", f"{asm_block}"),
             (25, 13, "brain", f"{brain_block}"),
+            (28, 14, "v2mind", f"{v2_block}"),
         ]
         _prompt, _dropped = _join_budget(_blocks, _sys_budget)
         # v0.30.13：记下这次丢了哪些块（诊断与验证脚本读它）——
@@ -9361,9 +9392,21 @@ class CompanionWindow(QMainWindow):
                                            stop=turn["cancel"], on_delta=on_delta,
                                            on_think=on_think)
                 else:
-                    logging.info("offline brain used")
-                    reply = offline_reply(text, self.cfg["name"], snap,
-                                          self.notes, self.cfg["persona"])
+                    # v0.31.13：V2 引擎在无 LLM 时走**状态驱动的自然表达**
+                    # （情绪/预测/联想/经历组织语言），不再退化成关键词答句表；
+                    # 表达层不可用（或没料）才落回原来的离线微脑，行为不变。
+                    if self._is_v2():
+                        try:
+                            reply = self.agent.compose_reply(
+                                text, notes=self.notes) or None
+                        except Exception:      # noqa: BLE001
+                            logging.debug("v2 compose_reply 失败，回落离线脑",
+                                          exc_info=True)
+                            reply = None
+                    if not reply:
+                        logging.info("offline brain used")
+                        reply = offline_reply(text, self.cfg["name"], snap,
+                                              self.notes, self.cfg["persona"])
             turn["dec"] = dec
             # v0.27.2 防幻觉守卫：回复宣称"已删除/已清理"，台账里必须有真实账。
             try:
@@ -9403,6 +9446,16 @@ class CompanionWindow(QMainWindow):
             except Exception:
                 clean_reply, opt_req = reply, None
             self._ui(lambda: self._turn_done(turn, clean_reply, opt_req))
+            # v0.31.13：V2 引擎每 6 轮做一次"睡眠巩固" —— 桌面此前**从不**调用
+            # 引擎的 sleep()，于是符号化 / 记忆图巩固 / DMN 自发思考在真机上
+            # 永远不运行（V2 的能力等于白装）。这里在工作线程里补上（毫秒级）。
+            if self._is_v2():
+                self._v2_turns = getattr(self, "_v2_turns", 0) + 1
+                if self._v2_turns % 6 == 0:
+                    try:
+                        self.agent.consolidate()
+                    except Exception:          # noqa: BLE001
+                        logging.debug("v2 consolidate 失败（忽略）", exc_info=True)
         threading.Thread(target=job, daemon=True).start()
 
     # ---------- 快捷开工 & 聊天内可点链接 ----------

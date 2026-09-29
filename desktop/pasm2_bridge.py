@@ -27,6 +27,22 @@ try:                                     # 契约层零依赖，桌面包内必�
 except Exception:                        # pragma: no cover
     EA = None
 
+#: 表达/感知层（同目录模块；桌面包内 import 失败不影响引擎主链路）
+try:
+    from pasm2_voice import Pasm2Voice, CONV_ENGINE_KW
+    _VOICE_OK = True
+except Exception:                        # pragma: no cover
+    try:
+        import os as _os
+        import sys as _sys
+        _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+        from pasm2_voice import Pasm2Voice, CONV_ENGINE_KW
+        _VOICE_OK = True
+    except Exception:
+        Pasm2Voice = None                # type: ignore
+        CONV_ENGINE_KW = {}
+        _VOICE_OK = False
+
 #: 实验开关的环境变量名（UI 设置项落地前先用 env 灰度）
 ENV_SWITCH = "PASM2"
 
@@ -52,7 +68,11 @@ def _v2_capabilities():
         development=False,      # 发育可塑性（阶段 10 后续）
         global_workspace=False,
         llm=False, multimodal=False, persistence=False,
-        extra={"surface": "api 2.0-surface", "engine": "pasm2"},
+        extra={"surface": "api 2.0-surface", "engine": "pasm2",
+               # v0.31.13：v2 现在也带"对话感知 + 无 LLM 自然表达"（状态驱动，非预设答句）
+               "dialogue_perception": _VOICE_OK,
+               "natural_expression": _VOICE_OK,
+               "expression_kind": "state_driven" if _VOICE_OK else None},
     )
 
 
@@ -83,10 +103,39 @@ class Pasm2EngineAdapter:
       · reset_episode() → 无 episode 语义，no-op（如实）。
     """
 
-    def __init__(self, kit: Any) -> None:
+    def __init__(self, kit: Any, persona: str = "温和沉稳", name: str = "小U") -> None:
         self._kit = kit
         #: 最近一次感知步得到的情绪（v2 真值）；没跑过就是 None（诚实缺省）
         self._last_emotion: Optional[dict] = None
+        #: 对话感知 + 自然表达层（v0.31.13；不可用时为 None，回复退回原路径）
+        self.voice = (Pasm2Voice(kit, persona=persona, name=name)
+                      if _VOICE_OK and Pasm2Voice is not None else None)
+
+    # ---- 对话感知 / 自然表达（桌面专用扩展，非 Engine 契约） ----
+    def perceive_text(self, text: str,
+                      interoception: Optional[dict] = None) -> dict:
+        """把用户这一句喂进认知引擎（象量感知 + 外部指称），返回 digest。
+
+        桌面此前只喂 GridWorld 的随机观测，用户原话从没进过引擎 —— 于是
+        V2 的"上下文预测"在真实对话里无料可预测。这个入口补上这一环。
+        """
+        if self.voice is None:
+            return {}
+        return self.voice.perceive(text, interoception=interoception)
+
+    def cognition_brief(self, text: Optional[str] = None) -> str:
+        """给 LLM 的 V2 认知简报（真值；无可报内容返回空串）。"""
+        return self.voice.brief(text) if self.voice is not None else ""
+
+    def compose_reply(self, text: str, notes: Optional[list] = None) -> str:
+        """**无 LLM** 的自然回复（状态驱动，非关键词答句表）。"""
+        if self.voice is None:
+            return ""
+        return self.voice.compose(text, notes=notes)
+
+    def consolidate(self) -> dict:
+        """睡眠巩固（桌面此前从不调用 → 符号化/记忆图/DMN 永不运行）。"""
+        return self.voice.consolidate() if self.voice is not None else {}
 
     # ---- Engine 契约 ----
     def info(self) -> "EA.EngineInfo":
@@ -156,24 +205,35 @@ class Pasm2EngineAdapter:
 
 
 # ---------------------------------------------------------------- 注册/选通
-def _kit():
+def _kit(persona: str = "温和沉稳", name: str = "小U"):
+    """创建对话用 kit：brainwide profile + **对话感知专用参数**（见 pasm2_voice）。
+
+    posture：`CONV_ENGINE_KW` 只调 entity 潜维/聚类阈值与预测门槛，
+    profile 的能力开关集合不变（brainwide 仍是 brainwide）；内核默认值也不动，
+    因此既有验证链与其它 kit 使用者行为逐字节不变。
+    """
+    from dataclasses import replace
+    from pasm2.config import PASM2Config
     from pasm2.skills import CognitiveKit
-    return CognitiveKit(profile="brainwide")
+    base = replace(PASM2Config(), **CONV_ENGINE_KW) if CONV_ENGINE_KW \
+        else PASM2Config()
+    return CognitiveKit(profile="brainwide", config=base)
 
 
-def make_v2_engine():
+def make_v2_engine(persona: str = "温和沉稳", name: str = "小U"):
     """创建 v2 契约引擎（注册表路径）；不可用返回 None 并如实记日志。"""
     global _registered
     if EA is None:
         return None
     try:
-        kit = _kit()
+        _kit(persona, name)
     except Exception as ex:             # noqa: BLE001
         logging.info("pasm2 引擎不可用（实验开关保持关闭）：%s", ex)
         return None
 
     def _factory(**_ignored):
-        return EA.as_engine(Pasm2EngineAdapter(_kit()),
+        return EA.as_engine(Pasm2EngineAdapter(_kit(persona, name),
+                                               persona=persona, name=name),
                             info=_v2_info(), capabilities=_v2_capabilities())
 
     try:
@@ -224,8 +284,8 @@ def enabled() -> bool:
     return _config_flag()
 
 
-def maybe_make_engine():
+def maybe_make_engine(persona: str = "温和沉稳", name: str = "小U"):
     """开关开且 pasm2 可用 → 返回 v2 引擎；否则 None（调用方走原路径）。"""
     if not enabled() or EA is None:
         return None
-    return make_v2_engine()
+    return make_v2_engine(persona=persona, name=name)
