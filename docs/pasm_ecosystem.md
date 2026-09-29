@@ -14,7 +14,7 @@
 | `pasm-mcp-server` | **MCP 分发层**：给任意 AI 客户端装长期记忆（`PASM2=1` 可切 V2 后端） | 公开 | **0.2.1** |
 | `PASM-Lite` | 教学版 + 认知引擎接口（**不接 V2**，保持纯净） | 公开 | — |
 | `PASM` | 核心引擎（七层仿生 / 世界模型） | **私有** | **0.7.2** |
-| `pasm-qclaw`（本仓） | 桌面应用发行通道 | 公开 | **0.29.1** |
+| `pasm-qclaw`（本仓） | 桌面应用发行通道 | 公开 | **0.31.11** |
 
 流向：`PASM`（核心，含 `pasm2/`）→ `pasm-skills`（基座）→ `pasm-framework`（应用框架）→
 `pasm-agents`（智能体）→ `pasm-mcp-server`（分发）→ `pasm-qclaw`（桌面产品）；`PASM-Lite` 是教学窗口。
