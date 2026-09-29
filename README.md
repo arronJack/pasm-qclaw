@@ -15,7 +15,7 @@
 | `pasm-mcp-server` | MCP 接入层：给任意 AI 客户端装长期记忆 | 公开 | 0.2.0 |
 | `PASM-Lite` | 教学版 + 认知引擎接口 | 公开 | — |
 | `PASM` | 核心引擎（七层仿生 / 世界模型） | **私有** | 0.7.2 |
-| **`pasm-qclaw`（本仓）** | **桌面应用（UI 外壳，已开源）** | 公开 | **0.31.13** |
+| **`pasm-qclaw`（本仓）** | **桌面应用（UI 外壳，已开源）** | 公开 | **0.31.14** |
 
 本仓**现在包含 PASM Studio 桌面端的开源源码**（[`desktop/`](desktop/README.md) 目录，基于 PySide6 的 Windows 桌面应用 UI/外壳层），
 同时仍是安装包与更新清单 `latest.json` 的**发行通道**。
@@ -43,7 +43,27 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.31.13（2026-09-29）· V2 引擎"通电"了：听得进你说的话、有自己的说法、会睡觉整理记忆
+## 最新：v0.31.14（2026-09-29）· 紧急修复：开着 V2 时每轮都回「我这边出错了」
+
+**如果你用 0.31.13 并勾选了「实验：启用 V2 认知引擎」**，会碰到这个：每轮对话都只回一句
+「（我这边出错了，没有成功回应你…错误：'NoneType' object…）」，同时"成长"那轮也每轮失败
+—— 用起来就像**"越来越笨"**。这一版修好了。**没开 V2 的同学完全不受影响**（V1 路径一行未改）。
+
+- **三条报错、三个真根因**：① 认知皮层里 `snap.get("personality", {})` 撞上
+  **Python 的坑**（键在、值是 `None` 时 `.get` 返回 `None` 而不是 `{}`）→ 整条回复线程结束
+  = **没有回复**；② V2 开着时还在跑只对 V1 有意义的 GridWorld 学习轮 → **学习轮每轮失败**
+  = 越来越笨；③ 界面 9 处直接用 `snapshot()["emotion"][...]` 取值 → 回复**生成出来了却上不了屏**。
+- **修法**：V2 的契约快照**如实上报它真正有的**（运行步数/情绪/记忆规模计数），
+  性格先验等**继续如实为「无」**；核心对"缺省"一律容错；界面全部走安全默认（缺就中性值，不编造）；
+  V2 时跳过 V1 的 GridWorld 轮，情绪反馈改走 V2 自己的通道（"你的语气影响它心情"照旧）。
+- **这次连"检查为什么全绿却漏掉"也一并修了**：补了一条**走完整回复链路**的探针，
+  并用回退法证明它真能抓到（回退 → **0/5 失败**；修复后 **39/39 通过**）；
+  另加"真机场景联调"（V2 + 本地模型真实出话）。
+- 顺带：修掉一个**随机报红**的旧守卫（测试收尾与"本地模型预热线程"抢文件导致假失败，
+  本机已堆了 11 个残留目录）—— 现在连跑 5 次稳定。
+- 其余与 v0.31.13 完全一致。
+
+## v0.31.13（2026-09-29）· V2 引擎"通电"了：听得进你说的话、有自己的说法、会睡觉整理记忆
 
 上一版把 V2 认知引擎的开关交到你手上；这一版解决的是**"开关接上了、引擎没通电"** ——
 三处接线缺失，所以你开了 V2 也几乎感觉不到区别：
@@ -243,7 +263,7 @@ Gitee 侧为**分卷版**（`-gitee.exe` + `.bin` 切片）：**全部下到同�
 安装程序会自己找分卷，不需要手动合并。
 **macOS / Linux 本版未重出**（需 CI 跑 PyInstaller，本机不能交叉编译）。
 
-> 后续版本见上方 **v0.31.13**（最新）。
+> 后续版本见上方 **v0.31.14**（最新）。
 
 ---
 
@@ -658,10 +678,10 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 ## 下载与安装
 
-最新版见仓库 **Releases**（v0.31.13）：
+最新版见仓库 **Releases**（v0.31.14）：
 
-1. 下载安装包。**GitHub / GitCode** 上下载 `PASMStudio-Setup-0.31.13.exe`（单文件整包）；
-   **Gitee** 上是**分卷版** `PASMStudio-Setup-0.31.13-gitee.exe` + `.bin` 切片 ——
+1. 下载安装包。**GitHub / GitCode** 上下载 `PASMStudio-Setup-0.31.14.exe`（单文件整包）；
+   **Gitee** 上是**分卷版** `PASMStudio-Setup-0.31.14-gitee.exe` + `.bin` 切片 ——
    请把 `.exe` 与**全部 `.bin` 分卷下到同一个目录**，然后直接运行 exe 即可
    （安装程序会自己找同目录的分卷，**不需要手动合并**）。
 2. 双击安装 → 打开 PASM Studio → 点右上「设置」填 LLM Key（或留空用本地 Ollama）
@@ -723,7 +743,32 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 > **It never loses what you typed, and never claims to have done something it didn't** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.31.13 (2026-09-29) · The V2 engine is finally "powered on": it hears you, speaks in its own words, and sleeps to consolidate memory
+## Latest: v0.31.14 (2026-09-29) · Hotfix: with V2 enabled, every turn replied "something went wrong on my side"
+
+**If you are on 0.31.13 with "Experimental: enable V2 cognitive engine" ticked**, you hit this:
+every turn replied only「（我这边出错了，没有成功回应你…错误：'NoneType' object…）」and the
+growth pass failed too — so it felt like it was **getting dumber**. This release fixes it.
+**V1 users are unaffected** (not a single line of the V1 path changed).
+
+- **Three errors, three real root causes**: ① the cognitive cortex did
+  `snap.get("personality", {})` and fell into a **Python trap** — when the key exists but its value
+  is `None`, `.get` returns `None`, not the `{}` default → the whole reply thread died (**no reply**);
+  ② with V2 on it still ran the GridWorld learning pass that only makes sense for V1 (**learning
+  failed every turn** = "getting dumber"); ③ nine UI sites indexed `snapshot()["emotion"][...]`
+  directly, so the reply **was generated but never reached the screen**.
+- **The fix**: V2's contract snapshot now honestly reports **what it really has** (run step /
+  emotion / memory counts) while personality priors etc. **stay honestly absent**; the core tolerates
+  missing sections; every UI read goes through a safe default (neutral values, never fabricated);
+  and with V2 on the V1 GridWorld pass is skipped entirely, with emotional feedback routed through
+  V2's own channel ("your tone affects its mood" still works).
+- **Also fixed why the checks were green while users saw errors**: added a probe that walks the
+  **complete reply chain**, and proved it can catch the bug by reverting the fix (reverted → **0/5
+  fail**; fixed → **39/39 pass**), plus a live end-to-end check with a real local model.
+- Also fixed a **randomly-red old guard** (a teardown race with the local-model warm-up thread that
+  left 11 junk dirs on this machine) — now stable across 5 consecutive runs.
+- Everything else matches v0.31.13.
+
+## v0.31.13 (2026-09-29) · The V2 engine is finally "powered on": it hears you, speaks in its own words, and sleeps to consolidate memory
 
 The previous release handed you the V2 cognitive-engine switch; this one fixes the fact that
 **the switch was wired but the engine was never actually powered** — three connections were missing,
