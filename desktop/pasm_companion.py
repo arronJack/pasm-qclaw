@@ -7419,30 +7419,43 @@ class CompanionWindow(QMainWindow):
         # v0.31.13：V2 引擎先"听到"这句话 —— 把**用户原话**喂进认知引擎
         # （象量感知 + 外部指称绑定）。此前只喂过 GridWorld 的随机观测，
         # 于是"上下文预测/记忆图/自传体"在真实对话里永远没料可长。
+        # v0.26.2：情绪反馈系数加大——你这条消息是开心/抱怨会明显带动它的心情
+        # （此前 0.35 且被 6 步随机游走稀释，用户感知不到情绪在变化）
+        rw = 0.85 * score if abs(score) > 0.02 else 0.0
         if self._is_v2():
+            # ★ V2 无 GridWorld 语义 → **整段 V1 RL 轮必须跳过**。
+            #   以前不跳：桥的 act() 返回的是**实体 id**（或 None），
+            #   env.step(id) → MOVES[id] → KeyError，每轮刷一条 ERROR 日志；
+            #   而且这 6 步对 V2 毫无意义（V2 的学习在 observe/符号化/记忆图里）。
             try:
                 self.agent.perceive_text(text)
             except Exception:                  # noqa: BLE001
                 logging.debug("v2 perceive_text 失败（不影响本轮回复）",
                               exc_info=True)
-        # v0.26.2：情绪反馈系数加大——你这条消息是开心/抱怨会明显带动它的心情
-        # （此前 0.35 且被 6 步随机游走稀释，用户感知不到情绪在变化）
-        rw = 0.85 * score if abs(score) > 0.02 else 0.0
-        # v0.17.5：RL 微训练只作"成长点缀"——torch 版本差异偶发 inplace 梯度报错，
-        # 绝不让它拖垮整条对话：失败仅记日志，快照仍可正常返回。
-        try:
-            for i in range(6):
-                obs = self.env._get_obs()
-                a, rep = self.agent.act(obs)
-                nxt, r, done, _ = self.env.step(a)
-                # 第一步把本条消息的情绪冲击一次给足（不再每步重复累加撞顶），
-                # 后几步只留微弱随机心跳，让它自然回归/波动
-                reward = rw if i == 0 else r * 0.5
-                self.agent.learn(obs, a, nxt, reward, rep)
-                if done:
-                    self.env.reset(); self.agent.reset_episode()
-        except Exception:
-            logging.exception("agent grow skipped")
+            # 情绪反馈照旧生效：把这条消息的情绪冲击交给 V2 的情绪系统
+            # （桥的 learn 把 reward 折算成 valenced 情绪更新）
+            if rw:
+                try:
+                    self.agent.learn(None, None, None, rw)
+                except Exception:              # noqa: BLE001
+                    logging.debug("v2 情绪反馈失败（不影响本轮回复）",
+                                  exc_info=True)
+        else:
+            # v0.17.5：RL 微训练只作"成长点缀"——torch 版本差异偶发 inplace 梯度报错，
+            # 绝不让它拖垮整条对话：失败仅记日志，快照仍可正常返回。
+            try:
+                for i in range(6):
+                    obs = self.env._get_obs()
+                    a, rep = self.agent.act(obs)
+                    nxt, r, done, _ = self.env.step(a)
+                    # 第一步把本条消息的情绪冲击一次给足（不再每步重复累加撞顶），
+                    # 后几步只留微弱随机心跳，让它自然回归/波动
+                    reward = rw if i == 0 else r * 0.5
+                    self.agent.learn(obs, a, nxt, reward, rep)
+                    if done:
+                        self.env.reset(); self.agent.reset_episode()
+            except Exception:
+                logging.exception("agent grow skipped")
         snap = self.agent.snapshot()
         if abs(score) >= 0.3:
             tag = f"{'（你心情不错）' if score > 0 else '（你有点不开心）'}你聊到了：{text.strip()[:28]}"
@@ -9688,7 +9701,7 @@ class CompanionWindow(QMainWindow):
             mood = None
             if QTM:
                 try:
-                    sn = self.agent.snapshot()["emotion"]
+                    sn = _snap_section(self.agent.snapshot(), "emotion")
                     mood = QTM.mood_bias(sn.get("valence", 0), sn.get("arousal", 0))
                 except Exception:
                     mood = None
@@ -10483,16 +10496,32 @@ class CompanionWindow(QMainWindow):
         except Exception:
             logging.exception("finish reveal failed")
 
+    def _emo3(self, snap=None):
+        """(valence, arousal, serotonin) 安全取值 —— 供头像/流式收尾/语气用。
+
+        ⚠️ v0.31.13 真机事故：这几处原先直接 `snapshot()["emotion"][k]`。引擎**如实缺省**
+        （V2 未跑感知步时 emotion 为 None）→ `TypeError: 'NoneType' object is not
+        subscriptable` → **回复其实已经生成，却卡在流式收尾上不了屏**，
+        用户看到的就是"没有回复"。缺什么就用中性默认（0.0 / 0.5），不编造数值。
+        """
+        sec = _snap_section(self.agent.snapshot() if snap is None else snap,
+                            "emotion")
+
+        def _f(k, d):
+            try:
+                return float(sec.get(k, d))
+            except (TypeError, ValueError):
+                return d
+        return _f("valence", 0.0), _f("arousal", 0.0), _f("serotonin", 0.5)
+
     def _reveal(self, name: str, reply: str):
         """拟人流式：逐字显示回复，结束时渲染成 Markdown。"""
         plain = reply
         final_html = self._reply_html(reply)
         name_html = f"<b>{html.escape(name)}</b>："
         _pfix = str(name) + "："              # 身份核对用（纯文本前缀）
-        self.avatar.set_state(self.agent.snapshot()["emotion"]["valence"],
-                              self.agent.snapshot()["emotion"]["arousal"],
-                              serotonin=self.agent.snapshot()["emotion"]["serotonin"],
-                              speaking=True)
+        _rv, _ra, _rs = self._emo3()          # 安全取值，缺就中性（见 _emo3 注释）
+        self.avatar.set_state(_rv, _ra, serotonin=_rs, speaking=True)
         # 登记"正在播"：用户中途抢话时，_finish_reveal() 靠它把话补完整
         self._reveal_state = {"name_html": name_html, "final_html": final_html,
                               "prefix": _pfix}
@@ -10507,10 +10536,8 @@ class CompanionWindow(QMainWindow):
             if i[0] >= len(plain):
                 self._reveal_state = None        # 播完了，无半截残留
                 self._patch_last_block(name_html + final_html, _pfix)
-                self.avatar.set_state(self.agent.snapshot()["emotion"]["valence"],
-                                      self.agent.snapshot()["emotion"]["arousal"],
-                                      serotonin=self.agent.snapshot()["emotion"]["serotonin"],
-                                      speaking=False)
+                _ev, _ea, _es = self._emo3()
+                self.avatar.set_state(_ev, _ea, serotonin=_es, speaking=False)
                 if self.cfg.get("auto_speak"):
                     self.speak(reply)
                 self.chat.verticalScrollBar().setValue(
@@ -16249,7 +16276,7 @@ class CompanionWindow(QMainWindow):
                 f"说「重画第{n}镜」重画这一镜；或「出图」补画所有未画的镜。")
 
     def _pet_clicked(self):
-        v = self.agent.snapshot()["emotion"]["valence"]
+        v = self._emo3()[0]
         if v > 0.2:
             lines = ["（被你戳得晃了晃）嘿嘿，我在！", "摸头收到~ 我今天很开心哦！"]
         elif v < -0.2:
@@ -16462,7 +16489,7 @@ class CompanionWindow(QMainWindow):
     def _emote_word(self) -> str:
         """把当前情绪快照折成朗读语气词（happy/excited/sad/angry/sleepy/''）。"""
         try:
-            e = self.agent.snapshot()["emotion"]
+            e = _snap_section(self.agent.snapshot(), "emotion")
             v = e.get("valence", 0.0)
             a = e.get("arousal", 0.0)
             s = e.get("serotonin", 0.0)

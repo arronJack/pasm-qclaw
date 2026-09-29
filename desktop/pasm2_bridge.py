@@ -121,7 +121,10 @@ class Pasm2EngineAdapter:
         """
         if self.voice is None:
             return {}
-        return self.voice.perceive(text, interoception=interoception)
+        d = self.voice.perceive(text, interoception=interoception)
+        # 感知后立刻刷新情绪缓存（快照走 _emotion_now 已是实时读，这里是双保险）
+        self._last_emotion = self._emotion_now()
+        return d
 
     def cognition_brief(self, text: Optional[str] = None) -> str:
         """给 LLM 的 V2 认知简报（真值；无可报内容返回空串）。"""
@@ -179,12 +182,49 @@ class Pasm2EngineAdapter:
             pass
         return {"ok": True, "engine": PASM2_ENGINE}
 
+    def _emotion_now(self):
+        """当前真实情绪（v2 真值 → 契约 emotion 区块）。
+
+        为什么不能只靠 `_last_emotion`：桌面走的是 **perceive_text → snapshot** 这条路，
+        而 `_last_emotion` 只在 `act()` 里赋值 → 正常聊天时它永远是 None，
+        于是 `snapshot()["emotion"]` 为 None，桌面 `_reveal()`/头像按下标取值直接
+        `TypeError: 'NoneType' object is not subscriptable`。
+        （v0.31.13 真机事故：V2 开着时每一轮回复都在这里挂掉 → 用户看到"没回复"。）
+
+        这里**直接读引擎情绪系统**（有就读、读不到再回落缓存，都没有则如实 None）。
+        调质通道（血清素/多巴胺…）只在引擎**真的开了通道**时上报 —— 缺就少说，不编造。
+        """
+        try:
+            mind = getattr(self._kit, "_mind", None)
+            emo = getattr(mind, "emotion", None) if mind is not None else None
+            stats = emo.stats() if emo is not None else None
+            if isinstance(stats, dict):
+                out = {"valence": float(stats.get("valence") or 0.0),
+                       "arousal": float(stats.get("arousal") or 0.0)}
+                bs = getattr(mind, "brainstem", None) if mind is not None else None
+                bstat = bs.stats() if bs is not None else None
+                if isinstance(bstat, dict) and bstat.get("channels_on"):
+                    for k in ("serotonin", "dopamine",
+                              "norepinephrine", "acetylcholine"):
+                        if isinstance(bstat.get(k), (int, float)):
+                            out[k] = float(bstat[k])
+                return out
+        except Exception:                     # noqa: BLE001
+            pass
+        return dict(self._last_emotion) if self._last_emotion else None
+
     def snapshot(self) -> dict:
-        """契约快照（**诚实缺省**：v2 没有的区块给 None，不编造数值）。
+        """契约快照（**诚实缺省**：v2 没有的区块给 None，**真有的如实上报**）。
 
         桌面 UI 会读 emotion / personality / development / memory 这几块；
-        v2 真实有的是**情绪**（感知步的效价/唤醒）与**规模计数**，
-        性格维度与成长阶段在 v2 里没有对应物 → 如实 None（UI 按"缺就少说"渲染）。
+        v2 真实有的是**情绪**（情绪系统效价/唤醒，开启调质时含血清素等）、
+        **运行步数**与**规模计数** → 如实上报；
+        性格维度 / 成长阶段 / 全局工作区在 v2 里没有对应物 → 如实 None
+        （UI 按"缺就少说"渲染）。
+
+        ⚠️ v0.31.13 教训：以前只把 `running` 填上、其余全 None —— 连 v2 **明明有**的
+        emotion/step 也报 None，结果桌面的头像/流式收尾/认知皮层按下标取值全崩。
+        "诚实缺省"指的是**缺真没有的**，不是"什么都不报"。
         """
         st = self._kit.status()
         try:
@@ -196,11 +236,19 @@ class Pasm2EngineAdapter:
             "step", "entities", "symbols", "prediction_hit_rate",
             "memory_graph_edges", "slh_one_to_one_ratio")
             if isinstance(st.get(k), (int, float, str, bool))}
+        mem = {k: v for k, v in (("entities", st.get("entities")),
+                                 ("symbols", st.get("symbols")),
+                                 ("graph_edges", st.get("memory_graph_edges")))
+               if isinstance(v, (int, float))}
+        step = st.get("step")
         return {"engine": PASM2_ENGINE, "version": ver,
                 "profile": st.get("profile")
                            or getattr(self._kit, "profile", "brainwide"),
+                "step": step if isinstance(step, int) else None,
                 "running": running,
-                "emotion": dict(self._last_emotion) if self._last_emotion else None,
+                "emotion": self._emotion_now(),
+                "memory": mem or None,
+                # 诚实缺位：v2 无性格先验 / 发育阶段 / 全局工作区
                 "personality": None, "development": None}
 
 
