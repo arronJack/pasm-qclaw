@@ -161,7 +161,11 @@ class PetShell(QWidget):
         self.avatar.set_skin(self.pet.get("skin", "tech"))
         self.avatar.set_growth(self.growth)
         self._cfg = _load_json(os.path.join(DATA_DIR, "config.json"), {})
-        self._persona = self._cfg.get("persona", "温和沉稳")
+        # v0.31.12：**必须强制成字符串**再当字典键用 —— 旧版本/手工改过的配置里
+        # `persona` 可能不是字符串（实测 dict → `ARCH_META.get(dict)` 抛
+        # `TypeError: unhashable type: 'dict'`，桌面小人构造即失败、应用启动就崩，
+        # 界面上一句提示都没有）。`_apply_persona` 早已做了字串化自愈，这里补齐。
+        self._persona = str(self._cfg.get("persona") or "温和沉稳")
         self._arch = ARCH_META.get(self._persona, {})
         self._name = self._cfg.get("name", "小U")
         self._gender = self.pet.get("gender", "none")

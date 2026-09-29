@@ -103,6 +103,19 @@ def _log(report: dict) -> None:
 def make_engine(personality_seed=None, seed: int = 0,
                 plan_samples: int = 8, plan_iters: int = 1):
     """创建符合契约的"大脑"。返回对象满足 `engine_api.Engine`。"""
+    # ---- v2.0 实验开关（PASM2=1 且 pasm2 已安装）→ 走 pasm2 单向桥 ----
+    # 默认（env 未设）：以下两行是零成本探测，行为与历史版本逐字节一致。
+    try:
+        import pasm2_bridge as _p2b
+        _v2 = _p2b.maybe_make_engine()
+        if _v2 is not None:
+            _note({"used": _p2b.PASM2_ENGINE, "degraded": False, "tried": [],
+                   "gap": [], "source": "pasm2-bridge"})
+            logging.info("引擎（实验）：%s", _p2b.PASM2_ENGINE)
+            return _v2
+    except ImportError:
+        pass                            # 桥模块缺失 = 未启用，静默走原路径
+
     register_desktop_light()
 
     if EA is not None:

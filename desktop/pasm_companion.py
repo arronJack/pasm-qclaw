@@ -297,6 +297,19 @@ def _excepthook(tp, val, tb):
 sys.excepthook = _excepthook
 
 
+def _snap_section(snap, key: str) -> dict:
+    """取快照区块；缺失 / None / 非 dict 一律给**空 dict**（安全默认）。
+
+    v0.31.12：`engine_api.normalize_snapshot` 允许引擎**如实缺省**（缺的区块填 None）——
+    实验性的 V2 引擎不上报 personality / development，未跑感知步时 emotion 也是 None。
+    而下游多处按下标取值（提示词、工具回包、流式收尾、内心栏），旧写法遇到 None 直接
+    `TypeError: 'NoneType' object is not subscriptable` → 启动即崩、界面零提示。
+    统一走这里，取值处一律 `.get(k, 默认)`，缺什么就少说什么，**不编造数值**。
+    """
+    v = (snap or {}).get(key) if isinstance(snap, dict) else None
+    return v if isinstance(v, dict) else {}
+
+
 def _load_json(path, default):
     try:
         if os.path.exists(path):
@@ -1343,6 +1356,44 @@ class SettingsDialog(QDialog):
         tinfo.setWordWrap(True)
         tinfo.setStyleSheet("color:#94a3b8;font-size:11px")
         lay.addWidget(tinfo)
+        # ── v0.31.12：实验性 V2 认知引擎开关（pasm2 内核，随安装包一起带）──
+        # 诚实纪律：① 明说"实验"；② 明说"重启后生效"；③ 下面一行显示**实际**装配的
+        # 引擎名（从 engine_factory 读，不吹嘘）；④ 内核加载失败会自动回退原引擎。
+        self.engine_v2 = QCheckBox(
+            "实验：启用 V2 认知引擎（pasm2 · 换一套记忆/预测/情绪内核，重启后生效）")
+        self.engine_v2.setChecked(bool(cfg.get("engine_v2", False)))
+        self.engine_v2.setStyleSheet("color:#64748b;font-size:11px")
+        self.engine_v2.setToolTip(
+            "V2 是新的认知内核（九阶段仿脑：上下文预测 / 记忆图 / 符号化 / 数学脑 / "
+            "双系统 / 自传体记忆 …），仍在打磨中，属**实验**特性。\n"
+            "· 勾选后**重启软件**生效；换回原引擎只需取消勾选再重启。\n"
+            "· 若 V2 内核加载失败，会自动回退原引擎（启动报告里如实标注，不假装成功）。\n"
+            "· 记忆数据两套内核各自保存，来回切换不会互相破坏。")
+        lay.addWidget(self.engine_v2)
+        self.engine_now = QLabel("")
+        self.engine_now.setWordWrap(True)
+        self.engine_now.setStyleSheet("color:#94a3b8;font-size:11px")
+        try:
+            _rep = getattr(EF, "LAST_REPORT", None) or {}
+            _used = str(_rep.get("used") or "")
+            _src = ""
+            try:
+                import pasm2_bridge as _P2B
+                _src = {"env": "环境变量", "config": "设置项"}.get(
+                    _P2B.switch_source(), "")
+            except Exception:
+                pass
+            self.engine_now.setText(
+                "本次启动实际引擎：%s%s%s"
+                % (_used or "（未知）",
+                   "（V2 实验内核" + ("·" + _src if _src else "") + "）"
+                   if _used == "pasm2" else "",
+                   "｜勾选已保存，重启后生效"
+                   if bool(cfg.get("engine_v2", False)) != _used.startswith("pasm2")
+                   else ""))
+        except Exception:
+            pass
+        lay.addWidget(self.engine_now)
         lay = _p_engine[0]       # 回到「创作引擎」页，放引擎接入入口
         engrow = QHBoxLayout()
         engrow.addWidget(QLabel("创作引擎（图像/视频/漫剧出图）："))
@@ -2304,6 +2355,8 @@ class SettingsDialog(QDialog):
         self.cfg["comfy_url"] = self.comfy_url.text().strip()
         self.cfg["comfy_manage"] = bool(self.comfy_manage.isChecked())
         self.cfg["local_think_mode"] = self.think_mode.currentData() or "auto"
+        # v0.31.12：实验性 V2 认知引擎开关（写盘；重启后由 engine_factory 读取生效）
+        self.cfg["engine_v2"] = bool(self.engine_v2.isChecked())
         self.cfg["local_think"] = (self.cfg["local_think_mode"] == "on")
         try:
             GW.set_local_think(self.cfg["local_think_mode"])
@@ -3098,6 +3151,32 @@ class CompanionWindow(QMainWindow):
                                        # v0.29 语音唤醒：默认关 —— 常驻监听占着
                                        # 麦克风是隐私敏感行为，用户主动开才开。
                                        "wake_enabled": False})
+        # v0.31.12：**文件存在但缺键**时补齐默认值（旧版留下的配置 / 手工改过 /
+        # 写盘被截断）。下游有 10 处 `self.cfg["name"]` 这类硬索引（首启问候语、
+        # 离线回复、身份提示词、气泡名…），缺键就是 `KeyError` → 应用启动即崩、
+        # 界面上一句提示都没有（与 v0.30.14 修的 persona 同一类问题）。
+        # 在这里**一次性**补齐并写回，避免逐处打补丁还漏。
+        _dflt = {"name": "小U", "persona": "温和沉稳",
+                 "api_key": os.environ.get("DEEPSEEK_API_KEY", ""),
+                 "base_url": "https://api.deepseek.com/v1",
+                 "model": "deepseek-chat", "local_model": "",
+                 "perm_level": "safe", "wake_enabled": False}
+        _missing = [k for k in _dflt if k not in self.cfg]
+        _coerced = []
+        for _k in ("name", "persona"):
+            if _k in self.cfg and not isinstance(self.cfg[_k], str):
+                _coerced.append(_k)
+        if _missing or _coerced:
+            for _k in _missing:
+                self.cfg[_k] = _dflt[_k]
+            for _k in _coerced:
+                self.cfg[_k] = str(self.cfg[_k] or _dflt[_k])
+            logging.warning("配置自愈：缺键 %s / 非字串 %s → 已补默认值并写回",
+                            _missing, _coerced)
+            try:
+                _save_json(CONFIG, self.cfg)
+            except Exception:
+                logging.debug("配置自愈写盘失败（不影响本次启动）", exc_info=True)
         # v0.30.9：把「小人」观感三项交给 pet_tuning（**单一来源**）。
         # 聊天页头像、桌面浮窗飞天、设置面板三处都读它 —— 没人各自存一份。
         try:
@@ -7456,7 +7535,9 @@ class CompanionWindow(QMainWindow):
         return "\n".join(lines)
 
     def _build_system(self, snap, user_text: str = "", cogd: dict | None = None) -> str:
-        p, e, d = snap["personality"], snap["emotion"], snap["development"]
+        p, e, d = (_snap_section(snap, "personality"),
+                   _snap_section(snap, "emotion"),
+                   _snap_section(snap, "development"))
         arch = ARCH_META.get(self.cfg.get("persona", "温和沉稳"), {})
         # v0.29.0：每轮把用户话里的"确定事实"吸进事实层（双时态+矛盾检测）。
         # 纯正则、零 LLM 成本；只有真抽到才写盘。用户明确说"记住 xx"时放宽
@@ -7710,8 +7791,12 @@ class CompanionWindow(QMainWindow):
             (10, 3, "persona", f"规则2：性格与此刻内心（会随相处变化，请自然地体现，不要念参数）：\n"
                 f"  你的性格档案是「{self.cfg.get('persona', '温和沉稳')}」——"
                 f"{arch.get('label', '')}。{arch.get('line', '')}\n"
-                f"  开放 {p['openness']:+.2f} / 谨慎 {p['caution']:+.2f} / 亲社交 {p['sociability']:+.2f}；"
-                f"当前情绪：愉悦 {e['valence']:+.2f}、平静度 {e['serotonin']:+.3f}；成长阶段：{GROWTH.stage_name()}（请以此为准，与桌面小人一致）。\n"
+                f"  开放 {float(p.get('openness', 0.0) or 0.0):+.2f} / "
+                f"谨慎 {float(p.get('caution', 0.0) or 0.0):+.2f} / "
+                f"亲社交 {float(p.get('sociability', 0.0) or 0.0):+.2f}；"
+                f"当前情绪：愉悦 {float(e.get('valence', 0.0) or 0.0):+.2f}、"
+                f"平静度 {float(e.get('serotonin', 0.0) or 0.0):+.3f}；"
+                f"成长阶段：{GROWTH.stage_name()}（请以此为准，与桌面小人一致）。\n"
                 f"{cog_block}"),
             (20, 4, "memory", f"规则3：你的记忆里存着关于用户的事，可自然提及（如'记得你上次……'）：\n{notes}\n"
                 f"{layered}"),
@@ -9884,7 +9969,7 @@ class CompanionWindow(QMainWindow):
         if name == "payment_status":
             return self._tool_payment(args)
         snap = self.agent.snapshot()
-        e = snap["emotion"]
+        e = _snap_section(snap, "emotion")
         if name == "recall":
             kw = (args.get("kw") or "").strip()
             parts = []
@@ -9941,9 +10026,12 @@ class CompanionWindow(QMainWindow):
             _save_json(PREFS, self.prefs)
             return "已写入我的长期记忆。"
         if name == "mood":
-            return (f"愉悦 {e['valence']:+.2f} / 平静 {e['serotonin']:.2f} / "
-                    f"成长阶段 {snap['development']['stage']} / "
-                    f"性格开放{snap['personality']['openness']:+.2f}")
+            _dev = _snap_section(snap, "development")
+            _per = _snap_section(snap, "personality")
+            return (f"愉悦 {float(e.get('valence', 0.0) or 0.0):+.2f} / "
+                    f"平静 {float(e.get('serotonin', 0.0) or 0.0):.2f} / "
+                    f"成长阶段 {_dev.get('stage', '未上报')} / "
+                    f"性格开放{float(_per.get('openness', 0.0) or 0.0):+.2f}")
         if name == "sysinfo":
             # 只读、无副作用：把真实数字压缩成一行给模型，让它自己组织语言回答
             try:
@@ -10221,9 +10309,13 @@ class CompanionWindow(QMainWindow):
             if streamed:
                 # 真流式已把内容打上屏 → 只做最终 Markdown 渲染与朗读，不再假打字
                 snap = self.agent.snapshot()
-                e = snap["emotion"]
-                self.avatar.set_state(e["valence"], e["arousal"],
-                                      serotonin=e["serotonin"], speaking=False)
+                e = _snap_section(snap, "emotion")
+                if e:
+                    self.avatar.set_state(float(e.get("valence", 0.0) or 0.0),
+                                          float(e.get("arousal", 0.0) or 0.0),
+                                          serotonin=float(
+                                              e.get("serotonin", 0.0) or 0.0),
+                                          speaking=False)
                 # v0.28.3：最终态 = 名牌 + 灰度思考 + Markdown 正文
                 self._patch_last_block(turn["name_html"]
                                        + self._think_html(turn.get("think_text") or "")
@@ -10942,32 +11034,57 @@ class CompanionWindow(QMainWindow):
         self._step("cmd", label, cmd, tail, "ok" if ok else "err")
 
     def _render_mind(self, snap):
-        e, p, d = snap["emotion"], snap["personality"], snap["development"]
+        # v0.31.12：契约允许引擎**如实缺省**（`engine_api.normalize_snapshot` 把缺的区块
+        # 填 None）—— 例如实验性的 V2 引擎不上报性格维度 / 成长阶段。这里一律按
+        # 「缺就少说」渲染，**绝不编造数值**。（旧写法直接下标取值：遇到 None 就是
+        # 启动即崩 `TypeError: 'NoneType' object is not subscriptable`，界面零提示。）
+        e = snap.get("emotion") if isinstance(snap.get("emotion"), dict) else None
+        p = snap.get("personality") if isinstance(snap.get("personality"), dict) else None
+        d = snap.get("development") if isinstance(snap.get("development"), dict) else None
+        _mem = snap.get("memory") if isinstance(snap.get("memory"), dict) else {}
+        _epi = _mem.get("episodic")
+        epi_txt = str(_epi) if isinstance(_epi, int) else "—"
         # 成长阶段统一以 pet_state.json 经验为准（与桌面小人完全一致）
         stage = GROWTH.stage_name()
         self.avatar.set_growth(GROWTH.current_growth())
         self.avatar.set_gender(GROWTH.pet_state().get("gender", "none"))
-        arch = ARCH_META.get(self.cfg.get("persona", "温和沉稳"), {})
-        emo = "心情好😊" if e["valence"] > 0.2 else "平静" if e["valence"] > -0.2 else "低落😔"
-        self.avatar.set_state(e["valence"], e["arousal"], serotonin=e["serotonin"])
-        # 头部今日心情 + 状态
-        day_mood = "开心" if e["valence"] > 0.2 else ("平和" if e["valence"] > -0.2 else "有点低落")
+        pname = str(self.cfg.get("persona") or "温和沉稳")
+        arch = ARCH_META.get(pname, {})
+        _exp = GROWTH.pet_state().get("exp", 0)
+        if e is not None:
+            _v = float(e.get("valence", 0.0) or 0.0)
+            _a = float(e.get("arousal", 0.0) or 0.0)
+            _s = float(e.get("serotonin", 0.0) or 0.0)
+            emo = "心情好😊" if _v > 0.2 else "平静" if _v > -0.2 else "低落😔"
+            self.avatar.set_state(_v, _a, serotonin=_s)
+            day_mood = "开心" if _v > 0.2 else ("平和" if _v > -0.2 else "有点低落")
+            _line = (f"💭 此刻 <b>{emo}</b> ｜ 愉悦 {_v:+.2f} ｜ {stage}（经验 {_exp}）"
+                     f" ｜ 关于你 {len(self.notes)} 件 · 情景记忆 {epi_txt}")
+            _tip = (f"此刻情绪：{emo}\n"
+                    f"愉悦 {_v:+.2f} · 平静度 {_s:+.3f}\n"
+                    f"性格档案：{pname}\n{arch.get('label', '')}\n")
+        else:
+            emo, day_mood = "（本引擎暂不上报心情）", "未上报"
+            _line = (f"💭 {emo} ｜ {stage}（经验 {_exp}）"
+                     f" ｜ 关于你 {len(self.notes)} 件 · 情景记忆 {epi_txt}")
+            _tip = f"此刻情绪：{emo}\n性格档案：{pname}\n{arch.get('label', '')}\n"
         state = "发呆" if not self.busy else "思考中…"
         self.mood_lbl.setText(f"今日心情：{day_mood} · 此刻：{state}")
-        pname = self.cfg.get("persona", "温和沉稳")
         # v0.30.9：内心 = **单行**（QLabel，无滚动条）；完整细节放 tooltip。
-        _exp = GROWTH.pet_state().get("exp", 0)
-        self.mind.setText(
-            f"💭 此刻 <b>{emo}</b> ｜ 愉悦 {e['valence']:+.2f} ｜ {stage}（经验 {_exp}）"
-            f" ｜ 关于你 {len(self.notes)} 件 · 情景记忆 {snap['memory']['episodic']}")
-        self.mind.setToolTip(
-            f"此刻情绪：{emo}\n"
-            f"愉悦 {e['valence']:+.2f} · 平静度 {e['serotonin']:+.3f}\n"
-            f"性格档案：{pname}\n{arch.get('label', '')}\n"
-            f"开放 {p['openness']:+.2f} · 谨慎 {p['caution']:+.2f} · "
-            f"亲社交 {p['sociability']:+.2f}\n"
-            f"阶段：{stage}（经验 {_exp}）\n"
-            f"关于你：{len(self.notes)} 件 · 情景记忆 {snap['memory']['episodic']}")
+        self.mind.setText(_line)
+        if p is not None:
+            try:
+                _tip += ("开放 %+.2f · 谨慎 %+.2f · 亲社交 %+.2f\n"
+                         % (float(p.get("openness", 0.0) or 0.0),
+                            float(p.get("caution", 0.0) or 0.0),
+                            float(p.get("sociability", 0.0) or 0.0)))
+            except Exception:            # noqa: BLE001
+                _tip += "性格维度：未上报\n"
+        else:
+            _tip += "性格维度：本引擎未上报\n"
+        _tip += (f"阶段：{stage}（经验 {_exp}）\n"
+                 f"关于你：{len(self.notes)} 件 · 情景记忆 {epi_txt}")
+        self.mind.setToolTip(_tip)
 
     def _react_affect(self, text: str):
         """拟人情绪反应（P3）：根据用户这句话，触发头像/桌面小人的表情与动作事件。

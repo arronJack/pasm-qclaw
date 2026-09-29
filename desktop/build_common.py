@@ -66,6 +66,7 @@ HIDDEN_IMPORTS = [
     'updater',
     'qt_compat',
     'pasm_light',
+    'pasm2_bridge',        # v2.0 桥（v0.31.12 起 pasm2 随包分发，设置项可启用）
     'agent_tools',
     'knowledge',
     'growth',
@@ -206,6 +207,9 @@ PASM_HEAVY = [
     'torch',
 ]
 
+#: ⚠️ `pasm2` **不在排除清单里**（v0.31.12 起随包分发）。
+#: 早期实验期曾刻意排除它（随 exe 旁路放置），现在设置界面有「实验：启用 V2 认知引擎」
+#: 勾选框，**必须打进包**用户才能开箱启用 —— 见 cli_args() 里的 `--collect-all pasm2`。
 EXCLUDES = ["matplotlib", "pytest", "uvicorn", "fastapi"] + PASM_HEAVY
 
 #: UPX 会损坏的可执行文件（压了之后进程起不来，且往往**只表现为功能静默失效**）
@@ -256,6 +260,16 @@ def cli_args() -> list:
               file=sys.stderr)
     else:
         args += ["--collect-all", "playwright"]
+    # ★ v0.31.12：V2 认知引擎随包（设置项勾选即可用，用户无需自行装包）。
+    #   构建 venv 必须装了 pasm2（`pip install pasm2`）；没装就**明确告警**——
+    #   否则会打出一个「设置里勾了却永远回退原引擎」的包（静默失效，最难查）。
+    try:
+        import pasm2  # noqa: F401
+    except Exception:
+        print("[build_common] !! 构建环境未安装 pasm2 → V2 引擎将无法随包分发；"
+              "请先 pip install pasm2", file=sys.stderr)
+    else:
+        args += ["--collect-all", "pasm2"]
     for f in UPX_EXCLUDE:
         args += ["--upx-exclude", f]
     # ★ 防杀软误报（2026-09-28）：① 彻底关 UPX —— 加壳是木马高发特征，

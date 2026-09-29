@@ -43,7 +43,20 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.31.11（2026-09-29）· 小U 接入领域顾问引擎：问"开店"这类专业问题更靠谱了
+## 最新：v0.31.12（2026-09-29）· 想换个"内核"试试？设置里勾一下就行
+
+**这一版把 PASM V2.0 认知引擎带到了你面前**（实验特性，默认关闭）：
+
+- **在哪开**：「设置 → 🧠 模型与思考」→ 勾选「实验：启用 V2 认知引擎（pasm2）」→ **重启软件**生效。
+- **换了什么**：V2 是重写过的认知内核 —— 会**预测**你下一句要说什么、把经历串成**记忆图**、
+  会自己**走神**想事（冒出相关的回忆）、还带数学脑与"慢思"（事情出乎意料时多推一步）。
+- **怎么退回去**：取消勾选再重启，就回到原来的内核；两套内核各自保存记忆，来回切换不会互相弄坏。
+- **诚实提示**：V2 仍在打磨中，属**实验**特性；勾选框下方会显示**本次启动真正装配的引擎名**，
+  万一加载失败会自动回退原引擎，不假装成功。
+- **不用装任何东西**：V2 引擎已随安装包一起带上。其余与 v0.31.11 完全一致
+  （领域顾问、防杀软误报防护、分卷下载方式全部保留）。
+
+## v0.31.11（2026-09-29）· 小U 接入领域顾问引擎：问"开店"这类专业问题更靠谱了
 
 **修的就是那种"凭老经验硬答"的错**。问小U「想在抖音开宠物店」，它会：
 
@@ -689,7 +702,21 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 > **It never loses what you typed, and never claims to have done something it didn't** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.31.11 (2026-09-29) · Domain-advisor engine wired into 小U
+## Latest: v0.31.12 (2026-09-29) · Want to try a different "brain"? One checkbox in Settings
+
+**This release puts the PASM V2.0 cognitive engine in your hands** (experimental, off by default):
+
+- **Where**: Settings → 🧠 Model & Thinking → tick "Experimental: enable V2 cognitive engine (pasm2)" → **restart to apply**.
+- **What changes**: V2 is a rewritten cognitive core — it **predicts** what comes next, weaves
+  experience into a **memory graph**, **wanders** on its own (surfacing related memories), and adds
+  a math brain plus "slow thinking" (one extra beat when reality surprises it).
+- **How to go back**: untick and restart. The two cores keep separate memories, so switching back
+  and forth is safe.
+- **Honest note**: V2 is still being polished. The line under the checkbox shows the engine
+  **actually** used this session; if loading fails it falls back automatically instead of pretending.
+- **Nothing to install**: the V2 engine ships inside the installer. Everything else matches v0.31.11.
+
+## v0.31.11 (2026-09-29) · Domain-advisor engine wired into 小U
 
 **Asking "how do I open a Douyin pet shop" no longer gets stale advice.** When a question
 falls in a known domain (Douyin/e-commerce shop opening · cross-border e-commerce · food
