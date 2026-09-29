@@ -15,7 +15,7 @@
 | `pasm-mcp-server` | MCP 接入层：给任意 AI 客户端装长期记忆 | 公开 | 0.2.0 |
 | `PASM-Lite` | 教学版 + 认知引擎接口 | 公开 | — |
 | `PASM` | 核心引擎（七层仿生 / 世界模型） | **私有** | 0.7.2 |
-| **`pasm-qclaw`（本仓）** | **桌面应用（UI 外壳，已开源）** | 公开 | **0.31.9** |
+| **`pasm-qclaw`（本仓）** | **桌面应用（UI 外壳，已开源）** | 公开 | **0.31.13** |
 
 本仓**现在包含 PASM Studio 桌面端的开源源码**（[`desktop/`](desktop/README.md) 目录，基于 PySide6 的 Windows 桌面应用 UI/外壳层），
 同时仍是安装包与更新清单 `latest.json` 的**发行通道**。
@@ -43,7 +43,28 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.31.12（2026-09-29）· 想换个"内核"试试？设置里勾一下就行
+## 最新：v0.31.13（2026-09-29）· V2 引擎"通电"了：听得进你说的话、有自己的说法、会睡觉整理记忆
+
+上一版把 V2 认知引擎的开关交到你手上；这一版解决的是**"开关接上了、引擎没通电"** ——
+三处接线缺失，所以你开了 V2 也几乎感觉不到区别：
+
+- **① 它现在真的听见你说话了**：以前只有环境数据喂给引擎，**你打的字从来没进过它**，
+  所以它再会预测也没素材、聊半天也记不住。现在你说过的每句都进入它的感知层，
+  把其中的人/事/物变成概念并互相连线（实测连聊 12 轮后记忆里真长出 56 条关联）。
+- **② 没装联网大模型时不再"复读"**：以前回答来自一份写死的关键词答句表，同一句每次
+  答得一样。现在改由引擎**自己的状态**组织说法（此刻情绪 / 这句话新不新 / 预测你接下来
+  聊什么 / 想起什么相关的 / 是"快想"还是"慢慢想"）—— **同一句问 8 次给 8 种不同回答**，
+  且只引用你说过的或它确实知道的，**拿不准就如实说拿不准**，不编造。
+- **③ 它会在后台"睡一觉"整理记忆**：每 6 轮对话触发一次（毫秒级、后台线程，不卡聊天）——
+  把经历沉淀成符号、加固概念关联、并自发回想。此前这一步在桌面端**从来没运行过**。
+- **和联网大模型的关系**：装了（默认）时它把"内心简报"（情绪/预测/联想/是否在慢思）
+  交给大模型措辞 —— 大模型负责**怎么说**，它负责**真的记得住、有情绪、有边界**；
+  没装或断网时用 ② 的自带表达。两种都不编造。
+- **怎么用**：「设置 → 🧠 模型与思考」勾选「实验：启用 V2 认知引擎（pasm2）」→ 重启生效；
+  取消勾选再重启即换回原内核（两套内核记忆各自保存，切换不会互相弄坏）。
+  其余与 v0.31.12 完全一致（V2 开关、启动崩溃修复、领域顾问、防杀软误报、分卷下载全部保留）。
+
+## v0.31.12（2026-09-29）· 想换个"内核"试试？设置里勾一下就行
 
 **这一版把 PASM V2.0 认知引擎带到了你面前**（实验特性，默认关闭）：
 
@@ -222,7 +243,7 @@ Gitee 侧为**分卷版**（`-gitee.exe` + `.bin` 切片）：**全部下到同�
 安装程序会自己找分卷，不需要手动合并。
 **macOS / Linux 本版未重出**（需 CI 跑 PyInstaller，本机不能交叉编译）。
 
-> 后续版本见上方 **v0.31.9**（最新）。
+> 后续版本见上方 **v0.31.13**（最新）。
 
 ---
 
@@ -637,10 +658,10 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 ## 下载与安装
 
-最新版见仓库 **Releases**（v0.31.9）：
+最新版见仓库 **Releases**（v0.31.13）：
 
-1. 下载安装包。**GitHub / GitCode** 上下载 `PASMStudio-Setup-0.31.6.exe`（单文件整包）；
-   **Gitee** 上是**分卷版** `PASMStudio-Setup-0.31.6-gitee.exe` + `.bin` 切片 ——
+1. 下载安装包。**GitHub / GitCode** 上下载 `PASMStudio-Setup-0.31.13.exe`（单文件整包）；
+   **Gitee** 上是**分卷版** `PASMStudio-Setup-0.31.13-gitee.exe` + `.bin` 切片 ——
    请把 `.exe` 与**全部 `.bin` 分卷下到同一个目录**，然后直接运行 exe 即可
    （安装程序会自己找同目录的分卷，**不需要手动合并**）。
 2. 双击安装 → 打开 PASM Studio → 点右上「设置」填 LLM Key（或留空用本地 Ollama）
@@ -702,7 +723,34 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 > **It never loses what you typed, and never claims to have done something it didn't** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.31.12 (2026-09-29) · Want to try a different "brain"? One checkbox in Settings
+## Latest: v0.31.13 (2026-09-29) · The V2 engine is finally "powered on": it hears you, speaks in its own words, and sleeps to consolidate memory
+
+The previous release handed you the V2 cognitive-engine switch; this one fixes the fact that
+**the switch was wired but the engine was never actually powered** — three connections were missing,
+which is why turning V2 on made almost no perceptible difference:
+
+- **① It now actually hears what you type**: previously only environment data reached the engine —
+  **your words never entered it**, so it had nothing to predict from and remembered nothing you said.
+  Now every line you send enters its perception layer and becomes concepts that link to each other
+  (measured: after 12 conversational turns its memory really grew 56 association edges).
+- **② No more "broken record" when no cloud LLM is set**: replies used to come from a fixed
+  keyword→sentence table, so the same input got the identical answer every time. Now the engine
+  composes wording from **its own state** (current mood / whether this is new / what it predicts
+  you'll talk about next / what related memory surfaced / whether it is "fast-thinking" or
+  "slow-thinking") — **one question asked 8 times yields 8 different answers**. It only refers to
+  things you said or things it genuinely knows, and says so honestly when unsure. It never fabricates.
+- **③ It "sleeps" in the background to consolidate memory**: triggered every 6 turns
+  (millisecond-scale, on a worker thread, never blocking chat) — consolidating experience into
+  symbols, strengthening associations, and replaying memories. On the desktop this had never run.
+- **Relationship to a cloud LLM**: when one is configured (the default), the engine hands its
+  "inner brief" (emotion / prediction / associations / slow-thinking flag) to the LLM for wording —
+  the LLM decides **how to say it**, the engine is what **actually remembers, feels, and holds
+  boundaries**. With no LLM or offline, it uses ② above. Neither path fabricates.
+- **How to use it**: Settings → 🧠 Model & Thinking → tick "Experimental: enable V2 cognitive
+  engine (pasm2)" → restart. Untick and restart to switch back (the two cores keep separate
+  memories, so switching is safe). Everything else matches v0.31.12.
+
+## v0.31.12 (2026-09-29) · Want to try a different "brain"? One checkbox in Settings
 
 **This release puts the PASM V2.0 cognitive engine in your hands** (experimental, off by default):
 

@@ -67,6 +67,7 @@ HIDDEN_IMPORTS = [
     'qt_compat',
     'pasm_light',
     'pasm2_bridge',        # v2.0 桥（v0.31.12 起 pasm2 随包分发，设置项可启用）
+    'pasm2_voice',         # v2.0 表达/感知层（v0.31.13 起；桥内 try 导入，必须显式声明）
     'agent_tools',
     'knowledge',
     'growth',
