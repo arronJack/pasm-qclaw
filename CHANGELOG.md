@@ -3,8 +3,30 @@
 > **版本号说明**：本仓有两条版本轴，别混 ——
 > · **引擎/内核** `pasm.__version__`（当前 `0.7.2`）+ `pasm.cognitive.__version__`（`0.8.0`），
 >   与 `pyproject.toml` 的 `version` 必须一致；
-> · **桌面产品** PASM Studio `APP_VERSION`（当前 `0.31.10`，见 `desktop/appinfo.py`），
+> · **桌面产品** PASM Studio `APP_VERSION`（当前 `0.31.11`，见 `desktop/appinfo.py`），
 >   驱动安装包与升级通道，其发行记录见 `pasm-qclaw/CHANGELOG.md`。
+
+## 0.31.11（2026-09-29）· 小U 接入领域顾问引擎（源码版，安装包待打包）
+
+> 小U 在「抖音宠物店开店」问题上凭旧知识硬答的根因修复：把
+> [`pasm-domain-advisor`](https://pypi.org/project/pasm-domain-advisor/) 0.1.1
+> 的「前提抽取 + 现行规则 + 自检闸门」接进聊天管线。详细技术记录见开发主仓
+> `CHANGELOG.md` 桌面 0.31.11 节。
+
+### 能力变化
+- **生成前**：用户消息命中领域 profile（抖音开店 / 跨境电商 / 食品经营）时，
+  已核验现行规则与前提约束注入系统提示——先吃政策再开口。
+- **生成后**：自检闸门审查前提一致性；"已有执照却建议先开个人店"类矛盾
+  追加可见纠偏段（追加不改写）。
+- **降级保证**：引擎是可选依赖，未安装时行为与 0.31.10 完全一致。
+
+### 打包注意（下次构建生效）
+- `pasm-build` venv 已装 `pasm-domain-advisor 0.1.1`，PyInstaller HIDDEN_IMPORTS
+  已在 `build_common.py` 接线（未装包构建只警告不失败）。
+- `version_info.txt` 顺带修复 `filevers` 停在 0.31.9 的不同步问题。
+
+### 本节对应的安装包
+- 尚未打包（源码先行）。打包后本节补 SHA256 与附件，并更新 `latest.json`。
 
 ## 0.31.10（2026-09-28）· 防杀软误报防护版
 
