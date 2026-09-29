@@ -3,19 +3,27 @@
 > PASM = Predictive Agent System with Memory（预测式记忆智能体系统）。
 > 一句话：**给 AI 一颗"会长大的心 + 会记住你的脑"，让它从"聪明的工具"变成"你的伙伴"。**
 
-## 〇-B、生态现状（2026-09-15 校准，六仓同频）
+## 〇-B、生态现状（2026-09-29 校准，同频）
 
 | 仓 | 角色 | 可见性 | 版本 |
 |---|---|---|---|
-| `pasm-skills` | **基座**：`BaseAgent` + 认知能力层 | 公开 | **0.5.0** |
-| `pasm-agents` | 成品智能体集（NPC / 陪伴 / 教学 / 验证） | 公开 | **0.4.5** |
-| `pasm-mcp-server` | **MCP 分发层**：给任意 AI 客户端装长期记忆 | 公开 | **0.2.0** |
-| `PASM-Lite` | 教学版 + 认知引擎接口 | 公开 | — |
+| `pasm2` | **V2.0 独立认知底座**（九阶段脑全域：预测/记忆图/符号/SLH/数学脑/双系统/量子叠加/小脑/DMN…） | 公开（Alpha） | **2.0.0a9** |
+| `pasm-skills` | **基座**：`BaseAgent` + 认知能力层 + `create_backend()` 探测工厂 | 公开 | **0.6.3** |
+| `pasm-framework` | **应用框架**：HTTP 服务 / 路由 / 插件 + `CognitiveAssembler.v1()/v2()`（V1↔V2 唯一变动点） | 公开 | **0.5.4** |
+| `pasm-agents` | 成品智能体集（NPC / 陪伴 / 教学 / 客服 / 验证） | 公开 | **0.4.11** |
+| `pasm-mcp-server` | **MCP 分发层**：给任意 AI 客户端装长期记忆（`PASM2=1` 可切 V2 后端） | 公开 | **0.2.1** |
+| `PASM-Lite` | 教学版 + 认知引擎接口（**不接 V2**，保持纯净） | 公开 | — |
 | `PASM` | 核心引擎（七层仿生 / 世界模型） | **私有** | **0.7.2** |
 | `pasm-qclaw`（本仓） | 桌面应用发行通道 | 公开 | **0.29.1** |
 
-流向：`PASM`（核心）→ `pasm-skills`（基座）→ `pasm-agents`（智能体）→
-`pasm-mcp-server`（分发）→ `pasm-qclaw`（桌面产品）；`PASM-Lite` 是教学窗口。
+流向：`PASM`（核心，含 `pasm2/`）→ `pasm-skills`（基座）→ `pasm-framework`（应用框架）→
+`pasm-agents`（智能体）→ `pasm-mcp-server`（分发）→ `pasm-qclaw`（桌面产品）；`PASM-Lite` 是教学窗口。
+
+**V2 引擎怎么开（零侵入，默认关）**：所有接入口都是**探测式软依赖**——装了 `pasm2` 才启用，
+没装则逐字节不变：
+- 环境变量 `PASM_BACKEND=v2` → 基座 `create_backend()` / 框架 `CognitiveAssembler.v1()` / MCP 全线生效；
+- 显式 API：`CognitiveAssembler.v2()`、`CognitiveKit(profile='brainwide')`；
+- MCP 侧：`PASM2=1`；桌面侧：`PASM2=1` + `desktop/pasm2_bridge.py`（实验开关）。
 
 > ⚠️ 下文"v0.27.x / v0.4.0"等为**历史版本叙述**，保留原文未改；
 > 当前真实版本请看上表。
