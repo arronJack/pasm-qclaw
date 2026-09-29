@@ -7520,6 +7520,18 @@ class CompanionWindow(QMainWindow):
                           "没有相关积累就坦承不知，宁可少答、不可胡答。")
         except Exception as _ex3:
             logging.debug("kb_bridge 回流失败(忽略): %s", _ex3)
+        # v0.31.11 领域顾问桥：用户消息命中领域 profile（抖音开店/跨境电商/
+        # 食品经营…）时，把该领域「已核验现行规则 + 前提约束」注进上下文——
+        # 让小U 先吃到现行政策再开口，不再凭训练旧知识硬答（"保证金几百到
+        # 几千"那类过时信息就是这里拦的）。pasm_da 未安装则静默跳过。
+        try:
+            import domain_advisor_bridge as DAB
+            _da_dig = DAB.digest(user_text or "")
+            if _da_dig:
+                rel = (rel + "\n" if rel else "") + _da_dig
+                notes = (notes or "（暂无相关记忆）") + "\n" + _da_dig
+        except Exception as _ex4:
+            logging.debug("domain_advisor_bridge 回流失败(忽略): %s", _ex4)
         # v0.27.1 诚实守则：没有真实执行成功的操作，绝不允许宣称"已完成"。
         notes += ("\n【诚实守则（最高优先级）】你只在用户明确看到你执行了真实工具"
                   "（删除/清理/打开/读取有✅结果回执）时才能说「做了」；"
@@ -9615,7 +9627,22 @@ class CompanionWindow(QMainWindow):
             except Exception:
                 pass
         # v0.28.1：工具轮也走符号守卫，确保「向量检索↔符号推理」闭环在每一步都生效
-        return self._symbolic_guard(text, ans)
+        # v0.31.11：符号守卫后再过领域自检闸门（前提一致性，见 _domain_gate）
+        return self._domain_gate(text, self._symbolic_guard(text, ans))
+
+    def _domain_gate(self, text: str, reply: str) -> str:
+        """v0.31.11 领域自检闸门：命中领域 profile 的回复做前提一致性审查。
+
+        「已有执照却建议先开个人店」这类自相矛盾，在这里被拦下并追加纠偏段
+        （追加不改写——诚实守则）。pasm_da 未安装/未命中/无矛盾 → 原样放行。
+        """
+        if not reply:
+            return reply
+        try:
+            import domain_advisor_bridge as DAB
+            return DAB.gate_reply(text, reply)
+        except Exception:
+            return reply
 
     def _planned_execute(self, plan: dict):
         """确认后的逐步执行：每步 = 结构化提示 + 生成 + 验证（不过就带错重生成一次）。

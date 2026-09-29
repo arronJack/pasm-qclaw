@@ -41,7 +41,16 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.31.10（2026-09-28）· 防杀软误报防护版
+## 最新：v0.31.11（2026-09-29）· 小U 接入领域顾问引擎：问"开店"这类专业问题更靠谱了
+
+**修的就是那种"凭老经验硬答"的错**。问小U「想在抖音开宠物店」，它会：
+
+- **先核现行规则再开口**：0 元入驻、按 GMV 档交保证金、0 粉开播等已核验政策作为回答基准，不再给"保证金几百到几千"这类过时信息。
+- **记住你的前提**：你说"我已有营业执照"，它就不会再建议"先开个人店试水"；万一说漏嘴，回复末尾会出现「自检纠偏」提醒——自检结果看得见。
+- **三个领域已就位**：抖音/电商开店 · 跨境电商 · 食品经营（预包装=备案制）。领域以声明式数据包扩展，宿主程序零改动。
+- 其余能力与 v0.31.10 一致，防杀软误报防护全部保留。
+
+## v0.31.10（2026-09-28）· 防杀软误报防护版
 
 **如果你曾被 360 等杀毒软件拦截或误删，请更新到这一版。** 本版不新增功能，主题是消除"被误判为木马"的三个特征：主程序注入完整版本信息（公司/产品/版本/描述/版权，旧版全空）；彻底停用 UPX 加壳；安装包本体同样携带产品名与版本号。同时已向各杀软厂商提交加白申诉。功能与 v0.31.9 完全一致（能力协作总线、常驻语音、模型解锁、0.31.8 修复）。
 
@@ -678,7 +687,17 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 > **It never loses what you typed, and never claims to have done something it didn't** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.31.6 (2026-09-24) · Visible process, self-reviewing work, connectors actually wired up
+## Latest: v0.31.11 (2026-09-29) · Domain-advisor engine wired into 小U
+
+**Asking "how do I open a Douyin pet shop" no longer gets stale advice.** When a question
+falls in a known domain (Douyin/e-commerce shop opening · cross-border e-commerce · food
+business), 小U now: verifies current rules first (0-fee onboarding, GMV-based deposit
+tiers, 0-follower livestream); respects your stated premises (with a business license it
+will no longer suggest starting from a "personal store"); and if a self-contradiction
+slips through, a visible "self-check correction" note is appended to the reply. All
+v0.31.10 antivirus-hardening remains.
+
+## v0.31.6 (2026-09-24) · Visible process, self-reviewing work, connectors actually wired up
 
 **This release completes the "work like WorkBuddy" story: live process → automatic self-review → fix-and-retry on failure.**
 

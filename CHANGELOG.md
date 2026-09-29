@@ -6,7 +6,7 @@
 > · **桌面产品** PASM Studio `APP_VERSION`（当前 `0.31.11`，见 `desktop/appinfo.py`），
 >   驱动安装包与升级通道，其发行记录见 `pasm-qclaw/CHANGELOG.md`。
 
-## 0.31.11（2026-09-29）· 小U 接入领域顾问引擎（源码版，安装包待打包）
+## 0.31.11（2026-09-29）· 小U 接入领域顾问引擎
 
 > 小U 在「抖音宠物店开店」问题上凭旧知识硬答的根因修复：把
 > [`pasm-domain-advisor`](https://pypi.org/project/pasm-domain-advisor/) 0.1.1
@@ -19,14 +19,24 @@
 - **生成后**：自检闸门审查前提一致性；"已有执照却建议先开个人店"类矛盾
   追加可见纠偏段（追加不改写）。
 - **降级保证**：引擎是可选依赖，未安装时行为与 0.31.10 完全一致。
-
-### 打包注意（下次构建生效）
-- `pasm-build` venv 已装 `pasm-domain-advisor 0.1.1`，PyInstaller HIDDEN_IMPORTS
-  已在 `build_common.py` 接线（未装包构建只警告不失败）。
 - `version_info.txt` 顺带修复 `filevers` 停在 0.31.9 的不同步问题。
 
-### 本节对应的安装包
-- 尚未打包（源码先行）。打包后本节补 SHA256 与附件，并更新 `latest.json`。
+### 发布产物
+| 项 | 值 |
+|---|---|
+| 单文件整包（GitHub/GitCode） | `PASMStudio-Setup-0.31.11.exe` 202,270,112 B |
+| SHA256 | `64460fbd86aa4c37b00237a9c68cf027b096c6f54a79f8a18e44d070e2242545` |
+| Gitee 分卷 | `-gitee.exe` 2.6MB + `-1.bin` 96.4MB + `-2.bin` 99.0MB + `-3.bin` 4.5MB（均 <100MB） |
+| dist 对比 0.31.10 | 3347 vs 3346 文件，0 缺失；PYZ 收录 domain_advisor_bridge + pasm_da.* + pasm.light/evalkit 全齐 |
+| 冻结冒烟 | FROZEN_SMOKE_PASS（进程存活、崩溃特征 0、落盘 9 文件） |
+
+### 构建修复（本版发现）
+- **`PASMStudio.spec` 显式 `sys.path.insert(0, SPECPATH)`**：0.31.11 首次构建实测
+  `collect_all('pasm')` 在 spec 执行环境解析不到仓库根 pasm 包——
+  `_internal/pasm` 45 个源文件 datas 整目录消失、`pasm.light/evalkit` 掉出 PYZ，
+  而 PyInstaller 全程 "completed successfully" 不报错。dist 逐文件 diff 抓的包。
+  现在 spec 顶部有断言守卫，解析错会立刻 fail fast。
+
 
 ## 0.31.10（2026-09-28）· 防杀软误报防护版
 

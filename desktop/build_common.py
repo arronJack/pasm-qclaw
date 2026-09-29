@@ -49,6 +49,18 @@ HIDDEN_IMPORTS = [
     'executors',
     'media_job',
     'kb_bridge',
+    'domain_advisor_bridge',      # v0.31.11 领域顾问桥（懒加载，静态分析不可见）
+    # pasm_da（PyPI: pasm-domain-advisor，可选依赖）：函数内 import，
+    # 必须显式声明；构建 venv 未装时 PyInstaller 只警告不失败（桥会降级）。
+    'pasm_da',
+    'pasm_da.engine',
+    'pasm_da.gate',
+    'pasm_da.domain_profile',
+    'pasm_da.llm_client',
+    'pasm_da.profiles',
+    'pasm_da.profiles.douyin_pet_store',
+    'pasm_da.profiles.cross_border_ecom',
+    'pasm_da.profiles.food_business_license',
     'msg_source',
     'asr',
     'updater',
