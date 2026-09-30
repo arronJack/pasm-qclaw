@@ -15,7 +15,7 @@
 | `pasm-mcp-server` | MCP 接入层：给任意 AI 客户端装长期记忆 | 公开 | 0.2.0 |
 | `PASM-Lite` | 教学版 + 认知引擎接口 | 公开 | — |
 | `PASM` | 核心引擎（七层仿生 / 世界模型） | **私有** | 0.7.2 |
-| **`pasm-qclaw`（本仓）** | **桌面应用（UI 外壳，已开源）** | 公开 | **0.31.14** |
+| **`pasm-qclaw`（本仓）** | **桌面应用（UI 外壳，已开源）** | 公开 | **0.31.15** |
 
 本仓**现在包含 PASM Studio 桌面端的开源源码**（[`desktop/`](desktop/README.md) 目录，基于 PySide6 的 Windows 桌面应用 UI/外壳层），
 同时仍是安装包与更新清单 `latest.json` 的**发行通道**。
@@ -43,7 +43,29 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.31.14（2026-09-29）· 紧急修复：开着 V2 时每轮都回「我这边出错了」
+## 最新：v0.31.15（2026-09-30）· 紧急修复：「🖥 开发」工种整条链路失效
+
+**如果你在 0.31.14 上用过「🖥 开发」**，会发现它基本不可用：报「执行工具时出错」、
+你指定"文件放 H:\geo_plaform"它不听、要 SpringBoot+Vue 它给 Python+单页 HTML 还幻觉出 Django、
+最后把整段说明文当代码写进 `main.py` 直接语法错误。这一版把**五个真根因一次性修完**
+（真机 0.31.14 实测复现 → 逐条根因 → 逐条修复 → 冻结包双冒烟验收）：
+
+- **① 不再首轮就崩**：底层一个改名过的依赖包在打包环境里偶发"元数据查不到"，
+  直接把开发智能体的第一轮炸掉（`No package metadata was found for httpcore2`）。
+  现已兜底容错，不再吐裸报错。
+- **② 你说放哪就放哪**：「文件放 H:\geo_plaform」现在**真的落到那个目录**，
+  不再无视你、跑去工作根目录另建一个乱名项目（**待创建**的路径也能识别了）。
+- **③ 项目名不再乱码**：显式指定目录时，项目名直接取目录名（`geo_plaform`），
+  不再截取你整句话的片段当项目名（上一版出现过"恩怪我怪我没有说清楚能否"这种名字）。
+- **④ 技术栈跟着你的话走**：要 SpringBoot+Vue 就真给 SpringBoot 3 + Vue 3 + Vite 的
+  脚手架结构，不再锁死"前端单 HTML + 后端 Python"，也不再幻觉出 Django。
+- **⑤ 落盘不再"散文当代码"**：模型输出退化时，旧版会把整段中文说明当代码写进
+  `main.py`（语法错误必然发生）；现在改为**严格格式重试一次**，仍不行就**如实告知**而不是硬塞。
+- 验收：冻结安装包真启动冒烟通过、**0 个崩溃特征**；修复逻辑单元自测通过
+  （路径识别/项目名/技术栈检测/三种输出格式解析）。
+- 其余与 v0.31.14 完全一致（V2 引擎、每轮报错修复等全部保留）。
+
+## v0.31.14（2026-09-29）· 紧急修复：开着 V2 时每轮都回「我这边出错了」
 
 **如果你用 0.31.13 并勾选了「实验：启用 V2 认知引擎」**，会碰到这个：每轮对话都只回一句
 「（我这边出错了，没有成功回应你…错误：'NoneType' object…）」，同时"成长"那轮也每轮失败
@@ -263,7 +285,7 @@ Gitee 侧为**分卷版**（`-gitee.exe` + `.bin` 切片）：**全部下到同�
 安装程序会自己找分卷，不需要手动合并。
 **macOS / Linux 本版未重出**（需 CI 跑 PyInstaller，本机不能交叉编译）。
 
-> 后续版本见上方 **v0.31.14**（最新）。
+> 后续版本见上方 **v0.31.15**（最新）。
 
 ---
 
@@ -678,10 +700,10 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 ## 下载与安装
 
-最新版见仓库 **Releases**（v0.31.14）：
+最新版见仓库 **Releases**（v0.31.15）：
 
-1. 下载安装包。**GitHub / GitCode** 上下载 `PASMStudio-Setup-0.31.14.exe`（单文件整包）；
-   **Gitee** 上是**分卷版** `PASMStudio-Setup-0.31.14-gitee.exe` + `.bin` 切片 ——
+1. 下载安装包。**GitHub / GitCode** 上下载 `PASMStudio-Setup-0.31.15.exe`（单文件整包）；
+   **Gitee** 上是**分卷版** `PASMStudio-Setup-0.31.15-gitee.exe` + `.bin` 切片 ——
    请把 `.exe` 与**全部 `.bin` 分卷下到同一个目录**，然后直接运行 exe 即可
    （安装程序会自己找同目录的分卷，**不需要手动合并**）。
 2. 双击安装 → 打开 PASM Studio → 点右上「设置」填 LLM Key（或留空用本地 Ollama）
@@ -743,7 +765,32 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 > **It never loses what you typed, and never claims to have done something it didn't** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.31.14 (2026-09-29) · Hotfix: with V2 enabled, every turn replied "something went wrong on my side"
+## Latest: v0.31.15 (2026-09-30) · Hotfix: the "🖥 Dev" work mode was broken end-to-end
+
+**If you tried the "🖥 Dev" work mode on 0.31.14**, you found it essentially unusable: "error
+executing tool" on the first turn, your "put the files in H:\geo_plaform" instruction ignored,
+SpringBoot+Vue requested but Python + a single HTML page delivered (with a hallucinated Django),
+and finally a whole prose paragraph dumped into `main.py` as code → SyntaxError. This release
+fixes **all five real root causes** in one pass (reproduced on a real 0.31.14 install → root-cause
+each → fix → dual smoke acceptance on the frozen build):
+
+- **① No more first-turn crash**: a renamed vendored dependency package intermittently failed
+  metadata lookup in the frozen environment (`No package metadata was found for httpcore2`),
+  killing the dev agent's first turn. Now defensively handled — no more raw errors.
+- **② Files go where you say**: "put the files in H:\geo_plaform" now **actually lands there**,
+  including paths that don't exist yet, instead of silently creating a garbled project elsewhere.
+- **③ Project name no longer garbled**: with an explicit directory, the project name is the
+  directory name (`geo_plaform`) — not a random fragment of your sentence.
+- **④ Tech stack follows your words**: asking for SpringBoot+Vue now really scaffolds
+  SpringBoot 3 + Vue 3 + Vite; no more locked-in "single HTML + Python" and no hallucinated Django.
+- **⑤ No more prose-as-code on disk**: when the model's output degrades, the old version wrote an
+  entire prose paragraph into `main.py` (guaranteed SyntaxError); now it **retries once with the
+  strict format** and, if that still fails, **tells you honestly** instead of dumping junk.
+- Acceptance: real frozen-installer startup smoke passed with **0 crash signatures**; the fix
+  logic passed unit self-tests (path detection / project name / stack detection / 3 output formats).
+- Everything else matches v0.31.14 (V2 engine, per-turn error hotfix, etc. all retained).
+
+## v0.31.14 (2026-09-29) · Hotfix: with V2 enabled, every turn replied "something went wrong on my side"
 
 **If you are on 0.31.13 with "Experimental: enable V2 cognitive engine" ticked**, you hit this:
 every turn replied only「（我这边出错了，没有成功回应你…错误：'NoneType' object…）」and the

@@ -3,11 +3,35 @@
 > **版本号说明**：本仓有两条版本轴，别混 ——
 > · **引擎/内核** `pasm.__version__`（当前 `0.7.2`）+ `pasm.cognitive.__version__`（`0.8.0`），
 >   与 `pyproject.toml` 的 `version` 必须一致；
-> · **桌面产品** PASM Studio `APP_VERSION`（当前 `0.31.14`，见 `desktop/appinfo.py`；本仓不逐版记录桌面发行，发行记录见 `pasm-qclaw/CHANGELOG.md`），
+> · **桌面产品** PASM Studio `APP_VERSION`（当前 `0.31.15`，见 `desktop/appinfo.py`；本仓不逐版记录桌面发行，发行记录见 `pasm-qclaw/CHANGELOG.md`），
 >   注意：v0.31.0 起桌面端**打包体积大幅上升**（+约 145MB，因为内嵌了 QtWebEngine）——
 >   安装包 82.7MB → 约 200MB。构建环境需要 `PySide6-Addons`（只装 Essentials 拿不到
 >   QtWebEngine 的 Python 绑定，会**静默降级**成原生渲染）。
 >   驱动安装包与升级通道，其发行记录见 `pasm-qclaw/CHANGELOG.md`。
+
+## 桌面 0.31.15（2026-09-30）· 紧急修复：「🖥 开发」工种整条链路失效
+
+真机报障（用户装 0.31.14 实测「开发」工种完全不可用）驱动的紧急修复。完整诊断见主仓
+`docs/qa/2026-09-30-开发工作流失效诊断.md`，共 7 条根因，本次落地 P0（R1–R5）：
+
+- **R1（致命）**：改名包 `httpcore2` 在冻结包里偶发 `PackageNotFoundError` → OpenAI 客户端
+  构造崩 → 开发智能体首轮「执行工具时出错」。已在构建 venv 给 `version()` 加 try/except 兜底，
+  `llm_gateway.client_for` 包一层可读错误（不再吐裸 traceback）。需重打包才覆盖已装包。
+- **R2（路径被无视）**：`_extract_target_dir` 只认已存在目录，用户说「文件放 H:\geo_plaform」
+  （待创建）被忽略、文件跑去工作根。改为允许「父目录存在」的待创建路径；新项目直接落
+  `dest=用户指定目录`，UI 显示真实路径。
+- **R3（项目名乱码）**：兜底取整句前 12 字当项目名（曾出现「恩怪我怪我没有说清楚能否」）。
+  改为用户显式指定了输出目录时，项目名直接用该目录 basename（geo_plaform）。
+- **R4（技术栈锁死）**：`base_sys` 写死「前端单文件 HTML + 后端 Python」，无视用户要的
+  SpringBoot+Vue（还幻觉出 Django）。改为按需求关键词（spring/vue/react/python/node）动态拼装。
+- **R5（落盘散文）**：模型退化用 `FILES["x"]=三引号` 字典格式 → 解析为空 → 毒兜底把整段回复
+  写进 main.py（SyntaxError）。`parse_bundle` 现兼容字典格式；并删除散文兜底，改为
+  「严格格式重试一次 → 仍空则如实告知」。
+
+> P1（R6 多技术栈启动命令 / R7 自检即停）下一版做。
+
+**验收目标**：springboot+vue 项目在 H:\geo_plaform 真落盘、名=geo_plaform、含
+backend/frontend、正确技术栈、无 Django 幻觉 / 裸标签 / 语法错。
 
 ## 桌面 0.31.14（2026-09-29）· 修复：开着 V2 时每轮都回「我这边出错了，没有成功回应你」
 
