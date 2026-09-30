@@ -15216,75 +15216,63 @@ class CompanionWindow(QMainWindow):
         pdir, tree = AT.save_project(name, files, dest=_tgt if _tgt else None)
         self._ses_proj_dir = pdir
         self._step("new", "骨架已落盘（不依赖模型）", pdir, "%d 个文件" % len(files))
-        # —— 逐文件填充（每个文件一次窄提示；失败的跳过，不拖垮整轮）——
-        fills = []
-        if want_java:
-            _pkg = re.sub(r"[^a-z0-9]", "", (name or "app").lower())[:20] or "app"
-            fills.append(("src/main/java/com/example/%s/controller/MainController.java" % _pkg,
-                          "Spring Boot 3 的 @RestController（含增删改查接口、中文注释、"
-                          "返回 JSON，不要输出 pom.xml）"))
-        if want_vue:
-            fills.append(("frontend/src/views/Dashboard.vue",
-                          "Vue 3 单文件组件（<script setup>，列表 + 表单 + axios 调 /api，"
-                          "中文界面，不要输出 package.json）"))
-        elif want_react:
-            fills.append(("frontend/src/Dashboard.jsx",
-                          "React 函数组件（列表 + 表单 + axios 调 /api，中文界面）"))
-        if want_py:
-            fills.append(("routes.py", "FastAPI 路由模块（业务接口 + 中文注释，"
-                                       "用 APIRouter，不要输出 requirements.txt）"))
-        if want_node:
-            fills.append(("routes.js", "Express 路由模块（业务接口 + 中文注释）"))
-        filled, failed = [], []
-        for rel, hint in fills[:self._STAGED_MAX_FILL]:
+        # —— v0.31.17：走 devloop 的**真工具调用循环** ——
+        #   分解 → 逐步生成（每步 1~2 个文件）→ 每步验证 → 失败带错误重试 → 仍失败标 TODO。
+        #   为什么换掉原来的"3 个文件窄提示"：那样只为"凑文件数"，没有步骤语义、
+        #   没有步骤级验证、也没有把错误回灌给模型重试的机会。
+        import devloop as DL
+        _logs = []
+
+        def _llm(p: str):
+            return self._brain(p, max_tokens=1500, task="dev", on_think=_on_think) or ""
+
+        def _log(m):
+            _logs.append(str(m))
             try:
-                self._step("plan", "分步填充：%s" % rel, hint[:40], "单文件窄提示")
-                txt = self._brain(
-                    "只输出**这一个文件**的内容：%s\n\n内容要求：%s\n\n"
-                    "背景需求（供参考，不要复述）：%s\n\n"
-                    "输出格式（必须严格遵守，不要任何解释文字）：\n"
-                    "===FILE: %s===\n（文件完整内容）\n===END===\n" % (rel, hint, req[:600], rel),
-                    max_tokens=1500, task="dev", on_think=_on_think)
-                got = AT.parse_bundle(txt or "")
-                if not got:
-                    m = re.search(r"```[a-zA-Z]*\n(.*?)```", txt or "", re.S)
-                    got = {rel: m.group(1)} if m else {}
-                rel_ok = AT.normalize_rel(rel) or rel
-                content = got.get(rel) or got.get(rel_ok) or (list(got.values())[0] if got else "")
-                if not content or len(content.strip()) < 20:
-                    failed.append(rel)
-                    continue
-                ok, why = self._stage_syntax_ok(rel_ok, content)
-                if not ok:
-                    # 语法不过 → 退掉这一件（骨架还在，不影响整项目可运行）
-                    failed.append("%s（语法错误：%s）" % (rel, why))
-                    continue
-                full = os.path.join(pdir, *rel_ok.split("/"))
-                if os.path.relpath(full, pdir).startswith(".."):
-                    failed.append("%s（路径越界已拒）" % rel)
-                    continue
-                os.makedirs(os.path.dirname(full) or pdir, exist_ok=True)
-                with open(full, "w", encoding="utf-8") as f:
-                    f.write(content)
-                files[rel_ok] = content
-                filled.append(rel_ok)
-            except Exception as ex:                              # noqa: BLE001
-                logging.info("分步填充失败：%s（%s）", rel, ex)
-                failed.append(rel)
-        AT._register_project(name, pdir, sorted(files))
+                self._step("plan", str(m)[:64], "工具调用循环", "")
+            except Exception:                                    # noqa: BLE001
+                pass
+
+        self._step("plan", "任务分解 → 逐步生成（devloop）",
+                   "每步验证 + 失败重试", "预算 420s")
+        loop = DL.agent_loop(_llm, pdir, req, name=name, max_steps=4,
+                             rounds_per_step=2, allow_run=False,
+                             log=_log, budget_s=420)
+        filled = list(dict.fromkeys(loop.get("wrote") or []))
+        # —— 项目级验证；有工具链就跑真构建的「写→跑→读错→改」闭环 ——
+        _v = DL.verify_project(pdir, req)
+        buildrep = ""
+        _bcmd = DL.build_cmd_for(pdir, req)
+        if _v.get("ok") and _bcmd:
+            self._step("cmd", "跑真构建（写→跑→读错→改闭环）", _bcmd, "最多 1 轮修复")
+            bf = DL.build_fix_loop(_llm, pdir, _bcmd, rounds=1, log=_log, timeout=420)
+            buildrep = bf.get("report") or ""
+            _v = DL.verify_project(pdir, req)
+        _nfiles = 0
+        for _r, _ds, _fs in os.walk(pdir):
+            _ds[:] = [d for d in _ds if d not in (".git", "__pycache__", "node_modules")]
+            _nfiles += len(_fs)
+        AT._register_project(name, pdir, sorted(filled) or ["（骨架）"])
         runmsg = ""
         try:
             runmsg = self._project_verify_and_run(pdir, req, _on_think)
         except Exception:                                        # noqa: BLE001
             runmsg = ""
         self._mark_effect_dev(pdir)
-        lines = ["🧩 这次走的是**分步生成**（骨架 → 逐文件填充），共 %d 个文件：" % len(files),
-                 "", tree, ""]
+        lines = ["🧩 这次走的是**分步生成 / 工具调用循环**"
+                 "（确定性骨架 → 任务分解 → 逐步生成 → 每步验证重试），共 %d 个文件："
+                 % _nfiles, "", tree, ""]
         if filled:
-            lines.append("模型已补内容：%s" % "、".join("`%s`" % f for f in filled))
-        if failed:
-            lines.append("以下文件**保留骨架**（模型这轮没给出可用内容，已如实记下，不编造）：%s"
-                         % "、".join("`%s`" % f for f in failed))
+            lines.append("模型已补内容：%s" % "、".join("`%s`" % f for f in filled[:12]))
+        _todo = list(loop.get("todo") or [])
+        if _todo:
+            lines.append("以下步骤**保留骨架**（模型这轮没给出可用内容，已如实记下，不编造）："
+                         + "、".join("`%s`" % t for t in _todo[:6]))
+        if not _v.get("ok"):
+            lines.append("验证未过（**如实报告**，不装成功）：%s"
+                         % "；".join(str(e)[:160] for e in (_v.get("errors") or [])[:3]))
+        if buildrep:
+            lines.append(buildrep.strip())
         if runmsg:
             lines += ["", runmsg]
         lines += ["", "📁 `%s`" % pdir,
