@@ -1,7 +1,7 @@
 # PASM 核心知识总览
 
 > **PASM = Predictive Agent System with Memory**（带记忆的预测式智能体系统）
-> 一个"非 token 内部循环"的仿生认知智能体框架 · 核心版本 **0.7.0** · 引擎契约 **api 1.1**
+> 一个"非 token 内部循环"的仿生认知智能体框架 · 核心版本 **0.7.2** · 引擎契约 **api 1.2**
 >
 > 本文是 PASM 的**核心知识单一入口**：讲清它是什么、由哪几层组成、每层解决什么问题、
 > 代码落在哪个文件、上层怎么调用。看完本文即可理解整个 PASM 引擎。
@@ -167,7 +167,7 @@ writeback() 回写 → 向量记忆（形成"经验"）
 
 ---
 
-## 五、引擎接口契约（`pasm.engine_api`，api 1.1）
+## 五、引擎接口契约（`pasm.engine_api`，api 1.2）
 
 > **零依赖纯标准库**，随包即用，是**整个生态的接缝处**。
 
@@ -278,7 +278,7 @@ pasm/
 ├── __init__.py            包说明与版本
 ├── agent.py               PASMAgent —— 七层整合
 ├── config.py              PASMConfig —— 全局配置/消融开关
-├── engine_api.py          ★ 引擎接口契约（零依赖，api 1.1）
+├── engine_api.py          ★ 引擎接口契约（零依赖，api 1.2）
 ├── light.py               PASM 轻量认知体（纯 Python）
 ├── narrator.py            内部状态 → 语言
 ├── training.py            训练/评估/睡眠巩固
@@ -427,7 +427,7 @@ competitive with, LLMs: **the LLM provides the voice, PASM provides the "self."*
    memory, project ledger, multi-language coder, multi-agent teams,
    self-healing, neuro-symbolic reasoning, memory router, math brain,
    multimodal perception, and quantum-inspired strategy selection.
-3. **Engine API** (`pasm/engine_api.py`, api 1.1) — a zero-dependency contract
+3. **Engine API** (`pasm/engine_api.py`, api 1.2) — a zero-dependency contract
    (`EngineInfo`, `conforms()`, `as_engine()`, `Registry`, `create_best()`,
    `capability_gap()`) plus an **environment plugin registry**, so that callers
    depend on the *interface*, never on a specific implementation.
