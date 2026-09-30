@@ -8283,6 +8283,25 @@ class CompanionWindow(QMainWindow):
                 res = {"ok": False, "dir": "", "files": [], "smoke": "", "log": "异常：" + str(ex)}
             changed = [f.get("path", "") for f in res.get("files", [])]
             ok = bool(res.get("ok"))
+            # ★ 0.31.17：dev 栏目真落盘后补一笔台账。诚实闸门判"有没有真动作"只看
+            #   `ops_ledger`，而 coder（引擎侧）不记账 → 少了这一笔，用户随后问
+            #   "刚才那个项目呢/你生成了吗"时，闸门会认为**没有任何真动作**。
+            try:
+                import sysops as _SYS
+                _d = str(res.get("dir") or "")
+                if ok and _d and os.path.isdir(_d):
+                    _n = 0
+                    for _r, _ds, _fs in os.walk(_d):
+                        _ds[:] = [x for x in _ds if x not in (".git", "__pycache__",
+                                                              "node_modules")]
+                        _n += len(_fs)
+                        if _n:
+                            break
+                    _SYS.note_action("genfile", _d, ok=bool(_n),
+                                     reason="%s「%s」，盘上 %d 个文件"
+                                            % ("创建" if is_new else "更新", name, _n))
+            except Exception:                                    # noqa: BLE001
+                pass
             WC.record_change(name, spec, changed,
                              action=("创建" if is_new else "修改") + "，" +
                                     (res.get("log") or ""),
@@ -8565,6 +8584,12 @@ class CompanionWindow(QMainWindow):
                 return False
         _last_req = str(d.get("last_req")
                         or (getattr(self, "dev", None) or {}).get("last_req") or "").strip()
+        # ★ 0.31.17：纯指代（请继续/继续/现在就做）而**又没有任何可续的真实需求**时
+        #   绝不能把这三个字当需求发下去 —— 那会让模型"凭空造一个项目"（老病根）。
+        #   如实交回，让上层按"要我先问清做什么"处理。
+        if _bare and not _last_req and not self._inherit_req:
+            logging.info("续改路由未命中：『%s』是纯指代，但台账里没有可续的需求", t[:20])
+            return False
 
         # —— 找项目目录：多候选（★ 0.31.17）——
         safe = CDR.safe_name(name)
@@ -9339,7 +9364,11 @@ class CompanionWindow(QMainWindow):
         #        **连一句回复都没有**（界面像死了）。
         #   这正是小志反馈「我让桌面应用帮我开发时，为什么没有任何动作」的真凶：
         #   确认墙是个死胡同 —— 唯一能开工的口令恰恰被路由忽略。
-        if self.mode != "work":
+        #   ★ 0.31.17：条件从 `mode != "work"` 放宽为"**有待开工就必须回收**"——
+        #   否则在🔧干活栏目里，诚实闸门/确认墙给出的「⚙️ 立刻开工」是**点不动的按钮**
+        #   （点击等价于回一句「开始」，而「开始」本身不是重活意图 →
+        #    `_detect_agent` 返回 None，恢复分支又被 mode 挡掉 → 什么都不会发生）。
+        if self.mode != "work" or getattr(self, "_pending_work", None) is not None:
             _pw = getattr(self, "_pending_work", None)
             if _pw is not None:
                 _low = (text or "").strip()
@@ -15249,10 +15278,25 @@ class CompanionWindow(QMainWindow):
             buildrep = bf.get("report") or ""
             _v = DL.verify_project(pdir, req)
         _nfiles = 0
+        _on_disk = []
         for _r, _ds, _fs in os.walk(pdir):
             _ds[:] = [d for d in _ds if d not in (".git", "__pycache__", "node_modules")]
+            for _f in _fs:
+                _on_disk.append(os.path.relpath(os.path.join(_r, _f), pdir).replace("\\", "/"))
             _nfiles += len(_fs)
-        AT._register_project(name, pdir, sorted(filled) or ["（骨架）"])
+        # ★ 0.31.17：注册**盘上真实文件**（旧写法把 '（骨架）' 这种假文件名写进项目页）；
+        #   文件树也改成"循环之后"重算，否则报告里看不到模型刚补的文件。
+        AT._register_project(name, pdir, sorted(_on_disk)[:80] or ["README.md"])
+        tree = "📁 " + pdir + "\n" + AT._tree(pdir)
+        # ★ 0.31.17：把"这一步真的落了盘"记进台账 —— 诚实闸门靠台账判真伪，
+        #   而 devloop 补写的文件不走 agent_tools 的记账出口，不补这一笔就会
+        #   出现"真干了却说我没干"的误拦。
+        try:
+            import sysops as _SYS
+            _SYS.note_action("genfile", pdir, ok=True,
+                             reason="分步生成完成，盘上 %d 个文件" % _nfiles)
+        except Exception:                                        # noqa: BLE001
+            pass
         runmsg = ""
         try:
             runmsg = self._project_verify_and_run(pdir, req, _on_think)

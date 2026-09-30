@@ -1126,6 +1126,23 @@ def save_project(name: str, files: dict, dest: str = None) -> Tuple[str, str]:
         written.append(rel)
     tree = "📁 " + pdir + "\n" + _tree(pdir)
     _register_project(safe, pdir, written)
+    # ★ 0.31.17：**落盘必须记台账**。真机事故：dev/项目路径写完文件不记账，
+    #   而 `honesty_guard` 的判据是"台账里有没有 ok=True 的真动作"
+    #   （`ledger_recent(_ACT_KINDS, 600s)`）—— 于是"真写了文件"的回复会被当成
+    #   幻觉**被强制改口**，用户看到的是"我并没有真的生成任何东西"。
+    #   记的是事实（确实写了 N 个文件），不是自我表扬。
+    try:
+        import sysops as _SYS
+        # ⚠️ **只在真写了文件时记账**：0 个文件也记 ok=True 会污染诚实闸门的判据
+        #    （"有真账"被伪造出来，闸门就形同虚设）。
+        if written:
+            _SYS.note_action("genfile", pdir, ok=True,
+                             reason="落盘 %d 个文件：%s" % (len(written),
+                                                          ", ".join(written[:4])))
+        else:
+            _SYS.note_action("genfile", pdir, ok=False, reason="没有可落盘的文件")
+    except Exception:
+        pass
     return pdir, tree
 
 

@@ -349,9 +349,14 @@ def _tree(pdir: str, limit: int = 40) -> str:
     return "\n".join(sorted(rows))
 
 
-def run_step(call_llm, pdir: str, step: dict, *, rounds: int = 2,
+def run_step(call_llm, pdir: str, step: dict, *, req: str = "", rounds: int = 2,
              allow_run: bool = True, log=None, budget_s: int = 240) -> dict:
-    """跑**一个**步骤：模型产出 → 落盘 → 验证 → 失败带错误重试 → 仍失败则标 TODO。"""
+    """跑**一个**步骤：模型产出 → 落盘 → 验证 → 失败带错误重试 → 仍失败则标 TODO。
+
+    ★ `req`：**原始需求**必须传进来。旧写法拿 `step["goal"]`（如"后端数据模型"）
+      去判技术栈 —— 判不出 java/vue → `verify_project` 只做静态检查 →
+      "写→跑→读错→改"的构建闭环**永远不会触发**（静默失效）。
+    """
     t0 = time.time()
     wrote, errs, rounds_used = [], [], 0
     last_verify = {"ok": True, "errors": []}
@@ -388,8 +393,8 @@ def run_step(call_llm, pdir: str, step: dict, *, rounds: int = 2,
         for x in res:
             if x["tool"] in ("write", "run") and not x["ok"]:
                 errs.append("%s %s：%s" % (x["tool"], x["arg"], x["note"][:200]))
-        # —— 本步验证 ——
-        last_verify = verify_project(pdir, step.get("goal") or "")
+        # —— 本步验证（用**原始需求**判栈，否则构建闭环静默失效）——
+        last_verify = verify_project(pdir, req or step.get("goal") or "")
         if last_verify["ok"]:
             if log:
                 log("步骤 %s 通过验证" % step.get("id"))
@@ -416,7 +421,7 @@ def agent_loop(call_llm, pdir: str, task: str, *, name: str = "app",
         if time.time() - t0 > budget_s:
             todo.append("步骤 %s（总预算用尽）" % stp.get("id"))
             continue
-        r = run_step(call_llm, pdir, stp, rounds=rounds_per_step,
+        r = run_step(call_llm, pdir, stp, req=task, rounds=rounds_per_step,
                      allow_run=allow_run, log=log)
         results.append(r)
         wrote += r.get("wrote") or []
