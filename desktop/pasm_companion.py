@@ -12599,6 +12599,17 @@ class CompanionWindow(QMainWindow):
                  _re.search(r"(?:吗|么|没有|没|怎么验证|真的假的|是不是真的)", text)) or \
                 _re.search(r"怎么验证(?:你|它|小[Uu伴])?.{0,6}(?:删|清|执行|做)", text):
             return ("sysops_report", text)
+        # ★ 0.31.19：**能力基准 / 外部链路体检** —— 此前这两个模块只存在于源码里，
+        #   没有任何入口（也没有任何模块 import 它们）→ 装好的软件里用户**根本点不到**，
+        #   等于没做（这正是"模块写了没人用"的假绿）。这里按既有快速指令的写法接上，
+        #   真跑真测、结果如实呈现。
+        if re.search(r"能力基准|跑个?基准|基准测试|自测一下能力|测(一下|试)?(你的|自己)?能力|"
+                     r"benchmark|\bbench\b", text, re.I):
+            return ("bench_run", text)
+        if re.search(r"(外部)?(链路|连接)体检|连接(一?下)?体检|检查(一?下)?(外部)?(连接|链路|配置)|"
+                     r"(接口|服务|通道).{0,4}(体检|自检)|"
+                     r"哪些(能力|功能|服务).{0,6}(没配|不可用|不能用|没打开)", text):
+            return ("conncheck", text)
         # ★0a-1b) v0.27.3 语言天赋：查/清 学到的说话习惯
         if re.search(r"别学我说话|不要学我|别学我口音|忘掉我的(口音|说话方式)|"
                      r"重置(我的)?(口音|说话方式)", text):
@@ -14661,6 +14672,27 @@ class CompanionWindow(QMainWindow):
                      for r in reversed(rows)]
             return ("最近 8 条真实系统操作记录（存在本地台账，随时可查）：\n" +
                     "\n".join(lines))
+        if kind == "bench_run":           # ★ 0.31.19 能力基准（8 项固定任务，真跑）
+            import bench as B
+            self._step("cmd", "跑能力基准", "8 项固定任务", "真实执行，不是自夸")
+            try:
+                res = B.run_suite()
+            except Exception as ex:                             # noqa: BLE001
+                logging.exception("bench run failed")
+                return "能力基准没跑起来（%s）。" % str(ex)[:120]
+            return ("📊 " + B.render(res) +
+                    "\n\n这是**真跑出来**的通过率（含各项耗时），可用来对比"
+                    "「这版比上版更会干活吗」。")
+        if kind == "conncheck":           # ★ 0.31.19 外部链路体检（读真实配置逐项判定）
+            import conncheck as CC
+            try:
+                items = CC.check_all(self.cfg or {})
+            except Exception as ex:                             # noqa: BLE001
+                logging.exception("conncheck failed")
+                return "外部链路体检没跑起来（%s）。" % str(ex)[:120]
+            return ("🔌 外部链路体检（读你的真实配置逐项判定）：\n\n" + CC.table(items) +
+                    "\n\n" + CC.summary(items) +
+                    "\n\n配好后（设置页填 key / 打开开关）再说一次「链路体检」即可复核。")
         if kind == "cando":               # v0.27.1 能力判定：能做/学过做/学着做/说不能
             return self._cando_reply(agent[1])
         if kind == "caps":                # v0.31.9 能力目录（"你能做什么"的统一答复）

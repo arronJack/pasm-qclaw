@@ -17,8 +17,8 @@
 | `pasm-mcp-server` | MCP 接入层：给任意 AI 客户端装长期记忆（`PASM2=1` 切 V2） | 公开 | 0.2.1 |
 | `pasm-domain-advisor` · `pasm-medical` · `pasm-customer-service` | 领域智能体：领域顾问引擎 / 医疗辅助 / 专业客服 | 公开 | 0.1.1 · 0.1.0 · 0.2.0 |
 | `PASM-Lite` | 教学版 + 认知引擎接口（不接 V2，保持纯净） | 公开 | — |
-| `PASM` | 核心引擎（七层仿生 / 世界模型，含 `pasm2/`；桌面源码 0.31.18） | 私有 | 0.7.2 |
-| **`pasm-qclaw`（本仓）** | **桌面应用发行通道（安装包 + `latest.json` 升级源）** | **公开** | **0.31.18（已发行）** |
+| `PASM` | 核心引擎（七层仿生 / 世界模型，含 `pasm2/`；桌面源码 0.31.19） | 私有 | 0.7.2 |
+| **`pasm-qclaw`（本仓）** | **桌面应用发行通道（安装包 + `latest.json` 升级源）** | **公开** | **0.31.19（已发行）** |
 
 本仓**现在包含 PASM Studio 桌面端的开源源码**（[`desktop/`](desktop/README.md) 目录，基于 PySide6 的 Windows 桌面应用 UI/外壳层），
 同时仍是安装包与更新清单 `latest.json` 的**发行通道**。
@@ -46,7 +46,37 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.31.18（2026-09-30）· 小U「真会干活」：补齐执行内核 + 重活自动交给云端
+## 最新：v0.31.19（2026-09-30）· 修「生成的文件不能用」：不再另建"这个项目"，文件里不再混围栏
+
+**你 17:09 反馈的两条，是同一个病根**：模型输出**没经净化**就被拿去当路径名 / 直写磁盘。
+
+- **①「生成的 geo 文件并没有在指定的文件夹」** —— `chat_last.json` 里你当时的原话是
+  「继续做这个项目」，而旧版只把「请继续」这类**纯指代**当成"继续做上一件事"。
+  你说的多了个宾语，被判成"新需求" → 走新建 → 项目名抽取把**代词「这个项目」当成了项目名**，
+  于是在 `PASM工作\project\` 下**另建了一个叫「这个项目」的目录**（57 个文件）。
+  **现在**：「继续做 / 接着改 / 继续完善 + 这个项目 / 这个应用」**都认**；
+  但「继续做记事本App」这种**带具体名字的仍然正常当新需求**（不会被误当成"继续"）；
+  **代词永远不能当项目名**，抽不出名字就回退到你**当前的项目目录**；
+  真的一句可续的都没有 → **明确告诉你**并给出两条出路，**绝不凭一个代词乱建目录**。
+- **②「JAVA 文件里有 ```java、注释是 python 的、结尾也有 ```」** —— 你机器上 26 个 .java 里
+  **24 个首行是 ```java、末行是 ```**（模型把整份文件又包了一层 markdown 代码块），
+  而旧版落盘是**原样写入**；还有把 `.java` 注释写成 `# 注释`（Python 风格）的，Java 里 `#` 非法，编译必失败。
+  **现在**：落盘前统一净化 —— 剥掉**成对的首尾围栏**（**README 里正常的代码块示例不受影响**）、
+  `.java/.kt/.cs/.go` 的行首 `# 注释` → `// 注释`（**JS 私有字段 `#count` 不会被动**），
+  并**如实告诉你改了什么**，不静默改你的文件。净化装在**三个出口**：解析、**唯一写盘出口**（纵深防御）、工具调用循环。
+- 顺带修：「做个叫「蜂巢」的预约系统」旧版抽不出"蜂巢"，会把**整句**当项目名。
+
+> **验收（可复跑）**：7 套守卫 **236 项全绿**。最硬的两条 —— ①**绕过解析层**把带围栏的内容直接喂给
+> 写盘出口，**读磁盘字节**确认干净（不看返回值）；②把你**原话**「请继续做这个项目」等 4 句逐句喂进去，
+> 断言被续改接住、用的是**真实需求**、执行后 `project/` 下**没有多出目录**。
+
+> **下载**：Windows 见本页 Releases（Gitee 上是**分卷版**：把 `-gitee.exe` 与同目录 `.bin`
+> 全部下到**同一个文件夹**再运行 exe，**不需要手动合并**）。macOS / Linux 的包在
+> **GitHub / GitCode** 的同一 tag 下（dmg / tar.gz / deb）。
+
+同时包含 **0.31.18 / 0.31.16 / 0.31.15** 的全部修复。
+
+### v0.31.18（2026-09-30）· 小U「真会干活」：补齐执行内核 + 重活自动交给云端
 
 **这一版正面回应你上次的反馈**：「让它继续开发 geo 平台，结果什么都没做」。
 我们把根因逐条钉死（有完整诊断报告 `docs/qa/2026-09-30-开发栏目零动作根因诊断.md`），
@@ -841,7 +871,46 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 > **It never loses what you typed, and never claims to have done something it didn't** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.31.18 (2026-09-30) · "It actually works now": agent execution core + heavy tasks auto-escalated to the cloud
+## Latest: v0.31.19 (2026-09-30) · "Generated files are unusable" fixed: no more phantom project folders, no more markdown fences inside files
+
+**Your two reports at 17:09 share one root cause**: model output was written to disk / used as a
+path name **without sanitisation**.
+
+- **① "The generated geo files are not in the folder I specified"** — in `chat_last.json` you said
+  "keep working on **this project**", but the old logic only treated bare phrases like "continue"
+  as *continue the previous task*. With an object attached it was classified as a *new request*,
+  and the project-name extractor picked up **the pronoun "this project" as the name** — so it created
+  a **new folder literally called `这个项目`** (57 files) under `PASM工作\project\`.
+  **Now**: "continue/finish/polish + this project / this app" are all recognised,
+  while "continue building the NotebookApp" is still correctly treated as a new request;
+  **a pronoun can never become a project name** — if no name can be extracted it falls back to your
+  **current project folder**; and if there is genuinely nothing to continue it says so explicitly and
+  offers two ways out, **never inventing a folder from a pronoun**.
+- **② "Java files contain ```java, comments are Python style, and a trailing ```"** — on your machine
+  **24 of 26 .java files started with ```java and ended with ```** (the model wrapped each whole file
+  in a markdown code block) and the old code wrote them **verbatim**; some also used `# comment` in
+  `.java`, which is not a comment in Java and breaks compilation.
+  **Now**: everything is sanitised before writing — paired leading/trailing fences are stripped
+  (**normal code-block examples inside README files are untouched**), leading `#` comments in
+  `.java/.kt/.cs/.go` become `//` (**JS private fields like `#count` are left alone**), and the app
+  **tells you what it changed** instead of silently editing your files. Applied at **three exits**:
+  parsing, the **single write exit** (defence in depth) and the tool-call loop.
+- Also fixed: "build an appointment system called 「Hive」" used to fail name extraction and take the
+  **whole sentence** as the project name.
+
+> **Verification (re-runnable)**: 7 guard suites, **236 checks, all green**. The two hardest ones —
+> ① feed fenced content **straight to the write exit, bypassing the parser**, then **read the bytes on
+> disk** (never trusting the return value); ② feed your **verbatim sentences** ("keep working on this
+> project", 4 variants) and assert they resume the real requirement and that **no extra folder appears**
+> under `project/`.
+
+> **Download**: Windows via the Releases of this page (on Gitee it is a **split archive**: put `-gitee.exe`
+> and all `.bin` parts in the **same folder** and run the exe — **no manual merging needed**).
+> macOS / Linux builds are attached to the same tag on **GitHub / GitCode** (dmg / tar.gz / deb).
+
+Also includes every fix from **0.31.18 / 0.31.16 / 0.31.15**.
+
+### v0.31.18 (2026-09-30) · "It actually works now": agent execution core + heavy tasks auto-escalated to the cloud
 
 This release answers your last report directly: *"I asked it to continue developing the GEO platform and it did nothing."*
 We traced every root cause (full diagnosis: `docs/qa/2026-09-30-开发栏目零动作根因诊断.md`) and turned the "do work"
