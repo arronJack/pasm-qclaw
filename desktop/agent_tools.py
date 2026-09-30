@@ -1060,6 +1060,93 @@ def run_script(path: str, timeout: int = 60) -> str:
 FILE_MARK = re.compile(r"^===FILE:\s*(.+?)\s*===$", re.M)
 
 
+# ============================================================================
+# ★ 0.31.19：模型输出的**两种符号污染**（真机事故 2026-09-30 17:09 产物）
+#
+# 事故现场：`.../PASM工作/project/这个项目/geo/` 下 26 个 .java 文件里，
+# **24 个首行是 ` ```java `、末行是 ` ``` `** —— 模型把整份文件包进 markdown 代码块，
+# 旧版落盘是**原样写入**，于是文件里混着围栏行（用户看到的就是
+# "文件里全是 ''' java 这类解释内容，开头结尾都有"）。
+# IDE/Maven 立刻语法错，用户判断"生成的不是 Java 文件"——这是**可信度事故**，不只是一处小瑕疵。
+#
+# 另一类：注释符号用错语言（.java 里写 `# 注释`，那是 Python 风格），
+# Java 里 `#` 不是注释 → 编译必然失败。这类**符号错**可以确定性地改正而不动语义。
+# ============================================================================
+_FENCE_LINE = re.compile(
+    r"^[ \t]*(?:`{3,}|~{3,}|['\"]{3,})[ \t]*([A-Za-z0-9_+\-.#]{0,20})[ \t]*$")
+
+
+def strip_code_fence(text: str) -> str:
+    """剥掉**外层** markdown 代码围栏（成对首尾；最多剥两层）。
+
+    只在"首个非空行是围栏 **且** 末个非空行是围栏"时才动手 —— 所以
+    README 里正常出现的代码块示例**不会**被误吃（那种首行不是围栏）。
+    """
+    s = str(text if text is not None else "")
+    if not s.strip():
+        return s
+    for _ in range(2):
+        lines = s.split("\n")
+        i0 = next((i for i, l in enumerate(lines) if l.strip()), None)
+        i1 = next((i for i in range(len(lines) - 1, -1, -1) if lines[i].strip()), None)
+        if i0 is None or i1 is None or i1 <= i0:
+            break
+        if not (_FENCE_LINE.match(lines[i0]) and _FENCE_LINE.match(lines[i1])):
+            break
+        s = "\n".join(lines[i0 + 1:i1])
+    return s
+
+
+#: 行首「# + 空格/中文」或孤零零一个 # → 是"注释写成了 Python 风格"的强特征。
+#: 刻意**不匹配** `#字段名`（JS 的私有字段 `#count = 1;` 是合法语法，不能误改）。
+_HASH_NOTE = re.compile(r"^([ \t]*)#(?:(?=[ \t])[ \t]+(.*)|([\u4e00-\u9fa5].*)|[ \t]*$)",
+                        re.M)
+#: Java/Kotlin/C#/Go 里单独成行的三引号（Python docstring 误写）—— 非法字符，删掉。
+_LONE_TRIPLE = re.compile(r"^[ \t]*(?:'{3,}|\"{3,})[ \t]*$\n?", re.M)
+
+
+def fix_lang_notes(rel: str, content: str) -> tuple:
+    """修正"注释符号用错语言"（返回 (新内容, 改动行数)）。
+
+    只对**绝不支持行首 # 注释**的编译型语言生效，且只改行首注释形态，
+    不动字符串内部与代码语义（`#` 后必须跟空格或中文，或整行只有 #）。
+    """
+    ext = os.path.splitext(str(rel or "").lower())[1]
+    if ext not in (".java", ".kt", ".kts", ".cs", ".go", ".c", ".cc", ".cpp", ".h", ".hpp"):
+        return content, 0
+    n = 0
+
+    def _rep(m):
+        nonlocal n
+        n += 1
+        body = m.group(2) if m.group(2) is not None else (
+            m.group(3) if m.group(3) is not None else "")
+        return "%s// %s" % (m.group(1), body.rstrip())
+
+    out = _HASH_NOTE.sub(_rep, str(content or ""))
+    out2, n2 = _LONE_TRIPLE.subn("", out)
+    return out2, n + n2
+
+
+def sanitize_file(rel: str, content: str) -> tuple:
+    """**落盘前统一净化**：剥围栏 → 修注释符号。返回 (干净内容, 说明文本)。
+
+    `说明` 非空时调用方应如实写进报告（用户有权知道"我改过什么"）。
+    """
+    raw = str(content if content is not None else "")
+    s = strip_code_fence(raw)
+    notes = []
+    if s != raw:
+        notes.append("已剥掉误带的代码围栏")
+    s2, n_fix = fix_lang_notes(rel, s)
+    if n_fix:
+        notes.append("已修正 %d 处注释符号（# → //）" % n_fix)
+    s3 = strip_code_fence(s2)
+    if s3 != s2 and "已剥掉误带的代码围栏" not in notes:
+        notes.append("已剥掉误带的代码围栏")
+    return s3, "；".join(notes)
+
+
 def parse_bundle(text: str) -> dict:
     """解析 LLM 输出的多文件包：
     ===FILE: 路径===
@@ -1078,8 +1165,11 @@ def parse_bundle(text: str) -> dict:
             end = marks[i + 1].start() if i + 1 < len(marks) else len(text)
             body = text[start:end]
             body = re.sub(r"^===END===\s*$", "", body.strip(), flags=re.M).strip()
-            if body:
-                files[m.group(1).strip().replace("\\", "/")] = body + "\n"
+            rel = m.group(1).strip().replace("\\", "/")
+            # ★ 0.31.19：落盘前统一净化（剥 markdown 围栏 / 修注释符号）
+            body, _note = sanitize_file(rel, body)
+            if body.strip():
+                files[rel] = body.strip() + "\n"
     if not files:
         # R5：字典格式兜底（FILES["x"] = """长内容"""）
         for m in re.finditer(
@@ -1087,8 +1177,10 @@ def parse_bundle(text: str) -> dict:
                 text, flags=re.S):
             rel = m.group(1).strip().replace("\\", "/")
             body = m.group(2)
+            rel = rel.replace("\\", "/")
+            body, _note = sanitize_file(rel, body)
             if rel and body.strip():
-                files[rel] = body + "\n"
+                files[rel] = body.strip() + "\n"
     return files
 
 
@@ -1129,6 +1221,7 @@ def save_project(name: str, files: dict, dest: str = None) -> Tuple[str, str]:
         pdir = os.path.join(projects_dir(), safe)
     os.makedirs(pdir, exist_ok=True)
     written = []
+    sanitized = []
     for rel, content in files.items():
         rel = normalize_rel(rel)
         if not rel:
@@ -1137,6 +1230,11 @@ def save_project(name: str, files: dict, dest: str = None) -> Tuple[str, str]:
         # 双保险：归一化后仍校验 full 确实在项目目录内（防未来改坏 normalize_rel）
         if os.path.relpath(full, pdir).startswith(".."):
             continue
+        # ★ 0.31.19：**唯一写盘出口**再兜一层净化 —— 即使调用方（模型解析/工具循环）
+        #   漏了，也不会有"首行是 ```java"这种文件落进用户磁盘。
+        content, _note = sanitize_file(rel, content)
+        if _note:
+            sanitized.append("%s（%s）" % (rel, _note))
         os.makedirs(os.path.dirname(full) or pdir, exist_ok=True)
         with open(full, "w", encoding="utf-8") as f:
             f.write(content)
@@ -1160,6 +1258,10 @@ def save_project(name: str, files: dict, dest: str = None) -> Tuple[str, str]:
             _SYS.note_action("genfile", pdir, ok=False, reason="没有可落盘的文件")
     except Exception:
         pass
+    if sanitized:
+        # 如实告知用户"我改过模型输出的什么"——不静默修，也不夸大
+        tree += ("\n\n⚠️ 落盘前自动清理了模型输出里的格式污染（%d 个文件）：\n  - %s"
+                 % (len(sanitized), "\n  - ".join(sanitized[:6])))
     return pdir, tree
 
 

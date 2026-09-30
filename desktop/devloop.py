@@ -40,6 +40,10 @@ try:
 except Exception:                                                # noqa: BLE001
     RM = None
 try:
+    import agent_tools as AT        # 0.31.19：落盘净化（剥 markdown 围栏 / 修注释符号）
+except Exception:                                                # noqa: BLE001
+    AT = None
+try:
     import failbook as FB           # P1-5：失败归因 + 已知坑
 except Exception:                                                # noqa: BLE001
     FB = None
@@ -192,11 +196,23 @@ def apply_tools(pdir: str, calls: list, allow_run: bool = True,
                                 "note": "路径越界/非法，已拒"})
                 continue
             try:
+                body = body.lstrip("\n")
+                _clean = ""
+                if AT is not None:
+                    # ★ 0.31.19：模型常把整份文件包进 ```java … ```（或被要求
+                    #   "解释一下"后混入说明行），落盘前统一净化，否则用户磁盘上
+                    #   就是"首行 ```java、末行 ```"的废文件（真机 17:09 产物 24/26）。
+                    try:
+                        _b2, _note = AT.sanitize_file(arg, body)
+                        if _note:
+                            body, _clean = _b2, "；" + _note
+                    except Exception:                            # noqa: BLE001
+                        pass
                 os.makedirs(os.path.dirname(full) or pdir, exist_ok=True)
                 with open(full, "w", encoding="utf-8") as f:
-                    f.write(body.lstrip("\n"))
+                    f.write(body)
                 results.append({"tool": tool, "arg": arg, "ok": True,
-                                "note": "写入 %d 字" % len(body)})
+                                "note": "写入 %d 字%s" % (len(body), _clean)})
             except Exception as ex:                             # noqa: BLE001
                 results.append({"tool": tool, "arg": arg, "ok": False,
                                 "note": "写入失败：%s" % ex})

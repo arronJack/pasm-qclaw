@@ -304,6 +304,21 @@ _RE_BARE_CONTINUE = re.compile(
     r"^(?:请|麻烦|帮我)?(?:立即|马上|现在|赶紧|快|直接)?"
     r"(?:继续|接着|往下|往下做|开始|开工|动手|执行|做吧|来吧|走起|就做)"
     r"(?:吧|呀|啊|哦|了|一下|做|干|开发|生成|写|建|搭)?$")
+#: ★ 0.31.19：真机事故（2026-09-30 17:09 产物）—— 用户说
+#: 「继续做这个项目」「请继续做这个项目」(7~9 字 ≤16)，而旧正则要求"继续+动作"
+#: 后**立刻结束** → fullmatch 失败 → 判成"这不是指代句，是新需求"
+#: → 走新建项目 → `_pick_project_name` 从这句话里抽出 **「这个项目」**当项目名
+#: → 在 `PASM工作/project/这个项目/` 下另建 57 个文件（还多嵌了一层 geo/）。
+#: 用户的反馈是"生成的 geo 文件并没有在指定的文件夹"——他指的是**原来那个项目目录**。
+#: 现在：动作后允许一个**纯指代宾语**（这个/那个/它/刚才的 + 项目/应用/系统…），
+#: 但仍要求整句是纯指代 ——「继续做记事本App」这种带具体名的**不匹配**（那是新需求）。
+_RE_BARE_CONTINUE2 = re.compile(
+    r"^(?:请|麻烦|帮我)?(?:立即|马上|现在|赶紧|快|直接)?"
+    r"(?:继续|接着|往下)(?:做|干|开发|生成|写出?|建|搭|完善|优化|改|修改|弄)?"
+    r"(?:一?下)?"
+    r"(?:这个|那个|该|它|上述|上面那个|刚才的?|之前的?|原来的?)?"
+    r"(?:项目|应用|系统|网站|程序|代码|文件|功能|东西|活|工程|的)?"
+    r"(?:吧|呀|啊|哦|了|一下|呗)?$")
 
 
 def _is_bare_continue(text: str) -> bool:
@@ -311,8 +326,11 @@ def _is_bare_continue(text: str) -> bool:
     t = (text or "").strip().strip("。.！!~～,，、;；:： ")
     if not t or len(t) > 16:
         return False
-    return bool(_RE_BARE_CONTINUE.fullmatch(t)) or t in (
-        "请继续", "继续", "现在就做", "马上做", "立即开始", "开始", "接着做", "继续做")
+    if _RE_BARE_CONTINUE.fullmatch(t) or _RE_BARE_CONTINUE2.fullmatch(t):
+        return True
+    return t in (
+        "请继续", "继续", "现在就做", "马上做", "立即开始", "开始", "接着做", "继续做",
+        "继续做这个项目", "继续这个项目", "继续搞这个项目", "继续把项目做完")
 
 
 def _snap_section(snap, key: str) -> dict:
@@ -435,6 +453,33 @@ def _extract_drive_word_target(text: str) -> str:
     return ""
 
 
+#: ★ 0.31.19：**代词不是项目名**。真机事故（2026-09-30 17:09）：用户说
+#: 「请继续做这个项目」，旧逻辑把「这个项目」当项目名，在 `PASM工作/project/`
+#: 下新开了一个 `这个项目/` 目录（57 个文件，还嵌了一层 `geo/`），
+#: 用户的反馈是"生成的 geo 文件并没有在指定的文件夹"——他要的是**接着改原项目**。
+#: 代词一律拒绝当名字，交由上层回退（原项目目录名 / 上一轮真实需求）。
+_NAME_PRONOUNS = {
+    "这个项目", "该项目", "本项目", "项目", "这个应用", "该应用", "应用",
+    "这个系统", "该系统", "系统", "这个网站", "网站", "这个程序", "程序",
+    "这个工程", "工程", "这个功能", "功能", "这个东西", "东西", "代码", "文件",
+    "它", "这个", "那个", "这些", "那些", "此处", "上面那个", "刚才的项目",
+    "之前的项目", "原来的项目", "上述项目", "刚才那个", "上面那个项目",
+}
+
+
+def _is_pronoun_name(name: str) -> bool:
+    """这个名字是不是代词/占位（"这个项目""它"这类）？是则不能当项目名。"""
+    n = re.sub(r"[\s\-_·.。]", "", str(name or ""))
+    if not n:
+        return True
+    if n in _NAME_PRONOUNS:
+        return True
+    return bool(re.fullmatch(
+        r"(?:这|那|该|本)(?:个|些|种|一)?"
+        r"(?:项目|应用|系统|网站|程序|代码|文件|功能|工程|东西|平台)",
+        n))
+
+
 def _pick_project_name(req: str) -> str:
     """从整句需求里抽一个像样的项目名。
 
@@ -451,10 +496,14 @@ def _pick_project_name(req: str) -> str:
     if m:
         cand = m.group(1).strip("\\/. ")
         # 目录名可以比中文项目名长（springcloud-business 就 20 字），别用 16 字上限砍掉它
-        if 2 <= len(cand) <= 32:
+        if 2 <= len(cand) <= 32 and not _is_pronoun_name(cand):
             return cand
-    m = re.search(r"(?:叫|名为|名字[叫是])\s*[「『\"“]?([\w\u4e00-\u9fa5\- ]{1,20}?)(?=的|帮|请|"
-                  r"然后|还有|以及|并且|可以|能|，|。|？|!|！|$)", req)
+    # ★ 0.31.19：lookahead 补上**右引号/顿号/冒号** —— 真机：
+    #   「做个叫「蜂巢」的预约系统」旧版匹配不到 → 落到动词分支 → 把**整句**当项目名
+    #   （目录名就成了"做个叫蜂巢的预约系统"）。带引号的名字是最常见写法，必须收。
+    m = re.search(r"(?:叫|名为|名字[叫是])\s*[「『\"“]?([\w\u4e00-\u9fa5\- ]{1,20}?)"
+                  r"(?=」|』|\"|”|的|帮|请|然后|还有|以及|并且|可以|能|，|。|？|!|！|"
+                  r"、|;|；|:|：|$)", req)
     if m:
         name = m.group(1).strip()
     if not (2 <= len(name) <= 16):
@@ -467,13 +516,18 @@ def _pick_project_name(req: str) -> str:
         if m:
             name = m.group(1).strip()
     name = re.sub(r"(吗|吧|呢|啊|呀|么|哦|哈)$", "", name).strip(" -")
-    if 2 <= len(name) <= 16:
+    if 2 <= len(name) <= 16 and not _is_pronoun_name(name):
         return name
     # 去掉口语前缀后截取
     clean = re.sub(r"^(那么|那|你|你能|你可以|请|麻烦|帮我|能不能|可否|可以|就)",
                    "", req.strip())
     clean = re.sub(r"[^\w\u4e00-\u9fa5]", "", clean)
-    return clean[:12] or "project"
+    clean = clean[:12]
+    # ★ 0.31.19：兜底截出来的东西若是代词/动词短语，**宁可返回空**（由调用方回退到
+    #   上一轮的真实需求或原项目目录名），也不要再造一个「这个项目」目录。
+    if _is_pronoun_name(clean) or _is_bare_continue(clean):
+        return ""
+    return clean or "project"
 
 
 def classify(text: str) -> float:
@@ -15421,6 +15475,28 @@ class CompanionWindow(QMainWindow):
                 edit_mode = bool(os.listdir(proj))
             except Exception:
                 edit_mode = False
+        # ★ 0.31.19：**「继续」类指令绝不能新建项目**。真机事故（2026-09-30 17:09）：
+        #   用户说「继续做这个项目」，旧版把它当新需求 → 新建 `project/这个项目/`
+        #   （57 个文件），而用户要的是**接着改原来那个项目**。
+        #   现在：有会话项目目录 → 就在那儿续改；没有 → 如实说清并给两条出路，
+        #   绝不拿一个代词去造新目录。
+        if not _tgt and _is_bare_continue(req):
+            _prev = str(proj or "").strip()
+            if _prev and os.path.isdir(_prev):
+                proj = _prev
+                self._ses_proj_dir = _prev
+                edit_mode = not reset
+                self._append("系统", "这句是「继续」类指令 —— 我在 <code>%s</code> 上接着改 ✓"
+                             % html.escape(_prev))
+            else:
+                self._step("err", "无可续项目", "「%s」是不含需求的指代句" % req[:16],
+                           "不会凭代词新建目录")
+                return ("这句是「继续」类指令，但我这边**没有可以接着做的项目记录**，"
+                        "所以我不会凭它新建一个目录（那会造出一个你不想要的项目）。\n\n"
+                        "两条路任选：\n"
+                        "1）告诉我项目在哪个文件夹，例如「继续做 `D:\\\\geo` 这个项目」，"
+                        "我就在那里干活；\n"
+                        "2）直接把需求说清，例如「用 SpringBoot + Vue 做 GEO 优化平台」。")
         # ★ v0.31.3：项目名**必须来自真实需求**。继承场景下 `req` 前面裹着模板句
         #   与标记（「帮我开发一个项目：（沿用上文需求）…」），直接拿去取名会得到
         #   「**开发一个项目请立即开始**」这种怪名字 —— 真机上就是这么发生的
@@ -15433,6 +15509,12 @@ class CompanionWindow(QMainWindow):
         # （"放在H:\\geo_plaform" → 项目名 geo_plaform），不再取整句片段当名字。
         name = (os.path.basename(_tgt.rstrip("/\\")) if _tgt else "") \
             or _pick_project_name(_name_src)
+        # ★ 0.31.19：名字为空（代词/纯动词短语，如"这个项目"）时**回退到当前项目目录名**，
+        #   再不行才用时间戳名 —— 绝不再造一个「这个项目」目录。
+        if not name:
+            _p = str(proj or "").strip()
+            name = (os.path.basename(_p.rstrip("/\\")) if _p else "") \
+                or ("project_%s" % time.strftime("%m%d_%H%M"))
         # ★ v0.31.3：**明说这次在改哪个项目**。真机上用户遇到"不是我想要的开发"时，
         #   最需要知道的就是"它到底动了哪个项目、想开新的该怎么说" —— 旧版只在内联
         #   步骤里写一句"已有项目原地改"，用户看不到项目名，也不知道怎么另建。
