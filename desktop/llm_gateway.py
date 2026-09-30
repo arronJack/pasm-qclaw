@@ -149,6 +149,10 @@ TOK_PER_CHAR = 0.67
 # 慢机也要给足身份/安全类提示，不能再往下砍
 _MIN_SYSTEM_CHARS = 1800
 _MIN_HIST_CHARS = 300
+# ★ 0.31.18（P0-2）：**云端端点**的预算（不受本机速度约束）。
+#   DeepSeek 系 64k 上下文；48000 字 ≈ 32k tok 留足输出空间，够放"项目地图 + 相关文件"。
+_CLOUD_SYSTEM_CHARS = 48000
+_CLOUD_HIST_CHARS = 32000
 
 # v0.30.13：预填充「疑似缓存命中」的识别阈值。
 # Ollama 命中 KV 前缀缓存时 `prompt_eval_count` 仍报全量、`prompt_eval_duration`
@@ -215,14 +219,27 @@ def speed_of(model: str, host: str = "") -> dict:
 
 
 def budget(model: str, host: str = "", *, want_first_secs: float = 10.0,
-           what: str = "system") -> int:
+           what: str = "system", remote: bool = None) -> int:
     """按本机实测速度给出**字符预算**（system 提示 / 历史上下文）。
 
     口径（真机数据）：
       · 本机 RX580 580 tok/s → 10s 可读 5800 tok ≈ 8600 字 ≈ 旧上限 8000 字 → **行为不变**；
       · 朋友机 15.7 tok/s → 只够 234 tok → 落到下限 1400 字（≈940 tok ≈ 60s 首字）：
         仍然慢，但**能出结果**，而不是 110s 干等或干脆判失败。
+
+    ★ 0.31.18（P0-2）：**云端端点不受本机速度约束**，必须放开预算。
+      真机事故：手选/回退到云端时，`host` 是 `https://api.deepseek.com/v1`，
+      此处照旧按"未知速度"算出 ~895 字 → 落到 floor 1800 字 → 系统提示被压到
+      1800 字，项目文件清单都放不下 → 模型"看不见项目"，写出来的东西自然不对。
+      `remote` 缺省时按 `host` 自动判定（空 host 保持旧行为，避免把慢本地机误判成云端）。
     """
+    if remote is None:
+        try:
+            remote = bool(host) and not is_local_url(host)
+        except Exception:                                        # noqa: BLE001
+            remote = False
+    if remote:
+        return _CLOUD_SYSTEM_CHARS if what == "system" else _CLOUD_HIST_CHARS
     sp = speed_of(model, host)
     want = max(1.0, float(sp["prefill"])) * float(want_first_secs)
     chars = int(want / TOK_PER_CHAR)

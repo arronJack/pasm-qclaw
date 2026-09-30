@@ -347,6 +347,23 @@ def _with_ledger(action: str):
     def deco(fn):
         @functools.wraps(fn)
         def wrap(*a, **kw):
+            _tg = str(a[0]) if a else ""
+            # ★ 0.31.18（P0-3）：**执行前统一过权限门**。
+            #   以前只有聊天入口检查权限，模型一旦走到工具层就绕过了 —— 安全档下
+            #   照样能跑脚本/写盘。这里在唯一出口过门：需要确认但没通道 → 直接拒绝并说明。
+            try:
+                import toolperm as _TP
+                _g = _TP.guard(action, _tg)
+                if not _g.get("ok"):
+                    _why = _g.get("reason") or "这一步需要你确认，我没有执行。"
+                    try:
+                        import sysops as _SYS2
+                        _SYS2.note_action(action, _tg[:120], ok=False, reason=_why[:80])
+                    except Exception:
+                        pass
+                    return "⛔ " + _why
+            except Exception:
+                pass          # 权限模块异常绝不能让工具本身不可用
             out = fn(*a, **kw)
             try:
                 import sysops as _SYS

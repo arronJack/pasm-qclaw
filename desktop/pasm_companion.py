@@ -13172,6 +13172,49 @@ class CompanionWindow(QMainWindow):
         r"代码|程序|开发|实现|脚本|函数|网页|网站|文件|表格|文档|PPT|幻灯片|"
         r"方案|报告|文案|排版|长文|详细|完整|步骤|教程|编译|部署", re.I)
 
+    def _ask_perm(self, tool: str, risk: str, target: str) -> bool:
+        """高风险工具的人工确认（P0-3）。**跨线程安全**：经 `_ui` 弹到主线程。"""
+        import threading as _th
+        box = {"v": False}
+        ev = _th.Event()
+
+        def _ask_ui():
+            try:
+                _r = QMessageBox.warning(
+                    self, "需要你确认",
+                    "小U 想执行一个**高风险**操作：\n\n"
+                    "· 工具：%s\n· 风险：%s\n· 对象：%s\n\n"
+                    "确定允许吗？（选「否」我就不会执行）"
+                    % (tool, risk, str(target)[:180]),
+                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+                box["v"] = (_r == QMessageBox.Yes)
+            except Exception:                                    # noqa: BLE001
+                box["v"] = False
+            finally:
+                ev.set()
+
+        try:
+            self._ui(_ask_ui)
+        except Exception:                                        # noqa: BLE001
+            return False
+        ev.wait(timeout=60)
+        try:
+            import sysops as _SYS
+            _SYS.note_action("perm_ask", "%s/%s" % (tool, str(target)[:40]),
+                             ok=box["v"], reason="用户%s" % ("同意" if box["v"] else "拒绝"))
+        except Exception:                                        # noqa: BLE001
+            pass
+        return bool(box["v"])
+
+    def _register_toolperm(self) -> None:
+        """把「当前档位 + 弹窗通道」注册给工具层（P0-3，唯一注册点）。"""
+        try:
+            import toolperm as _TP
+            _TP.set_level_provider(lambda: self._perm_level())
+            _TP.set_ask_provider(lambda: self._ask_perm)
+        except Exception:                                        # noqa: BLE001
+            logging.debug("注册 toolperm 失败（工具层将按安全默认拒绝高危）", exc_info=True)
+
     def _route_endpoint(self, task: str = "", prompt: str = "", prefer: str = ""):
         """按任务轻重路由模型端点（编排，而不只是"有多个模型"）：
 
@@ -13182,6 +13225,35 @@ class CompanionWindow(QMainWindow):
         用户在设置里固定了 cloud / local:<名> 时尊重手选，不参与自动路由。
         """
         cfg = self.cfg
+        _key0 = cfg.get("api_key") or ""
+        if not getattr(self, "_toolperm_ready", False):
+            self._toolperm_ready = True
+            self._register_toolperm()          # ★ P0-3：工具层权限门只注册一次
+        # ★ 0.31.18（P0-1）：**重活自动升级** —— 小志手选了本地小模型（4B/7B），
+        #   但 dev/filegen 这类重活本地根本写不完（真机：7200 tok 额度只吐 184 tok）。
+        #   策略收敛在 model_route（唯一来源）：手选本地 + 重活 + 云端可用 → 走云端，
+        #   并把"为什么升级"如实记进日志与 trace；设置里关掉 auto_escalate_heavy 即完全尊重手选。
+        try:
+            import model_route as _MR
+            _d = _MR.decide(task,
+                            has_cloud=bool(_key0),
+                            has_local=bool(getattr(self, "local", None) or detect_local_llm()),
+                            manual=str(cfg.get("model_choice") or "auto"),
+                            prompt=prompt,
+                            escalate_heavy=_MR.escalate_enabled(cfg))
+            if _d["kind"] == "cloud" and _d.get("escalated"):
+                try:
+                    import trace as _TR
+                    _TR.log("route", task=task, kind="cloud", escalated=True,
+                            reason=_d["reason"])
+                except Exception:                                # noqa: BLE001
+                    pass
+                if getattr(self, "_last_route_note", "") != _d["reason"]:
+                    self._last_route_note = _d["reason"]
+                    logging.info("模型路由：%s", _MR.notice(_d))
+                return (cfg["base_url"], cfg["model"], _key0)
+        except Exception:                                        # noqa: BLE001
+            logging.debug("model_route 判定失败，落回旧路由", exc_info=True)
         if cfg.get("model_choice", "auto") not in ("", "auto") and not prefer:
             return self._endpoint()
         key = cfg.get("api_key") or ""

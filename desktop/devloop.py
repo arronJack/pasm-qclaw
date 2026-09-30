@@ -34,6 +34,24 @@ import subprocess
 import sys
 import time
 
+# —— 兄弟模块（都可选：devloop 必须能独立跑自检，缺一个也不能崩）——
+try:
+    import repomap as RM            # P0-2：项目地图 + 相关文件
+except Exception:                                                # noqa: BLE001
+    RM = None
+try:
+    import failbook as FB           # P1-5：失败归因 + 已知坑
+except Exception:                                                # noqa: BLE001
+    FB = None
+try:
+    import trace as TR              # P1-6：轮次级观测
+except Exception:                                                # noqa: BLE001
+    TR = None
+try:
+    import subagents as SA          # P1-4：真并行
+except Exception:                                                # noqa: BLE001
+    SA = None
+
 # ----------------------------------------------------------------------------
 # ① 受控执行：白名单 + 不用 shell
 # ----------------------------------------------------------------------------
@@ -309,16 +327,20 @@ def _static_check(path: str) -> tuple:
 
 
 def verify_project(pdir: str, req: str = "") -> dict:
-    """项目级验证：先静态查所有代码文件，再按栈跑真构建（有工具链才跑）。"""
-    bad = []
+    """项目级验证：先静态查所有代码文件（**并行**），再按栈跑真构建（有工具链才跑）。"""
+    paths = []
     for root, dirs, fs in os.walk(pdir):
         dirs[:] = [d for d in dirs
                    if d not in (".git", "__pycache__", "node_modules", "dist", "target")]
         for f in fs:
             if f.lower().endswith((".py", ".json")):
-                ok, why = _static_check(os.path.join(root, f))
-                if not ok:
-                    bad.append(why)
+                paths.append(os.path.join(root, f))
+    bad = []
+    if TR:
+        with TR.span("verify", files=len(paths), pdir=pdir[-40:]):
+            bad = _static_checks(paths)
+    else:
+        bad = _static_checks(paths)
     ran = None
     st = stack_of(req)
     if not bad:
@@ -332,6 +354,21 @@ def verify_project(pdir: str, req: str = "") -> dict:
                 and shutil.which("node"):
             pass                       # 前端缺 node_modules，不在这里强制装依赖
     return {"ok": not bad, "errors": bad, "build": ran}
+
+
+def _static_checks(paths: list) -> list:
+    """静态检查：文件多时**并行**（只读、无副作用）。返回 ["文件名：原因", …]。"""
+    if not paths:
+        return []
+    if SA and len(paths) >= 4:
+        bad = SA.parallel_static_check(paths, _static_check, max_workers=4, timeout=90.0)
+        return ["%s：%s" % (os.path.basename(p), w) for p, w in bad]
+    out = []
+    for p in paths:
+        ok, why = _static_check(p)
+        if not ok:
+            out.append(why)
+    return out
 
 
 # ----------------------------------------------------------------------------
@@ -349,18 +386,49 @@ def _tree(pdir: str, limit: int = 40) -> str:
     return "\n".join(sorted(rows))
 
 
+def _hints_of(req: str) -> str:
+    """把「本机已知坑」（failbook）拼成提示块 —— 这就是"会成长"的最小闭环。"""
+    if not FB:
+        return ""
+    try:
+        return FB.hints(req or "", max_chars=420)
+    except Exception:                                            # noqa: BLE001
+        return ""
+
+
+def _record_failure(step: dict, errors: list, req: str) -> str:
+    """失败归因 + 落进失败册，返回归出的类别（供调用方回显）。"""
+    if not FB:
+        return ""
+    try:
+        cat = FB.classify(errors)
+        FB.record(cat, (errors[-1] if errors else "未产出")[:200],
+                  tool="devloop.run_step", task="dev",
+                  fix=("缩小单步范围 / 检查工具链 / 检查路径" if cat != "model_empty"
+                       else "一次只产 1 个文件，并明确给出 ===FILE:=== 格式"))
+        return cat
+    except Exception:                                            # noqa: BLE001
+        return ""
+
+
 def run_step(call_llm, pdir: str, step: dict, *, req: str = "", rounds: int = 2,
-             allow_run: bool = True, log=None, budget_s: int = 240) -> dict:
+             allow_run: bool = True, log=None, budget_s: int = 240,
+             ctx: str = "", should_cancel=None) -> dict:
     """跑**一个**步骤：模型产出 → 落盘 → 验证 → 失败带错误重试 → 仍失败则标 TODO。
 
     ★ `req`：**原始需求**必须传进来。旧写法拿 `step["goal"]`（如"后端数据模型"）
       去判技术栈 —— 判不出 java/vue → `verify_project` 只做静态检查 →
       "写→跑→读错→改"的构建闭环**永远不会触发**（静默失效）。
+    ★ `ctx`：项目地图 + 相关文件片段（`repomap.context_for`）——先让模型"看得见项目"。
+    ★ `should_cancel`：外部取消钩子（长任务必须能被叫停）。
     """
     t0 = time.time()
     wrote, errs, rounds_used = [], [], 0
     last_verify = {"ok": True, "errors": []}
     for r in range(1, max(1, rounds) + 1):
+        if should_cancel and should_cancel():
+            errs.append("已取消")
+            break
         if time.time() - t0 > budget_s:
             errs.append("步骤时间预算用尽（%ds）" % budget_s)
             break
@@ -370,13 +438,14 @@ def run_step(call_llm, pdir: str, step: dict, *, req: str = "", rounds: int = 2,
             hint = ("\n\n⚠️ 上一轮验证没过，请**只修**下面的错误（不要重写整个项目）：\n"
                     + "\n".join(errs[-3:])[:1200])
         prompt = ("你在一个已搭好骨架的项目里干活，**不要重写已有文件**（除非下面是修错）。\n"
-                  "项目目录：%s\n当前文件：\n%s\n\n"
+                  "项目目录：%s\n当前文件：\n%s\n\n%s\n"
                   "本次只做这一步：%s\n需要产出的文件：%s\n%s\n\n"
                   "输出格式（每个文件一段，不要任何解释文字）：\n"
                   "===FILE: 相对路径===\n（文件完整内容）\n===END===\n"
                   "（如需执行命令核对，可用 <<TOOL:run>> 命令 <<END>>；"
                   "全部完成用 <<TOOL:done>> 说明 <<END>>）"
-                  % (pdir, _tree(pdir), step.get("goal"), "、".join(step.get("files") or []), hint))
+                  % (pdir, _tree(pdir), (ctx.strip() + "\n") if ctx else "",
+                     step.get("goal"), "、".join(step.get("files") or []), hint))
         try:
             txt = call_llm(prompt) or ""
         except Exception as ex:                                 # noqa: BLE001
@@ -403,41 +472,115 @@ def run_step(call_llm, pdir: str, step: dict, *, req: str = "", rounds: int = 2,
         errs += [e for e in last_verify["errors"] if e not in errs]
         if log:
             log("步骤 %s 验证未过（第 %d 轮），带错误重试" % (step.get("id"), r))
+    _cat = _record_failure(step, errs, req)
     return {"ok": False, "step": step, "wrote": wrote, "errors": errs[-4:],
-            "rounds": rounds_used, "verify": last_verify}
+            "rounds": rounds_used, "verify": last_verify, "fail_cat": _cat}
+
+
+#: 断点续做状态文件名（P2-8）——写在**项目目录内**，跟着项目走
+STATE_NAME = ".pasm_state.json"
+
+
+def load_state(pdir: str) -> dict:
+    """读断点状态（第几步做完、TODO 有哪些）。缺/坏 → 空状态（绝不抛）。"""
+    p = os.path.join(pdir, STATE_NAME)
+    try:
+        with open(p, encoding="utf-8") as f:
+            d = json.load(f)
+            return d if isinstance(d, dict) else {}
+    except Exception:                                            # noqa: BLE001
+        return {}
+
+
+def save_state(pdir: str, state: dict) -> None:
+    """写断点状态（原子替换，避免写一半崩溃留下坏文件）。"""
+    p = os.path.join(pdir, STATE_NAME)
+    try:
+        tmp = p + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, p)
+    except Exception:                                            # noqa: BLE001
+        pass
+
+
+def clear_state(pdir: str) -> None:
+    try:
+        os.remove(os.path.join(pdir, STATE_NAME))
+    except OSError:
+        pass
 
 
 def agent_loop(call_llm, pdir: str, task: str, *, name: str = "app",
                max_steps: int = 6, rounds_per_step: int = 2,
-               allow_run: bool = True, log=None, budget_s: int = 900) -> dict:
+               allow_run: bool = True, log=None, budget_s: int = 900,
+               resume: bool = True, should_cancel=None,
+               ctx_budget: int = 12000) -> dict:
     """**真工具调用循环**：分解 → 逐步执行（含验证与重试）→ 汇总如实报告。
 
-    返回 {ok, steps:[run_step 结果], wrote, todo, report}
+    返回 {ok, steps:[run_step 结果], wrote, todo, report, resumed, ctx_chars}
+      · `resume`（P2-8）：项目目录里的 `.pasm_state.json` 记着"哪些步骤已完成"，
+        蓝屏/重启后重跑会**跳过已完成步骤**，从下一步接着做；
+      · `should_cancel`：外部取消钩子（长任务可被叫停，状态照实存）；
+      · `ctx`：每步现取「项目地图 + 相关文件」喂给模型（文件在变，地图不能一次性算完）。
     """
     t0 = time.time()
     steps = decompose(task, name)[:max_steps]
+    st_path = os.path.join(pdir, STATE_NAME)
+    state = load_state(pdir) if resume else {}
+    done_ids = set(state.get("done") or [])
+    resumed = bool(done_ids) and os.path.isfile(st_path)
     results, wrote, todo = [], [], []
     for stp in steps:
-        if time.time() - t0 > budget_s:
-            todo.append("步骤 %s（总预算用尽）" % stp.get("id"))
+        sid = str(stp.get("id"))
+        if sid in done_ids:
+            results.append({"ok": True, "step": stp, "wrote": [], "errors": [],
+                            "rounds": 0, "skipped": True, "verify": {"ok": True}})
             continue
-        r = run_step(call_llm, pdir, stp, req=task, rounds=rounds_per_step,
-                     allow_run=allow_run, log=log)
+        if should_cancel and should_cancel():
+            todo.append("步骤 %s（已取消）" % sid)
+            break
+        if time.time() - t0 > budget_s:
+            todo.append("步骤 %s（总预算用尽）" % sid)
+            continue
+        ctx = ""
+        if RM:
+            try:
+                ctx = RM.context_for(pdir, "%s %s" % (task, stp.get("goal") or ""),
+                                     budget_chars=ctx_budget)
+            except Exception:                                    # noqa: BLE001
+                ctx = ""
+        if TR:
+            with TR.span("step", step=sid, goal=(stp.get("goal") or "")[:30],
+                         ctx_chars=len(ctx)):
+                r = run_step(call_llm, pdir, stp, req=task, rounds=rounds_per_step,
+                             allow_run=allow_run, log=log, ctx=ctx,
+                             should_cancel=should_cancel)
+        else:
+            r = run_step(call_llm, pdir, stp, req=task, rounds=rounds_per_step,
+                         allow_run=allow_run, log=log, ctx=ctx,
+                         should_cancel=should_cancel)
         results.append(r)
         wrote += r.get("wrote") or []
-        if not r.get("ok"):
+        if r.get("ok"):
+            done_ids.add(sid)
+            save_state(pdir, {"done": sorted(done_ids, key=lambda x: (len(x), x)),
+                              "task": task[:300], "t": time.strftime("%Y-%m-%d %H:%M:%S")})
+        else:
             todo.append("步骤 %s「%s」：%s"
-                        % (stp.get("id"), stp.get("goal"),
+                        % (sid, stp.get("goal"),
                            (r.get("errors") or ["未产出"])[-1][:120]))
     ok = all(r.get("ok") for r in results) and bool(results)
-    rep = ["工具调用循环完成：%d/%d 步通过验证" % (sum(1 for r in results if r.get("ok")),
-                                              len(results))]
+    rep = ["工具调用循环完成：%d/%d 步通过验证%s"
+           % (sum(1 for r in results if r.get("ok")), len(results),
+              "（本次为**续做**，已跳过 %d 个完成步骤）" % len(done_ids) if resumed else "")]
     if wrote:
-        rep.append("本次写入 %d 个文件" % len(wrote))
+        rep.append("本次写入 %d 个文件" % len(list(dict.fromkeys(wrote))))
     if todo:
         rep.append("**这些步骤没能完成（如实列出，不装成功）**：\n- " + "\n- ".join(todo))
-    return {"ok": ok, "steps": results, "wrote": wrote, "todo": todo,
-            "report": "\n".join(rep)}
+    return {"ok": ok, "steps": results, "wrote": list(dict.fromkeys(wrote)), "todo": todo,
+            "report": "\n".join(rep), "resumed": resumed,
+            "done_steps": sorted(done_ids, key=lambda x: (len(x), x))}
 
 
 def build_fix_loop(call_llm, pdir: str, cmd: str, *, rounds: int = 2,
@@ -608,6 +751,47 @@ def selftest() -> int:
     open(os.path.join(proj4, "bad.json"), "w", encoding="utf-8").write("{'a':1,}")
     v = verify_project(proj4, "python 项目")
     ck("坏 json → 验证不过", not v["ok"], str(v["errors"])[:120])
+
+    print("\n=== ⑩ 断点续做（P2-8）：第二次跑必须跳过已完成步骤 ===")
+    import tempfile as _tf
+    proj5 = _tf.mkdtemp(prefix="devloop_resume_")
+    calls = {"n": 0}
+
+    def fake_ok(prompt):
+        calls["n"] += 1
+        m = __import__("re").search(r"需要产出的文件：([^\n]+)", prompt or "")
+        rel = (m.group(1).split("、")[0].strip() if m else "a.py")
+        return "===FILE: %s===\nprint(1)\n===END===" % rel
+
+    r1 = agent_loop(fake_ok, proj5, "用 python 写个接口", name="t", max_steps=2,
+                    rounds_per_step=1, allow_run=False)
+    n1 = calls["n"]
+    ck("首跑有产出", bool(r1["wrote"]) and n1 > 0, (r1["wrote"], n1))
+    ck("状态文件已落盘", os.path.isfile(os.path.join(proj5, STATE_NAME)))
+    ck("报告里记下完成步数", bool(r1.get("done_steps")), r1.get("done_steps"))
+    calls["n"] = 0
+    r2 = agent_loop(fake_ok, proj5, "用 python 写个接口", name="t", max_steps=2,
+                    rounds_per_step=1, allow_run=False)
+    ck("第二次跑的模型调用更少（跳过已完成）", calls["n"] < n1,
+       "before=%d after=%d" % (n1, calls["n"]))
+    ck("标注为续做", r2.get("resumed") is True or not r1.get("done_steps"), r2.get("resumed"))
+    ck("报告里说明续做/跳过", ("续做" in r2["report"]) or (calls["n"] == 0), r2["report"][:80])
+
+    print("\n=== ⑪ 取消钩子：要能叫停 ===")
+    proj6 = _tf.mkdtemp(prefix="devloop_cancel_")
+    seen = {"n": 0}
+
+    def fake_cancel_llm(prompt):
+        seen["n"] += 1
+        m = __import__("re").search(r"需要产出的文件：([^\n]+)", prompt or "")
+        rel = (m.group(1).split("、")[0].strip() if m else "a.py")
+        return "===FILE: %s===\nprint(1)\n===END===" % rel
+
+    r3 = agent_loop(fake_cancel_llm, proj6, "用 python 写个接口", name="t", max_steps=4,
+                    rounds_per_step=1, allow_run=False, resume=False,
+                    should_cancel=lambda: seen["n"] >= 1)     # 第一步做完就"被取消"
+    ck("取消生效：剩余步骤进 todo（不装作跑完）", bool(r3.get("todo")), r3.get("todo"))
+    ck("已完成的步骤仍如实保留", len(r3["steps"]) >= 1, len(r3["steps"]))
 
     print("\n=== 小结 ===")
     print("PASS=%d FAIL=%d" % (P, F))
