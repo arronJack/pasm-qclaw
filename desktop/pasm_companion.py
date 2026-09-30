@@ -296,6 +296,24 @@ def _excepthook(tp, val, tb):
 
 sys.excepthook = _excepthook
 
+#: 纯指代/催促型指令：**本身不含需求内容**（「请继续」「现在就做」「开始吧」…）。
+#: 用途：续改路由里判断"要不要把上一轮的真实需求接回来"。
+#: ★ 0.31.17 真机事故：用户说「请继续」，旧逻辑把这句话**本身**当成需求写回
+#:   `dev["last_req"]`，真实需求（GEO 平台那句）被冲掉 → 后续续改全部跑偏。
+_RE_BARE_CONTINUE = re.compile(
+    r"^(?:请|麻烦|帮我)?(?:立即|马上|现在|赶紧|快|直接)?"
+    r"(?:继续|接着|往下|往下做|开始|开工|动手|执行|做吧|来吧|走起|就做)"
+    r"(?:吧|呀|啊|哦|了|一下|做|干|开发|生成|写|建|搭)?$")
+
+
+def _is_bare_continue(text: str) -> bool:
+    """这句话是不是"纯指代/催促"（不含任何新需求内容）？"""
+    t = (text or "").strip().strip("。.！!~～,，、;；:： ")
+    if not t or len(t) > 16:
+        return False
+    return bool(_RE_BARE_CONTINUE.fullmatch(t)) or t in (
+        "请继续", "继续", "现在就做", "马上做", "立即开始", "开始", "接着做", "继续做")
+
 
 def _snap_section(snap, key: str) -> dict:
     """取快照区块；缺失 / None / 非 dict 一律给**空 dict**（安全默认）。
@@ -8498,7 +8516,19 @@ class CompanionWindow(QMainWindow):
             logging.exception("save work_session failed")
 
     def _dev_try_continue(self, text: str) -> bool:
-        """续改路由：当前有开发项目，且这句话像在要求改它 → 走台账精准续改。"""
+        """续改路由：当前有开发项目，且这句话像在要求改它 → 走台账精准续改。
+
+        ★ 0.31.17 修两个真机事故（小志 09-30 说「请继续」→ 界面"零动作"）：
+          ① **项目目录定位太窄（本次真凶）**：旧版只认 `<dev_root>/<项目名>`，
+             而项目实际落在 `<dev_root>/PASM工作/project/<项目名>` →
+             `isdir` 判否 → 这里 `return False` → 「请继续」掉进**普通聊天** →
+             模型幻觉"已完成" → 诚实闸门改口 → 用户看到**什么都没做**。
+             现在按候选路径逐个找，最后回退到会话登记的 `_ses_proj_dir`。
+          ② **spec 被指代词覆盖**：旧版 `spec = self._inherit_req or t`，用户只说
+             「请继续」时 spec 就成了"请继续"这个**没有内容的需求**，还写回
+             `dev["last_req"]` 把真实需求冲掉 → 后续续改全部跑偏。
+             现在指代型指令一律回退到 `last_req`。
+        """
         import coder as CDR
         import workctx as WC
         d = self._dev_session()
@@ -8515,24 +8545,71 @@ class CompanionWindow(QMainWindow):
         #   于是这句话完全没有续改语义，被当成全新需求送进模型。
         hit = (name and name in t) or self._is_inherit_req(t) or bool(re.match(
             r"^(继续|接着|再优化|优化一下|改进|修改|改一下|把(这个|它)|在这?个(项目|基础上))", t))
+        # ★ 0.31.17：纯指代/催促（请继续 / 现在就做 / 继续 / 开始）**永远不受
+        #   8 分钟窗口限制** —— 用户隔一天回来接着说「继续」，项目当然还是那个项目。
+        #   旧版这里靠窗口，超时就 return False → 掉进聊天 → 幻觉 → 闸门改口。
+        _bare = _is_bare_continue(t)
+        _inherit = bool(self._is_inherit_req(t)) or _bare
+        hit = hit or _bare
         if not hit:
-            # 短消息 + 上一轮刚做过开发 → 视为对上一轮的追问修改
+            # 短消息 + 上一轮刚做过开发 → 视为对上一轮的追问修改。
+            # ★ 0.31.17 补一道收紧：**还得像"改动指令"**——否则「今天天气不错」
+            #   这种 6 个字的闲聊只要落在 8 分钟窗口里，就会被当成需求送进开发管道，
+            #   模型据此凭空造一个项目（真机反馈过"一个不是我想要的开发"）。
             last = (self.dev.get("last_ts") or 0)
             if time.time() - last > 60 * 8 or len(t) < 4:
                 return False
-        if not os.path.isdir(os.path.join(d.get("root", ""), CDR.safe_name(name))):
+            if not re.search(r"改|加|增|删|去掉|换成|换|优化|调整|继续|接着|实现|补|修|"
+                             r"做|写|生成|开发|重构|拆分|导出|接入|支持", t):
+                logging.info("续改路由未命中：短消息不像改动指令（%s）", t[:24])
+                return False
+        _last_req = str(d.get("last_req")
+                        or (getattr(self, "dev", None) or {}).get("last_req") or "").strip()
+
+        # —— 找项目目录：多候选（★ 0.31.17）——
+        safe = CDR.safe_name(name)
+        try:
+            dr = self.cfg.get("dev_root") or os.path.expanduser("~/Desktop")
+        except Exception:                                        # noqa: BLE001
+            dr = os.path.expanduser("~/Desktop")
+        home = os.path.expanduser("~")
+        cands = []
+        for c in (os.path.join(dr, safe),
+                  os.path.join(dr, "PASM工作", "project", safe),
+                  os.path.join(dr, "project", safe),
+                  os.path.join(dr, "PASM工作", safe),
+                  os.path.join(home, "Desktop", "PASM工作", "project", safe),
+                  getattr(self, "_ses_proj_dir", "") or ""):
+            if c and c not in cands:
+                cands.append(c)
+        pdir = ""
+        for c in cands:
+            if os.path.isdir(c):
+                pdir = os.path.normpath(c)
+                break
+        if not pdir:
+            # 别再静默失败：把"为什么没续上"写进日志，便于下次直接定位
+            logging.info("续改路由未命中：项目「%s」的目录找不到（候选：%s）",
+                         name, " | ".join(cands[:4]))
             return False
-        root = d["root"]
+        root = os.path.dirname(pdir) or dr
         # ★ v0.31.3：真正要做什么 = 继承来的上一轮需求（有的话），而不是"请立即开始"本身。
         #   并把这次要在哪个项目上改**明说**，免得用户以为"它又另做了一个不是我要的"。
-        spec = self._inherit_req or t
+        #   ★ 0.31.17：指代型指令（请继续/现在就做/开始吧）绝不能把自身当成需求。
+        spec = self._inherit_req or (_last_req if _inherit else "") or t
+        if _inherit and (not spec or len(spec) < 4 or spec.strip() == t.strip()):
+            spec = _last_req or t
+        if _is_bare_continue(t) and _last_req and len(_last_req) >= 4:
+            spec = _last_req                      # 兜底：真实需求永远优先于指代词
         if self._inherit_req:
             self._append("系统", "在已有项目『%s』上继续：<b>%s</b>"
                          % (html.escape(str(name)),
                             html.escape(self._inherit_req[:70])))
+        logging.info("续改路由命中：项目「%s」→ %s（需求：%s）", name, pdir, spec[:60])
         self.dev["last_req"] = spec
         self.dev["last_ts"] = time.time()
         self._chip_req["project"] = spec[:600]
+        self._ses_proj_dir = pdir
         self._save_work_state()
         WC.record_request(name, spec, is_change=True)
         self._dev_build(name, spec, d.get("lang", "python"), root, is_new=False)
@@ -13338,15 +13415,34 @@ class CompanionWindow(QMainWindow):
                 "（例：「在 D:\\Code副\\xxx 里加一个查询接口」），我立刻就开。")
 
     def _guard_say(self, text: str, reply: str, kind: str, what: str) -> str:
-        """记拦截台账 + 给更正话术（**不断言"我骗你"，只说查不到记录**）。"""
+        """记拦截台账 + 给更正话术（**不断言"我骗你"，只说查不到记录**）。
+
+        ★ 0.31.17：旧版只回一句"要真动手的话，说一声「现在就做」"——**把活推回给用户**，
+        真机后果就是小志说的"没有任何动作"（说了「请继续」只得到一句道歉）。
+        现在：能推断出要干什么就直接给**可点入口**（并把意图挂成待开工），
+        让"被拦下的假动作"立刻变成"一步就能真做"。
+        """
         import sysops as SYS
         SYS.ledger("honesty_guard", (text or "")[:80],
                    "回复宣称%s但台账无真实记录" % kind,
                    {"ok": False, "reason": "拦截编造，强制改口"})
-        return ("⚠️ 更正：我刚才差点说错话——**我并没有真的%s任何东西**"
-                "（执行台账里查不到真实操作记录，我不装做完了）。\n"
-                "要真动手的话，说一声「现在就做」，我会真正执行并把结果给你看。"
-                "你也可以说「看看操作台账」核验我。" % what)
+        head = ("⚠️ 更正：我刚才差点说错话——**我并没有真的%s任何东西**"
+                "（执行台账里查不到真实操作记录，我不装做完了）。\n" % what)
+        _req = None
+        try:
+            _req = self._pending_intent(text)
+        except Exception:                                        # noqa: BLE001
+            _req = None
+        if _req:
+            try:
+                self._pending_work = _req
+            except Exception:                                    # noqa: BLE001
+                pass
+            return (head + "\n我把要做的事接回来了 —— 点下面这个入口，我**现在就真做**：\n\n"
+                    "[⚙️ 立刻开工](pasm://confirmwork)\n\n"
+                    "（想换做法就先补一句：做在哪个目录、用什么技术栈。）")
+        return (head + "\n要真做的话，把**做在哪、做什么**说清"
+                "（例：「在 D:\\Code\\xxx 里加一个查询接口」），我立刻就开。")
 
     def _honesty_guard(self, text: str, reply: str) -> str:
         """防幻觉守卫：回复宣称"已执行/已完成"，但执行台账里没有这段时间的
@@ -15214,6 +15310,18 @@ class CompanionWindow(QMainWindow):
         """
         try:
             if not pdir or not os.path.isdir(pdir):
+                return
+            # ★ 0.31.17：**空产出不记产出**。真机实录（09-30 11:39）：dev 一轮
+            #   生成 0 tok、目录里一个文件都没有，却照样记了"产出效果已追加
+            #   kind=project 第1轮" → 工作台显示"有产出"，是假象来源。
+            #   判据：目录里至少要有一个真文件（排除目录名本身）。
+            _nfiles = 0
+            for _r, _ds, _fs in os.walk(pdir):
+                _nfiles += len(_fs)
+                if _nfiles:
+                    break
+            if not _nfiles:
+                logging.info("空产出，不记产出轮次：%s（目录里没有任何文件）", pdir)
                 return
             entry = ""
             for cand in ("index.html", "index.htm", "main.py", "app.py",
