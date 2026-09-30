@@ -280,7 +280,13 @@ def sync_version_info() -> str:
     try:
         with open(path, "w", encoding="utf-8", newline="\n") as f:
             f.write(src)
-        print("[build_common] version_info.txt 已对齐 APP_VERSION=%s" % ver)
+        # ⚠️ 必须走 **stderr**：`build_common.py lines` 的 stdout 会被 CI 脚本
+        #    `mapfile -t EXTRA < <(...)` 逐行当成 pyinstaller 参数读走 ——
+        #    0.31.16 实测把这句打到 stdout，Linux/macOS 构建直接报
+        #    `Script file '[build_common] version_info.txt 已对齐 ...' does not exist`
+        #    并失败（Windows 走 spec 不受影响，所以只挂在两个非 Windows job 上）。
+        print("[build_common] version_info.txt 已对齐 APP_VERSION=%s" % ver,
+              file=sys.stderr)
     except Exception as ex:
         print("[build_common] version_info.txt 写入失败：%s" % ex, file=sys.stderr)
     return path
