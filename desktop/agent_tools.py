@@ -55,10 +55,12 @@ from typing import List, Optional, Tuple
 import platform_ops                  # 跨平台：打开文件 / 定位 / 脚本解释器（v0.31.1）
 
 if os.name == "nt":
-    DATA_DIR = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"),
-                            "PASMStudio")
+    # ★ 0.31.17：`PASMSTUDIO_DATA` 可覆盖（测试/自检要能隔离，别写进用户真实目录）
+    DATA_DIR = (os.environ.get("PASMSTUDIO_DATA")
+                or os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"),
+                                "PASMStudio"))
 else:
-    DATA_DIR = os.path.expanduser("~/.pasmstudio")
+    DATA_DIR = os.environ.get("PASMSTUDIO_DATA") or os.path.expanduser("~/.pasmstudio")
 # v0.30.11：脚本 / 项目不再落 DATA_DIR，改落**统一工作根**下的分类目录
 # （<工作根>/script、<工作根>/project，见 pasm/cognitive/workspace.py）。
 # 两个模块级名字保留（外部有 5 处读 `AT.SCRIPTS_DIR`），但值一律由 `_sync_dirs()`

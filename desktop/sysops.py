@@ -31,8 +31,13 @@ except Exception:                           # pragma: no cover - 非 Windows 兜
 
     wt = _WintypesShim
 
-APPDATA_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")),
-                           "PASMStudio")
+#: 台账目录。★ 0.31.17：支持 `PASMSTUDIO_DATA` 覆盖 —— 测试/自检必须能指向临时目录。
+#: 真机教训：desktop_verify 的用例直接写进了小志**真实的** ops_ledger.jsonl
+#: （12:18/12:20 那 6 条 pasm03116b_* 记录），而诚实闸门正是靠这张台账判"有没有真动作"
+#: —— 测试污染台账 = 污染闸门判据。
+APPDATA_DIR = (os.environ.get("PASMSTUDIO_DATA")
+               or os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")),
+                               "PASMStudio"))
 LEDGER_PATH = os.path.join(APPDATA_DIR, "ops_ledger.jsonl")
 os.makedirs(APPDATA_DIR, exist_ok=True)
 

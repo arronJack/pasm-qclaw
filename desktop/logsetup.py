@@ -48,7 +48,13 @@ def roaming_appdata() -> str:
 
 
 def data_dir() -> str:
-    """应用数据目录 —— **与 pasm_companion.DATA_DIR 同一来源**，勿各自实现。"""
+    """应用数据目录 —— **与 pasm_companion.DATA_DIR 同一来源**，勿各自实现。
+
+    ★ 0.31.17：新增 `PASMSTUDIO_DATA`（与 agent_tools/sysops 同名开关），
+    让测试/自检可以整体隔离到临时目录；`PASM_STUDIO_DIR` 为历史名，保留兼容。
+    """
+    if os.environ.get("PASMSTUDIO_DATA"):
+        return os.environ["PASMSTUDIO_DATA"]
     if os.environ.get("PASM_STUDIO_DIR"):
         return os.environ["PASM_STUDIO_DIR"]
     if getattr(sys, "frozen", False):

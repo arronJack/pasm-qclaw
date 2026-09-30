@@ -15038,6 +15038,259 @@ class CompanionWindow(QMainWindow):
                 return (runmsg + "\n\n自动复查修复后仍报错：\n" + r2)
         return runmsg
 
+    # ================= v0.31.17 分步生成（兑现 0.31.16 话术里的承诺）=================
+    # 为什么必须有：0.31.16 的失败话术让用户「跟我说『分步生成』」，但**这功能当时
+    # 根本不存在**（`grep 分步` 只有漫剧流程）—— 用户照着做，得到的是死路。
+    # 而真机数据说明"一枪打整包"对本地小模型是能力错配：7200 tok 额度下只吐 184~209 tok。
+    # 分步法把任务切到小模型能完成的粒度：① 确定性骨架（不靠模型）→ ② 逐文件填充
+    # （单文件窄提示，≤1500 tok）→ ③ 语法校验 → ④ 如实报告。
+    _STAGED_MAX_FILL = 3          # 最多让模型补几个文件（其余留骨架 + TODO 说明）
+
+    def _stage_stack(self, req: str):
+        """识别技术栈（与 `_project_run` 同口径，独立成方法便于复用/测试）。"""
+        want_java = bool(re.search(r"spring\s?boot|spring boot|java|maven|gradle", req, re.I))
+        want_vue = bool(re.search(r"vue|vue3|vue\s?3", req, re.I))
+        want_react = bool(re.search(r"react|antd|ant design", req, re.I))
+        want_py = bool(re.search(r"python|flask|fastapi|django", req, re.I))
+        want_node = bool(re.search(r"node|express|nest|next\.?js", req, re.I))
+        if not (want_java or want_py or want_node):
+            want_py = True                      # 没明说时给"最常见可跑"的默认栈
+        return want_java, want_vue, want_react, want_py, want_node
+
+    def _stage_skeleton(self, name: str, req: str) -> dict:
+        """确定性骨架：**不依赖模型**，保证"哪怕模型再弱，也有一套能跑起来的架子"。"""
+        want_java, want_vue, want_react, want_py, want_node = self._stage_stack(req)
+        pkg = re.sub(r"[^a-z0-9]", "", (name or "app").lower())[:20] or "app"
+        files = {}
+        if want_java:
+            files["pom.xml"] = (
+                '<?xml version="1.0" encoding="UTF-8"?>\n'
+                '<project xmlns="http://maven.apache.org/POM/4.0.0"\n'
+                '         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"\n'
+                '         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 '
+                'https://maven.apache.org/xsd/maven-4.0.0.xsd">\n'
+                '  <modelVersion>4.0.0</modelVersion>\n'
+                '  <parent>\n    <groupId>org.springframework.boot</groupId>\n'
+                '    <artifactId>spring-boot-starter-parent</artifactId>\n'
+                '    <version>3.2.5</version>\n    <relativePath/>\n  </parent>\n'
+                '  <groupId>com.example</groupId>\n  <artifactId>%s</artifactId>\n'
+                '  <version>0.0.1-SNAPSHOT</version>\n  <name>%s</name>\n'
+                '  <properties><java.version>17</java.version></properties>\n'
+                '  <dependencies>\n'
+                '    <dependency><groupId>org.springframework.boot</groupId>'
+                '<artifactId>spring-boot-starter-web</artifactId></dependency>\n'
+                '    <dependency><groupId>org.springframework.boot</groupId>'
+                '<artifactId>spring-boot-starter-data-jpa</artifactId></dependency>\n'
+                '    <dependency><groupId>com.h2database</groupId>'
+                '<artifactId>h2</artifactId><scope>runtime</scope></dependency>\n'
+                '  </dependencies>\n'
+                '  <build><plugins><plugin><groupId>org.springframework.boot</groupId>'
+                '<artifactId>spring-boot-maven-plugin</artifactId></plugin></plugins></build>\n'
+                '</project>\n' % (pkg, name))
+            files["src/main/java/com/example/%s/Application.java" % pkg] = (
+                "package com.example.%s;\n\n"
+                "import org.springframework.boot.SpringApplication;\n"
+                "import org.springframework.boot.autoconfigure.SpringBootApplication;\n\n"
+                "/** 应用入口（骨架自动生成，可直接 mvn spring-boot:run 启动）。 */\n"
+                "@SpringBootApplication\npublic class Application {\n"
+                "    public static void main(String[] args) {\n"
+                "        SpringApplication.run(Application.class, args);\n    }\n}\n" % pkg)
+            files["src/main/resources/application.yml"] = (
+                "server:\n  port: 8080\nspring:\n  datasource:\n"
+                "    url: jdbc:h2:file:./data/appdb\n    driver-class-name: org.h2.Driver\n"
+                "    username: sa\n    password: \"\"\n  jpa:\n    hibernate:\n"
+                "      ddl-auto: update\n    show-sql: true\n")
+        if want_vue or want_react:
+            is_vue = bool(want_vue)
+            files["frontend/package.json"] = (
+                '{\n  "name": "frontend",\n  "private": true,\n  "version": "0.0.1",\n'
+                '  "type": "module",\n  "scripts": {"dev": "vite", "build": "vite build",\n'
+                '              "preview": "vite preview"},\n'
+                '  "dependencies": {"axios": "^1.7.2", "%s": "%s"},\n'
+                '  "devDependencies": {"vite": "^5.3.1", "@vitejs/plugin-%s": "%s"}\n}\n'
+                % ("vue" if is_vue else "react", "^3.4.27" if is_vue else "^18.3.1",
+                   "vue" if is_vue else "react", "^5.3.1" if is_vue else "^4.3.0"))
+            files["frontend/vite.config.js"] = (
+                "import { defineConfig } from 'vite'\n"
+                "import %s from '@vitejs/plugin-%s'\n\n"
+                "// 开发期把 /api 代理到后端 8080，前端就不用手写跨域\n"
+                "export default defineConfig({\n  plugins: [%s()],\n"
+                "  server: { port: 5173, proxy: { '/api': 'http://localhost:8080' } }\n})\n"
+                % ("vue" if is_vue else "react", "vue" if is_vue else "react",
+                   "vue" if is_vue else "react"))
+            files["frontend/index.html"] = (
+                '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n'
+                '  <meta charset="UTF-8" />\n  <title>%s</title>\n</head>\n'
+                '<body>\n  <div id="app"></div>\n'
+                '  <script type="module" src="/src/main.js"></script>\n</body>\n</html>\n'
+                % name)
+            if is_vue:
+                files["frontend/src/main.js"] = (
+                    "import { createApp } from 'vue'\nimport App from './App.vue'\n\n"
+                    "createApp(App).mount('#app')\n")
+                files["frontend/src/App.vue"] = (
+                    "<script setup>\n// 骨架页：后端接口连通性检查（模型弱时也一定能看到东西）\n"
+                    "import { ref, onMounted } from 'vue'\nimport axios from 'axios'\n\n"
+                    "const msg = ref('加载中…')\nonMounted(async () => {\n"
+                    "  try {\n    const r = await axios.get('/api/health')\n"
+                    "    msg.value = '后端已连通：' + JSON.stringify(r.data)\n"
+                    "  } catch (e) { msg.value = '后端未启动（先在根目录 mvn spring-boot:run）' }\n"
+                    "})\n</script>\n\n<template>\n  <h1>%s</h1>\n"
+                    "  <p>{{ msg }}</p>\n</template>\n" % name)
+        if want_py:
+            files.setdefault("requirements.txt",
+                             "fastapi>=0.111\nuvicorn[standard]>=0.30\n")
+            files.setdefault("app.py", (
+                "# -*- coding: utf-8 -*-\n"
+                '"""骨架后端（自动生成，可直接 python -m uvicorn app:app --reload 启动）。"""\n'
+                "from fastapi import FastAPI\n\napp = FastAPI(title=\"%s\")\n\n\n"
+                "@app.get(\"/api/health\")\ndef health():\n"
+                "    return {\"ok\": True, \"service\": \"%s\"}\n" % (name, name)))
+        if want_node:
+            files.setdefault("package.json", (
+                '{\n  "name": "%s",\n  "private": true,\n  "type": "module",\n'
+                '  "scripts": {"start": "node server.js"},\n'
+                '  "dependencies": {"express": "^4.19.2"}\n}\n'
+                % re.sub(r"[^a-zA-Z0-9_-]", "-", name or "app").lower()))
+            files.setdefault("server.js", (
+                "import express from 'express'\n\nconst app = express()\n"
+                "app.get('/api/health', (_q, s) => s.json({ ok: true, service: '%s' }))\n\n"
+                "app.listen(3000, () => console.log('http://localhost:3000'))\n" % name))
+        # 启动说明（**按栈给对命令**，不再只找 .py/.js 入口）
+        runs = []
+        if want_java:
+            runs.append("后端：`mvn spring-boot:run`（默认 http://localhost:8080）")
+        if want_vue or want_react:
+            runs.append("前端：`cd frontend && npm install && npm run dev`（默认 http://localhost:5173）")
+        if want_py:
+            runs.append("后端：`pip install -r requirements.txt && python -m uvicorn app:app --reload`")
+        if want_node:
+            runs.append("后端：`npm install && npm start`（默认 http://localhost:3000）")
+        files["README.md"] = (
+            "# %s\n\n> 本目录由 PASM Studio **分步生成**：先落骨架（保证可运行），"
+            "再由模型逐文件补内容；补不上的文件保留可运行骨架并标注 TODO。\n\n"
+            "## 启动\n\n%s\n\n## 已有文件\n\n%s\n"
+            % (name, "\n".join("- " + r for r in runs) or "- （无）",
+               "\n".join("- `%s`" % p for p in sorted(files)) + "\n- `README.md`"))
+        return files
+
+    def _stage_syntax_ok(self, rel: str, content: str):
+        """便宜的语法校验（只做"必错"拦截，拿不准就放行）。返回 (ok, 说明)。"""
+        import py_compile
+        low = rel.lower()
+        try:
+            if low.endswith(".py"):
+                import tempfile
+                with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False,
+                                                 encoding="utf-8") as f:
+                    f.write(content)
+                    tmp = f.name
+                try:
+                    py_compile.compile(tmp, doraise=True)
+                    return True, ""
+                finally:
+                    try:
+                        os.unlink(tmp)
+                    except OSError:
+                        pass
+            if low.endswith(".json"):
+                import json as _json
+                _json.loads(content)
+                return True, ""
+            if low.endswith(".yml") or low.endswith(".yaml"):
+                return True, ""             # 不引第三方 yaml 依赖，交给启动时报错
+        except Exception as ex:                                  # noqa: BLE001
+            return False, str(ex)[:120]
+        return True, ""
+
+    def _project_staged(self, name: str, req: str, _tgt=None, _on_think=None,
+                        seed: dict = None) -> str:
+        """分步生成：骨架落盘 → 逐文件模型填充 → 语法校验 → 如实报告。"""
+        import agent_tools as AT
+        want_java, want_vue, want_react, want_py, want_node = self._stage_stack(req)
+        files = dict(self._stage_skeleton(name, req))
+        for k, v in (seed or {}).items():
+            r = AT.normalize_rel(k)
+            if r and r not in files:
+                files[r] = v                      # 模型已产出的有效文件先收进来
+        pdir, tree = AT.save_project(name, files, dest=_tgt if _tgt else None)
+        self._ses_proj_dir = pdir
+        self._step("new", "骨架已落盘（不依赖模型）", pdir, "%d 个文件" % len(files))
+        # —— 逐文件填充（每个文件一次窄提示；失败的跳过，不拖垮整轮）——
+        fills = []
+        if want_java:
+            _pkg = re.sub(r"[^a-z0-9]", "", (name or "app").lower())[:20] or "app"
+            fills.append(("src/main/java/com/example/%s/controller/MainController.java" % _pkg,
+                          "Spring Boot 3 的 @RestController（含增删改查接口、中文注释、"
+                          "返回 JSON，不要输出 pom.xml）"))
+        if want_vue:
+            fills.append(("frontend/src/views/Dashboard.vue",
+                          "Vue 3 单文件组件（<script setup>，列表 + 表单 + axios 调 /api，"
+                          "中文界面，不要输出 package.json）"))
+        elif want_react:
+            fills.append(("frontend/src/Dashboard.jsx",
+                          "React 函数组件（列表 + 表单 + axios 调 /api，中文界面）"))
+        if want_py:
+            fills.append(("routes.py", "FastAPI 路由模块（业务接口 + 中文注释，"
+                                       "用 APIRouter，不要输出 requirements.txt）"))
+        if want_node:
+            fills.append(("routes.js", "Express 路由模块（业务接口 + 中文注释）"))
+        filled, failed = [], []
+        for rel, hint in fills[:self._STAGED_MAX_FILL]:
+            try:
+                self._step("plan", "分步填充：%s" % rel, hint[:40], "单文件窄提示")
+                txt = self._brain(
+                    "只输出**这一个文件**的内容：%s\n\n内容要求：%s\n\n"
+                    "背景需求（供参考，不要复述）：%s\n\n"
+                    "输出格式（必须严格遵守，不要任何解释文字）：\n"
+                    "===FILE: %s===\n（文件完整内容）\n===END===\n" % (rel, hint, req[:600], rel),
+                    max_tokens=1500, task="dev", on_think=_on_think)
+                got = AT.parse_bundle(txt or "")
+                if not got:
+                    m = re.search(r"```[a-zA-Z]*\n(.*?)```", txt or "", re.S)
+                    got = {rel: m.group(1)} if m else {}
+                rel_ok = AT.normalize_rel(rel) or rel
+                content = got.get(rel) or got.get(rel_ok) or (list(got.values())[0] if got else "")
+                if not content or len(content.strip()) < 20:
+                    failed.append(rel)
+                    continue
+                ok, why = self._stage_syntax_ok(rel_ok, content)
+                if not ok:
+                    # 语法不过 → 退掉这一件（骨架还在，不影响整项目可运行）
+                    failed.append("%s（语法错误：%s）" % (rel, why))
+                    continue
+                full = os.path.join(pdir, *rel_ok.split("/"))
+                if os.path.relpath(full, pdir).startswith(".."):
+                    failed.append("%s（路径越界已拒）" % rel)
+                    continue
+                os.makedirs(os.path.dirname(full) or pdir, exist_ok=True)
+                with open(full, "w", encoding="utf-8") as f:
+                    f.write(content)
+                files[rel_ok] = content
+                filled.append(rel_ok)
+            except Exception as ex:                              # noqa: BLE001
+                logging.info("分步填充失败：%s（%s）", rel, ex)
+                failed.append(rel)
+        AT._register_project(name, pdir, sorted(files))
+        runmsg = ""
+        try:
+            runmsg = self._project_verify_and_run(pdir, req, _on_think)
+        except Exception:                                        # noqa: BLE001
+            runmsg = ""
+        self._mark_effect_dev(pdir)
+        lines = ["🧩 这次走的是**分步生成**（骨架 → 逐文件填充），共 %d 个文件：" % len(files),
+                 "", tree, ""]
+        if filled:
+            lines.append("模型已补内容：%s" % "、".join("`%s`" % f for f in filled))
+        if failed:
+            lines.append("以下文件**保留骨架**（模型这轮没给出可用内容，已如实记下，不编造）：%s"
+                         % "、".join("`%s`" % f for f in failed))
+        if runmsg:
+            lines += ["", runmsg]
+        lines += ["", "📁 `%s`" % pdir,
+                  "", "接着做只要说「继续」或「把 XX 改成 YY」，我会在这个项目上继续改。"]
+        return "\n".join(lines)
+
     def _project_run(self, req: str) -> str:
         """全栈开发：生成多文件项目（前端+后端+数据库，按需求取舍）→ 保存 → 尝试运行。
 
@@ -15205,18 +15458,19 @@ class CompanionWindow(QMainWindow):
         # ★ F3（0.31.16）：全栈请求只产出 1~2 个文件 = 被截断的半成品，**如实判失败**，
         #   绝不虚报"搭好了"。真机实录：720 tok 截断后只落了 1 个 pom.xml，
         #   回复却说"项目搭好了！共 1 个文件"—— 失败被包装成成功，比功能缺失更伤信任。
-        if len(files) < 3 and re.search(
+        # ★ 0.31.17：判失败之后**不能停在"告诉你半成品"** —— 0.31.16 的话术让用户
+        #   「跟我说『分步生成』」，而那功能当时并不存在（用户照做=死路）。
+        #   现在：不全 → **自动转分步生成**（骨架确定性落盘 + 逐文件填充），
+        #   用户也可以直接说「分步生成」跳过一次性整包。
+        _want_staged = bool(re.search(r"分步|一步步|一块一块|分块|骨架构?建", req, re.I))
+        if _want_staged or (len(files) < 3 and re.search(
                 r"前后端|前后端分离|全栈|分离开发|后端.{0,10}(api|接口)|管理系统|"
-                r"带数据库|数据库", req, re.I):
-            self._step("err", "产出不完整，如实判定失败",
-                       "仅 %d 个文件，完整前后端分离项目至少需要后端+前端+配置/依赖清单"
-                       % len(files))
-            return ("这次只生成出 %d 个文件，对「前后端分离」的需求来说**是个半成品**，"
-                    "我不能把它当“搭好了”报给你。\n\n多半是当前模型算力/输出上限不够被截断了，"
-                    "两个办法任选：\n1）到「设置 → 模型」里填一个云端 API Key（DeepSeek 等），"
-                    "质量会立刻上一个台阶，然后重发需求；\n2）不换模型的话，跟我说"
-                    "「分步生成」，我按 后端 → 前端 → 数据库/配置 一块一块拼，每块都完整。"
-                    % len(files))
+                r"带数据库|数据库", req, re.I)):
+            self._step("plan", "转「分步生成」（骨架 + 逐文件填充）",
+                       "用户要求分步" if _want_staged else
+                       "模型这轮只给出 %d 个文件，不足以成套" % len(files))
+            return self._project_staged(name, req, _tgt, _on_think, seed=files)
+
         self._step("plan", "文件清单已就绪", "%d 个文件" % len(files),
                    "、".join(list(files)[:6]))
         if edit_mode:
