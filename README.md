@@ -17,8 +17,8 @@
 | `pasm-mcp-server` | MCP 接入层：给任意 AI 客户端装长期记忆（`PASM2=1` 切 V2） | 公开 | 0.2.1 |
 | `pasm-domain-advisor` · `pasm-medical` · `pasm-customer-service` | 领域智能体：领域顾问引擎 / 医疗辅助 / 专业客服 | 公开 | 0.1.1 · 0.1.0 · 0.2.0 |
 | `PASM-Lite` | 教学版 + 认知引擎接口（不接 V2，保持纯净） | 公开 | — |
-| `PASM` | 核心引擎（七层仿生 / 世界模型，含 `pasm2/`；桌面源码 0.31.16） | 私有 | 0.7.2 |
-| **`pasm-qclaw`（本仓）** | **桌面应用发行通道（安装包 + `latest.json` 升级源）** | **公开** | **0.31.16（已发行）** |
+| `PASM` | 核心引擎（七层仿生 / 世界模型，含 `pasm2/`；桌面源码 0.31.18） | 私有 | 0.7.2 |
+| **`pasm-qclaw`（本仓）** | **桌面应用发行通道（安装包 + `latest.json` 升级源）** | **公开** | **0.31.18（已发行）** |
 
 本仓**现在包含 PASM Studio 桌面端的开源源码**（[`desktop/`](desktop/README.md) 目录，基于 PySide6 的 Windows 桌面应用 UI/外壳层），
 同时仍是安装包与更新清单 `latest.json` 的**发行通道**。
@@ -46,7 +46,44 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.31.16（2026-09-30）· GEO 平台复测整批修复：落盘混乱 / 开发被限流 / 虚报成功
+## 最新：v0.31.18（2026-09-30）· 小U「真会干活」：补齐执行内核 + 重活自动交给云端
+
+**这一版正面回应你上次的反馈**：「让它继续开发 geo 平台，结果什么都没做」。
+我们把根因逐条钉死（有完整诊断报告 `docs/qa/2026-09-30-开发栏目零动作根因诊断.md`），
+并把「干活」这条链路从"喊一句、听天由命"改成**有循环、有验证、有重试、有台账**：
+
+- **①「请继续」不再石沉大海**：四处真凶一次修完 —— 续改路由只认工作根下的同名目录（而项目其实在
+  `PASM工作/project/` 里）、需求被「请继续」三个字顶掉、「隔 8 分钟以上再说」被当成闲聊、
+  空产出（0 个文件）也记成"产出轮次"。
+- **② 不再让你照着不存在的功能做**：0.31.16 曾回你「跟我说『分步生成』」，而那个功能当时**并不存在**
+  —— 现在真的实现了，而且**不需要你说**：产出不足时自动转分步。
+- **③ 开发改成分步干活（本版核心）**：先落**确定性骨架**（Spring Boot 的 pom / 主类 / `application.yml`、
+  Vue 的 Vite 全套含 `/api` 代理、Python / Node 骨架 + 按栈给对的启动命令），
+  再**逐文件**让模型补内容，**每一步**都做语法 / 构建校验，失败带错误重试；
+  补不动的文件**保留可运行骨架并如实标注**，绝不假报「搭好了」。
+- **④ 写→跑→读错→改 闭环**：真跑构建命令，把报错**原样回灌**给模型只修错处，再跑
+  （只在工具链与依赖缓存就绪时才跑，避免首次构建拉全网依赖把界面卡死）。
+- **⑤ 重活自动升级云端**：开发 / 长文这类重活，即使你在设置里选了本地小模型也会**自动走云端**
+  并在日志里说明原因（设置里可关 `auto_escalate_heavy`）；没有云端 Key 时自动改为分步。
+- **⑥ 模型现在看得见项目**：云端系统提示预算 1800 → **48000 字**，并带上
+  **项目文件地图（含符号摘要）+ 相关文件片段** —— 改已有项目不再"整包重写"。
+- **⑦ 权限门下沉到工具层**：写盘 / 执行脚本 / 删除按风险分级；安全档下高危操作**弹窗问你要不要做**
+  （你拒绝它就不做），每次判定都留审计记录。
+- **⑧ 会「长记性」**：失败自动归因（模型空转 / 格式 / 路径 / 权限 / 工具链 / 语法 / 构建 / 超时…）
+  并记成「已知坑」，下次同类任务提示里自动带上规避建议。
+- **⑨ 一键诊断包**：轮次级 trace + 日志 + 操作台账 + 失败册 + **脱敏配置**打包成 zip
+  （密钥不会外泄），排障不用再手工翻文件。
+- **⑩ 长任务可续可停**：进度落盘，崩溃 / 重启后说「继续」能**从下一步接着做**；支持取消。
+- **⑪ 办公文件就地改**：表格改一个单元格（**保住原有样式**）、文档 / 演示按文字替换，改一个字不必重生成整份。
+- **⑫ 能力基准**：8 项固定任务一键跑（当前 **8/8**），发版可以对比"这版比上版更会干活吗"。
+
+> **下载**：Windows 见本页 Releases（Gitee 上是**分卷版**：把 `-gitee.exe` 与同目录 `.bin`
+> 全部下到**同一个文件夹**再运行 exe，**不需要手动合并**）。macOS / Linux 的包在
+> **GitHub / GitCode** 的同一 tag 下（dmg / tar.gz / deb）。
+
+同时包含 **0.31.16 / 0.31.15** 的全部修复（GEO 复测整批修复：D 盘解析、开发免收口、如实报失败、路径归一化、多栈启动命令）。
+
+### v0.31.16（2026-09-30）· GEO 平台复测整批修复：落盘混乱 / 开发被限流 / 虚报成功
 
 **这一版是你拿「在D盘建一个geo文件夹…用 springboot-vue 做前后端分离的 GEO 优化平台」实测后
 反馈的问题整批修复。** 上一版（0.31.15）把「开发」从崩溃里救回来了，但真机复测暴露了新的一层：
@@ -804,7 +841,53 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 > **It never loses what you typed, and never claims to have done something it didn't** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.31.16 (2026-09-30) · Full fix batch from the GEO-platform retest: stray writes / throttled dev / false success
+## Latest: v0.31.18 (2026-09-30) · "It actually works now": agent execution core + heavy tasks auto-escalated to the cloud
+
+This release answers your last report directly: *"I asked it to continue developing the GEO platform and it did nothing."*
+We traced every root cause (full diagnosis: `docs/qa/2026-09-30-开发栏目零动作根因诊断.md`) and turned the "do work"
+path from *say-a-sentence-and-hope* into **a real loop with verification, retries and an audit trail**:
+
+- **① "Continue" is no longer a dead end** — four root causes fixed at once: the continuation router only looked for
+  a same-named folder under the work root (the project actually lives in `PASM工作/project/`), the real requirement
+  was overwritten by the bare phrase "continue", a >8-minute gap was treated as small talk, and empty output (0 files)
+  was still recorded as a "round of output".
+- **② No more pointing you at a feature that does not exist** — 0.31.16 told you to say "step-by-step generation"
+  while that feature was **never implemented**. It exists now, and you do not even have to ask: it kicks in
+  automatically when the one-shot output is incomplete.
+- **③ Staged development (the core of this release)** — first a **deterministic skeleton** lands on disk
+  (Spring Boot `pom.xml` / main class / `application.yml`; full Vue + Vite set incl. an `/api` proxy; Python/Node
+  skeletons; README with the correct start command per stack), then the model fills **one file at a time**, with
+  syntax/build verification **after every step** and error-fed retries. Files it cannot fill **keep a runnable
+  skeleton and are reported honestly** — never a fake "it's built".
+- **④ Real write → run → read-error → fix loop** — the build command is really executed, stderr is fed back verbatim,
+  only the failing file is rewritten, then it runs again (only when the toolchain and dependency cache are ready,
+  so a first `mvn` run cannot freeze the UI).
+- **⑤ Heavy tasks auto-escalate to the cloud** — for dev/long-form work, even a manually selected local model is
+  escalated to the cloud API, with the reason written to the log (switchable via `auto_escalate_heavy`).
+  Without a cloud key it falls back to staged generation instead of pretending.
+- **⑥ The model can now "see" the project** — cloud system-prompt budget 1800 → **48,000 chars**, plus a
+  **project file map with symbol summaries** and relevant file snippets, so editing an existing project is no longer
+  a rewrite.
+- **⑦ Permission gate moved down to the tool layer** — writes / script execution / deletions are risk-classified;
+  on the *safe* level high-risk actions **pop up a confirmation** (declining means it will not run), and every
+  decision is audited.
+- **⑧ It learns from failure** — automatic attribution (model stall / format / path / permission / toolchain /
+  syntax / build / timeout …) recorded as "known pitfalls" and injected into the next similar task.
+- **⑨ One-click diagnostic bundle** — per-turn trace + log + operation ledger + failure book + **masked config**
+  zipped into a single file (keys never leak).
+- **⑩ Long tasks can resume and cancel** — progress is persisted; after a crash or reboot, saying "continue"
+  resumes from the next step.
+- **⑪ In-place Office editing** — change one spreadsheet cell (**keeping its style**) or replace text in
+  docx/pptx without regenerating the whole file.
+- **⑫ Capability benchmark** — 8 fixed tasks, one command, currently **8/8**.
+
+> **Download**: Windows via the Releases of this page (on Gitee it is a **split archive**: put `-gitee.exe`
+> and all `.bin` parts in the **same folder** and run the exe — **no manual merging needed**).
+> macOS / Linux builds are attached to the same tag on **GitHub / GitCode** (dmg / tar.gz / deb).
+
+Also includes every fix from **0.31.16 / 0.31.15**.
+
+### v0.31.16 (2026-09-30) · Full fix batch from the GEO-platform retest: stray writes / throttled dev / false success
 
 **This release fixes the whole batch of issues you hit when you asked for a SpringBoot+Vue
 "GEO optimization platform" in a `D:\` folder.** 0.31.15 rescued the "🖥 Dev" mode from crashing,

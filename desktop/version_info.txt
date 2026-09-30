@@ -7,8 +7,8 @@
 
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(0, 31, 16, 0),
-    prodvers=(0, 31, 16, 0),
+    filevers=(0, 31, 18, 0),
+    prodvers=(0, 31, 18, 0),
     mask=0x3F,
     flags=0x0,
     OS=0x40004,          # VOS_NT_WINDOWS32
@@ -24,12 +24,12 @@ VSVersionInfo(
           [
             StringStruct('CompanyName', 'PASM Studio'),
             StringStruct('FileDescription', 'PASM Studio 智能助手（小U）—— 本地优先的 AI 工作台'),
-            StringStruct('FileVersion', '0.31.16.0'),
+            StringStruct('FileVersion', '0.31.18.0'),
             StringStruct('InternalName', 'PASMStudio'),
             StringStruct('LegalCopyright', 'Copyright (C) 2026 arronzheng. MIT License.'),
             StringStruct('OriginalFilename', 'PASMStudio.exe'),
             StringStruct('ProductName', 'PASM Studio'),
-            StringStruct('ProductVersion', '0.31.16.0'),
+            StringStruct('ProductVersion', '0.31.18.0'),
           ]
         )
       ]

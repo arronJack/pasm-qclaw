@@ -50,6 +50,19 @@ HIDDEN_IMPORTS = [
     'media_job',
     'kb_bridge',
     'domain_advisor_bridge',      # v0.31.11 领域顾问桥（懒加载，静态分析不可见）
+    # ★ 0.31.18：P0-P2 十项能力模块（全部函数内延迟导入 → 静态分析不可见）。
+    #   漏一个的后果都是"功能静默消失、一个字不报错"：
+    #   devloop=分步生成/工具循环、model_route=重活升级云端、repomap=项目地图、
+    #   toolperm=工具权限门、subagents=并行子智能体、failbook=已知坑、
+    #   trace=诊断包、office_edit=办公产物就地改。
+    'devloop',
+    'model_route',
+    'repomap',
+    'toolperm',
+    'subagents',
+    'failbook',
+    'trace',
+    'office_edit',
     # pasm_da（PyPI: pasm-domain-advisor，可选依赖）：函数内 import，
     # 必须显式声明；构建 venv 未装时 PyInstaller 只警告不失败（桥会降级）。
     'pasm_da',
