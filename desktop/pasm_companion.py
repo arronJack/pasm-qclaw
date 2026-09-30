@@ -333,6 +333,107 @@ def _is_bare_continue(text: str) -> bool:
         "继续做这个项目", "继续这个项目", "继续搞这个项目", "继续把项目做完")
 
 
+#: ★ 0.31.20：中文数字 → 阿拉伯（定时类需求用；只收录够用的）
+_CLOCK_CN = {"零": 0, "一": 1, "两": 2, "二": 2, "三": 3, "四": 4, "五": 5,
+             "六": 6, "七": 7, "八": 8, "九": 9, "十": 10, "十一": 11, "十二": 12}
+
+
+#: ★ 0.31.20：中文常用应用名 → 真实进程名（**白名单，不猜**）。
+#: 用途：`帮我关掉微信` 这类说法能落到 killproc（以前只认 ASCII 进程名，
+#: 于是掉进 skill 路由被当成"调用技能"）。顺序按名字长度降序匹配 ——
+#: 「企业微信」必须先于「微信」，否则会被截成"微信"。
+_CN_PROC = {
+    "企业微信": "WXWork.exe",
+    "微信": "WeChat.exe",
+    "钉钉": "DingTalk.exe",
+    "飞书": "Feishu.exe",
+    "腾讯会议": "wemeetapp.exe",
+    "网易云音乐": "cloudmusic.exe",
+    "百度网盘": "BaiduNetdisk.exe",
+    "迅雷": "Thunder.exe",
+    "向日葵": "SunloginClient.exe",
+    "有道词典": "YoudaoDict.exe",
+    "搜狗输入法": "SogouCloud.exe",
+    "QQ音乐": "QQMusic.exe",
+    "QQ": "QQ.exe",
+}
+_CN_PROC_ORDER = sorted(_CN_PROC, key=len, reverse=True)
+
+
+_CN_NUM = {"一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5,
+           "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
+
+
+def _parse_relative_minutes(text: str):
+    """「30 分钟后」「半小时后」「两小时后」「45 分钟」→ 分钟数；认不出 None。
+
+    ★ 0.31.20：定时关机用。**必须真支持**——我在提示语里写过"半小时后也行"，
+    那就不能只支持绝对时刻（自己给自己挖的坑：空承诺）。
+    仍只认**明确**表达；认不出返回 None，由调用方反问。
+    """
+    import re as _r
+    t = str(text or "")
+    if not _r.search(r"(后|以后|之后)", t):
+        return None
+    m = _r.search(r"(\d{1,3})\s*分钟", t)
+    if m:
+        return int(m.group(1))
+    m = _r.search(r"(\d{1,2})\s*(?:个)?\s*小时", t)
+    if m:
+        return int(m.group(1)) * 60
+    if _r.search(r"半\s*(?:个)?\s*小时", t):
+        return 30
+    m = _r.search(r"([一二两三四五六七八九十]|\d{1,2})\s*(?:个)?\s*(小时|分钟)", t)
+    if m:
+        raw = m.group(1)
+        n = _CN_NUM.get(raw)
+        if n is None:
+            try:
+                n = int(raw)
+            except Exception:                                    # noqa: BLE001
+                return None
+        return n * 60 if m.group(2) == "小时" else n
+    return None
+
+
+def _parse_clock(text: str):
+    """从一句话里抽时间 → (时, 分)；抽不到返回 (None, None)。
+
+    ★ 0.31.20：给「定时关机」这类系统操作需求用
+      （"晚上七点半"→19:30、"今晚19:30分"→19:30、"下午3点"→15:00）。
+    **只做保守解析**：认不出就返回 None，由调用方去问用户 —— 绝不猜时间。
+    """
+    import re as _r
+    t = str(text or "")
+    hh = mm = None
+    m = _r.search(r"(\d{1,2})\s*[:：点]\s*(\d{1,2}|半)?", t)
+    if m:
+        hh = int(m.group(1))
+        g2 = m.group(2)
+        mm = 30 if g2 == "半" else (int(g2) if g2 else 0)
+    else:
+        m2 = _r.search(r"(十[一二]?|[一二两三四五六七八九]|零)\s*[点:：时]"
+                       r"\s*(半|\d{1,2}|[一二三四五六七八九十]{1,2})?", t)
+        if m2:
+            hh = _CLOCK_CN.get(m2.group(1))
+            g2 = m2.group(2)
+            if g2 == "半":
+                mm = 30
+            elif g2 and g2.isdigit():
+                mm = int(g2)
+            elif g2:
+                mm = _CLOCK_CN.get(g2, 0)
+            else:
+                mm = 0
+    if hh is None or mm is None:
+        return None, None
+    if hh < 12 and _r.search(r"(下午|晚上|傍晚|夜里|晚|pm|PM)", t):
+        hh += 12                       # 12 小时制补 12（"晚上七点半" → 19:30）
+    if not (0 <= hh <= 23 and 0 <= mm <= 59):
+        return None, None
+    return hh, mm
+
+
 def _snap_section(snap, key: str) -> dict:
     """取快照区块；缺失 / None / 非 dict 一律给**空 dict**（安全默认）。
 
@@ -8672,6 +8773,18 @@ class CompanionWindow(QMainWindow):
                          name, " | ".join(cands[:4]))
             return False
         root = os.path.dirname(pdir) or dr
+        # ★ 0.31.20：**空目录 = 从零建，不是"改旧版"**（真机事故，小志 09-30 18:23）：
+        #   用户说「继续」要改 `D:\geo`，而那个目录里**什么都没有**；这里仍以
+        #   `is_new=False` 交给 `coder.update_project` → 没有旧代码可改 → **一个文件
+        #   都没产出**，用户看到的就是「让它继续，它还是没工作」。
+        #   `_project_run` 里早有同一个道理（"用户指定的目录是空的 → 从零建"），
+        #   这条路（续改路由）当时漏了。
+        try:
+            _empty_dir = not any(os.scandir(pdir))
+        except Exception:                                        # noqa: BLE001
+            _empty_dir = False
+        if _empty_dir:
+            logging.info("续改路由：目录 %s 是空的 → 按「从零建」处理（不走改旧版）", pdir)
         # ★ v0.31.3：真正要做什么 = 继承来的上一轮需求（有的话），而不是"请立即开始"本身。
         #   并把这次要在哪个项目上改**明说**，免得用户以为"它又另做了一个不是我要的"。
         #   ★ 0.31.17：指代型指令（请继续/现在就做/开始吧）绝不能把自身当成需求。
@@ -8691,7 +8804,16 @@ class CompanionWindow(QMainWindow):
         self._ses_proj_dir = pdir
         self._save_work_state()
         WC.record_request(name, spec, is_change=True)
-        self._dev_build(name, spec, d.get("lang", "python"), root, is_new=False)
+        # ★ 0.31.20：空目录要**从零建**（`is_new=True` → coder.gen_project）。
+        #   且名字必须与目录 basename 一致，否则 `root + safe_name(name)` 会拼出
+        #   另一个目录（落错地方的老病根）。
+        _name_for_build = name
+        if _empty_dir:
+            _bn = os.path.basename(os.path.normpath(pdir))
+            if _bn and CDR.safe_name(_bn) != safe:
+                _name_for_build = _bn
+        self._dev_build(_name_for_build, spec, d.get("lang", "python"), root,
+                        is_new=_empty_dir)
         return True
 
     def _cmd_skill(self, arg: str):
@@ -9281,10 +9403,38 @@ class CompanionWindow(QMainWindow):
         chip = self._chip if (self.mode == "work" and self._chip) else None
         _intent = self._classify_intent(text) if chip else "order"
         _route_chat = bool(chip) and _intent in ("question", "correction", "chat")
+        # ★ 0.31.20：工作栏目里**先过一遍通用意图路由**（系统性缺口修复）。
+        #   真机事故暴露（小志 2026-09-30）：在「项目」工种里说
+        #   「帮我打开 D:\geo 文件夹」「帮我查一下今天天气」「把桌面清理一下垃圾」，
+        #   因为含"帮我"被判 order → **全部被当成"开工做项目"**（真建了项目目录）。
+        #   根因：选了工种就**完全绕过 `_detect_agent`**，把一切非疑问输入都当该工种的活。
+        #   做法：让通用路由先认领 —— 它认领到"制作类"（开发/文档/创作/技能…）就不插手，
+        #   让 chip 流程照旧；它认领到**别的**（打开文件/查天气/清垃圾/结束进程/表格分析…）
+        #   就直接用它的处理器。`_looks_like_build_order` 是 `_detect_agent` 里最高优先级的
+        #   早守卫，所以真正的开发需求不会被后面的关键词规则抢走。
+        _pre = None
+        if chip and not _route_chat:
+            try:
+                _d = self._detect_agent(text, allow_cap=False)
+            except Exception:                                    # noqa: BLE001
+                _d = None
+            _MAKE = ("project", "gendoc", "skill", "copy", "image", "video", "manga",
+                     "ad", "cando", "caps", "askhelp", "")
+            if _d and _d[0] not in _MAKE:
+                _pre = _d
         direct_copy = False
         req = text
         agent = None
-        if _route_chat:
+        # ★ 0.31.20：系统电源操作（关机/重启…）→ 显式处理：
+        #   不建项目、也不让模型空口说"我这就设置"（那种"说了不做"最伤信任）。
+        if _pre is not None:
+            agent = _pre              # ★ 0.31.20 通用路由已认领（打开文件/查天气/清垃圾…）
+        elif _intent == "sysop":
+            agent = ("sysop_help", text)
+        elif _intent == "remind":
+            # ★ 0.31.20：提醒/闹钟直通已有提醒功能（不再被当成开工去建项目）
+            agent = ("remind_req", text)
+        elif _route_chat:
             # 当作普通对话：模型按工作上下文分析/回答/修改，不再套开工种子句
             agent = None
         elif chip == "copy":
@@ -12845,6 +12995,15 @@ class CompanionWindow(QMainWindow):
             text, _re.I)
         if _km:
             return ("killproc", _km.group(1))
+        # ★ 0.31.20：**中文应用名 → 进程名白名单**（"帮我关掉微信"以前谁都认不出，
+        #   最后掉进 skill 路由被当成"调用某个技能"）。
+        #   只认这份**写死的白名单**，绝不做模糊匹配 —— 结束进程不可逆，
+        #   宁可"打不准"（回一句让它说清），也不能杀错（沿用 killproc 的原始取舍）。
+        #   仍会走 `_killproc_reply` 的确认 + 系统关键进程黑名单两道闸。
+        if _re.search(r"(结束|关掉|关闭|退出|杀掉|杀死|关一下|关了)", text):
+            for _alias in _CN_PROC_ORDER:
+                if _alias in text:
+                    return ("killproc", _CN_PROC[_alias])
         # ★0a) v0.27 数学脑：分析/统计表格数据 → mathlab 真算（数值是真算出来的，
         #       不是让模型编数）；命中后再由 _agent_run 走 _table_analysis_reply
         if MLAB is not None and not _re.search(
@@ -14672,6 +14831,57 @@ class CompanionWindow(QMainWindow):
                      for r in reversed(rows)]
             return ("最近 8 条真实系统操作记录（存在本地台账，随时可查）：\n" +
                     "\n".join(lines))
+        if kind == "remind_req":          # ★ 0.31.20 提醒/闹钟 → 接回已有提醒功能
+            return self._remind_reply(str(agent[1] if len(agent) > 1 else ""), "add")
+        if kind == "sysop_help":          # ★ 0.31.20 系统电源操作：**真执行**（确认 + 台账）
+            _t = str(agent[1] if len(agent) > 1 else "")
+            import power as PW
+            # —— 取消 ——
+            if re.search(r"取消|别关|不要关|别关?机|中止|停止关机|撤销|算了", _t):
+                _p = PW.probe()
+                if not _p["usable"]:
+                    return ("想取消关机，但这台机器**不允许我执行电源命令**"
+                            "（shutdown 返回 %s：%s）。\n\n请在 cmd 里自己执行：`shutdown /a`"
+                            % (_p["rc"], _p["out"][:60]))
+                if not self._ask_perm("power", "high", "取消正在进行的关机倒计时（shutdown /a）"):
+                    return "好，那就不取消。"
+                _r = PW.cancel()
+                return ("✅ 已取消关机倒计时（`shutdown /a`）。" if _r["ok"]
+                        else "⛔ 取消失败：%s（错误码 %s）" % (_r["out"][:120], _r["rc"]))
+            # —— 时间：相对（30 分钟后 / 半小时后）或绝对（19:30）；都没有就问，绝不猜 ——
+            _rel = _parse_relative_minutes(_t)
+            _hh = _mm = None
+            if _rel is None:
+                _hh, _mm = _parse_clock(_t)
+            if _rel is None and _hh is None:
+                return ("这是系统电源操作，我可以帮你设定时关机（到点由系统执行，"
+                        "程序关掉也生效）。\n\n**请告诉我时间**，例如：\n"
+                        "· 晚上七点半帮我关机\n· 23:00 关机\n· 半小时后关机 / 30 分钟后重启")
+            _act = "restart" if re.search(r"重启|重新启动|restart", _t) else "shutdown"
+            _sec = (_rel * 60) if _rel is not None else PW.seconds_until(_hh, _mm)
+            _desc = PW.describe_secs(_sec, _act)
+            _sw = "/s" if _act == "shutdown" else "/r"
+            # —— 先探这台机器允不允许执行电源命令（不允许就如实说，不假装设好）——
+            _p = PW.probe()
+            if not _p["usable"]:
+                return ("这台机器**不允许我执行电源命令**（shutdown 返回 %s：%s），"
+                        "所以我不能替你把倒计时设上。\n\n"
+                        "你可以自己在 cmd 里执行这一条（就是我要跑的同一条）：\n"
+                        "```\nshutdown %s /f /t %d\n```\n"
+                        "取消用 `shutdown /a`。" % (_p["rc"], _p["out"][:60], _sw, _sec))
+            # —— 确认（执行关机不可逆，必须问一次）→ 真执行 ——
+            if not self._ask_perm("power", "high", _desc):
+                return "好，那就不设。想改时间直接说新的时间就行。"
+            _r = (PW.create_secs(_sec, _act) if _rel is not None
+                  else PW.create(_hh, _mm, _act))
+            if _r["ok"]:
+                return ("⏻ 已设定：%s\n\n"
+                        "· 到点由**系统**执行，程序关掉/崩溃也照样生效；\n"
+                        "· 想取消就说「**取消关机**」（执行 `shutdown /a`）；\n"
+                        "· 已写入操作台账，可随时核验。" % _desc)
+            return ("⛔ 设定失败（错误码 %s）：%s\n\n"
+                    "你可以自己在 cmd 里执行：`shutdown %s /f /t %d`"
+                    % (_r["rc"], _r["out"][:120], _sw, _r.get("secs") or _sec))
         if kind == "bench_run":           # ★ 0.31.19 能力基准（8 项固定任务，真跑）
             import bench as B
             self._step("cmd", "跑能力基准", "8 项固定任务", "真实执行，不是自夸")
@@ -17144,6 +17354,26 @@ class CompanionWindow(QMainWindow):
         tl = t.lower()
         if any(w in t for w in _q):
             return "question"
+        # ★ 0.31.20：**系统操作 / 定时任务类需求 → 不建项目**。
+        #   真机事故（小志 2026-09-30 18:26，工作栏目）：说「晚上七点半的时候帮我关机」，
+        #   因含「帮我」被判成 order（开工）→ 真在 `PASM工作\project\` 下**建了一个
+        #   叫「晚上七点半的时候帮我关机」的项目目录**，还生成了一整套 Python Web 代码
+        #   （app.py / index.html / init_db.sql / requirements.txt / scheduler.py）——
+        #   而他要的只是到点关机。判据：**电源类动作**且**没有软件产物名词**
+        #   （"帮我做一个关机软件"仍要走开工，所以带负向排除）。
+        if re.search(r"(关机|重启|注销|锁屏|睡眠|休眠|待机|清空回收站|"
+                     r"关掉电脑|关闭?计算机|定时关机|到点关机|关机吧)", t) and \
+                not re.search(r"(开发|做一个|做个|写一?个|建一?个|搭一?个|"
+                              r"网站|平台|系统|应用|小程序|程序|脚本|代码|软件)", t):
+            return "sysop"
+        # ★ 0.31.20：**提醒 / 闹钟 / 日程** 也不是"做项目" —— 系统本来就有提醒能力
+        #   （`_remind_reply`），但在工种栏目里被这里判成 order → 走到开工去建项目。
+        #   现在识别出来直通提醒处理器，**既不再误建项目，也真能用上已有功能**。
+        if re.search(r"提醒(一?下)?我|设(个|一个)?(提醒|闹钟)|闹钟|定时提醒|提醒(一?下)?$|"
+                     r"叫我(起床|吃饭|吃药|开会|睡觉)|日程", t) and \
+                not re.search(r"(开发|做一个|做个|写一?个|建一?个|搭一?个|"
+                              r"网站|平台|系统|应用|小程序|程序|脚本|代码|软件)", t):
+            return "remind"
         if any(w in t for w in _c):
             return "correction"
         if any(w in t for w in _o):

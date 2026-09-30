@@ -253,12 +253,26 @@ def _main() -> int:
     app.setFont(QFont("Microsoft YaHei", 10))
     _apply_light_theme(app)              # v0.23.0：无论系统深浅色都固定亮色 UI
 
+    # ★ 0.31.20：跨进程单实例 + **唤醒已有窗口**。
+    #   旧写法直接问 pet 要锁（`_ensure_single_instance`），锁被占就只弹一句
+    #   「PASM 小人已经在运行了」然后 `return 0` —— 用户的感受是"点一次图标弹一次
+    #   提示，主窗口就是不出来"（真机 2026-09-30 18:26–18:29 连续启动 11 次，
+    #   日志里 11 行「日志启动」，而新进程每次都只是弹框退出）。
+    #   现在：先尝试连已有实例 → 连上就发 show 让它把窗口带到前台，自己安静退出；
+    #   连不上才成为主实例监听，之后的重复启动都会走"唤醒"这条路。
+    from single_instance import SingleInstance
+
+    _si = SingleInstance("PASMStudio.SingleInstance.v1")
+    if not _si.try_become_primary():
+        return 0                       # 已有实例：已通知它唤醒，本进程退出
+
     from pasm_pet import PetShell, _ensure_single_instance
     if not _ensure_single_instance():
-        # 已有实例在跑：提示后退出（保留桌面小人那一份）
+        # pet 锁拿不到（多为异常退出留下的陈旧锁；已在 pet 侧自动清理并重试一次）
         return 0
 
     pet = PetShell()
+    _si.on_activate = lambda: (pet.show(), pet.open_chat())
     pet.show()
     # 启动即打开对话窗（产品主界面），桌面小人同时驻留
     pet.open_chat()

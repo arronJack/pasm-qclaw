@@ -1417,12 +1417,33 @@ class PetShell(QWidget):
 
 
 def _ensure_single_instance() -> bool:
+    """pet 自己的单实例锁（第二道保护；整体单实例由入口的 SingleInstance 负责）。
+
+    ★ 0.31.20：加**陈旧锁自愈** —— 上次异常退出（崩溃/强杀）留下的锁会让用户
+    永远看到「小人已经在运行了」却什么都打不开（只能重启电脑）。现在先尝试
+    清掉陈旧锁再重试一次；真拿不到才提示，且提示语改准确（说清去哪儿找窗口）。
+    """
     lock = QLockFile(os.path.join(DATA_DIR, "pasmpet.lock"))
-    if not lock.tryLock(50):
-        QMessageBox.information(None, APP_NAME, "PASM 小人已经在运行了，请看桌面右下角或任务栏。")
-        return False
-    _KEEP_LOCK.append(lock)
-    return True
+    if lock.tryLock(50):
+        _KEEP_LOCK.append(lock)
+        return True
+    # 陈旧锁（持有进程已不存在）→ 清掉重试一次
+    try:
+        if lock.removeStaleLockFile() and lock.tryLock(50):
+            _KEEP_LOCK.append(lock)
+            logging.info("pasmpet.lock 是陈旧锁，已清理并重新持有")
+            return True
+    except Exception:                                            # noqa: BLE001
+        logging.exception("清理陈旧 pasmpet.lock 失败")
+    QMessageBox.information(
+        None, APP_NAME,
+        "PASM 小人已经在运行了。\n\n"
+        "如果窗口没出现，请看**任务栏**或屏幕**右下角的托盘图标**（右键可打开对话）。\n\n"
+        "⚠️ 如果你刚**装完新版本**：多半是**旧版本还开着**（它不会自动退出，也没法被唤醒）。\n"
+        "请在托盘图标上右键 → 退出，然后重新打开；或直接重启电脑。\n"
+        "（确实没在运行时，可删掉 %s 后重试）"
+        % os.path.join(DATA_DIR, "pasmpet.lock"))
+    return False
 
 
 _KEEP_LOCK = []

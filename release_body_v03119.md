@@ -81,10 +81,13 @@ v0317_devloop 16/0 · v0318 28/0 · v0319_output_hygiene 45/0   ← 合计 236 �
 | 平台 | 位置 | 文件 |
 |---|---|---|
 | **Windows** | 本页（Gitee） | `PASMStudio-Setup-0.31.19-gitee.exe` + `-1/-2/-3.bin` —— **分卷版**：全部下载到**同一个文件夹**后直接运行 exe，**无需手动合并** |
-| **Windows**（单文件） | GitHub / GitCode 同一 tag | `PASMStudio-Setup-0.31.19.exe` |
-| **macOS / Linux** | GitHub / GitCode 同一 tag | `.dmg` / `-macos-app.tar.gz` / `-linux-x86_64.tar.gz` / `.deb` |
+| **Windows**（单文件） | GitHub / GitCode 同一 tag | `PASMStudio-Setup-0.31.19.exe`（193.4 MB） |
+| **macOS**（Apple Silicon） | GitHub / GitCode 同一 tag | `PASMStudio-0.31.19-macos-arm64.dmg`（293.0 MB）<br>`PASMStudio-0.31.19-macos-app.tar.gz`（239.6 MB） |
+| **Linux** | GitHub / GitCode 同一 tag | `PASMStudio-0.31.19-linux-x86_64.tar.gz`（306.5 MB）<br>`pasm-studio_0.31.19_amd64.deb`（235.6 MB） |
 
 > 已装旧版的用户会通过内置升级通道收到提示（增量更新）。
+> macOS / Linux 的包由 CI 构建，附件挂在 **GitHub 仓 `arronJack/pasm-qclaw`** 与
+> **GitCode 仓 `arronzheng/pasm-qclaw`** 的同一 tag 下（CI run #14，Linux + macOS 双 success）。
 
 ## 你现有的产物怎么处理（没有被自动改动）
 

@@ -46,6 +46,7 @@ import sys
 #: 不声明就会在 frozen 版里 `ModuleNotFoundError`，且常被 try/except 吞掉，
 #: 表现为"功能没反应"。**新增桌面模块请加到这里。**
 HIDDEN_IMPORTS = [
+    'PySide6.QtNetwork',  # 0.31.20 单实例唤醒用的 QLocalServer
     'executors',
     'media_job',
     'kb_bridge',
@@ -55,6 +56,8 @@ HIDDEN_IMPORTS = [
     #   devloop=分步生成/工具循环、model_route=重活升级云端、repomap=项目地图、
     #   toolperm=工具权限门、subagents=并行子智能体、failbook=已知坑、
     #   trace=诊断包、office_edit=办公产物就地改。
+    'single_instance',  # 0.31.20 单实例+唤醒
+    'power',            # 0.31.20 定时关机/重启（真执行）
     'devloop',
     'model_route',
     'repomap',

@@ -17,8 +17,8 @@
 | `pasm-mcp-server` | MCP 接入层：给任意 AI 客户端装长期记忆（`PASM2=1` 切 V2） | 公开 | 0.2.1 |
 | `pasm-domain-advisor` · `pasm-medical` · `pasm-customer-service` | 领域智能体：领域顾问引擎 / 医疗辅助 / 专业客服 | 公开 | 0.1.1 · 0.1.0 · 0.2.0 |
 | `PASM-Lite` | 教学版 + 认知引擎接口（不接 V2，保持纯净） | 公开 | — |
-| `PASM` | 核心引擎（七层仿生 / 世界模型，含 `pasm2/`；桌面源码 0.31.19） | 私有 | 0.7.2 |
-| **`pasm-qclaw`（本仓）** | **桌面应用发行通道（安装包 + `latest.json` 升级源）** | **公开** | **0.31.19（已发行）** |
+| `PASM` | 核心引擎（七层仿生 / 世界模型，含 `pasm2/`；桌面源码 0.31.20） | 私有 | 0.7.2 |
+| **`pasm-qclaw`（本仓）** | **桌面应用发行通道（安装包 + `latest.json` 升级源）** | **公开** | **0.31.20（已发行）** |
 
 本仓**现在包含 PASM Studio 桌面端的开源源码**（[`desktop/`](desktop/README.md) 目录，基于 PySide6 的 Windows 桌面应用 UI/外壳层），
 同时仍是安装包与更新清单 `latest.json` 的**发行通道**。
@@ -46,7 +46,33 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.31.19（2026-09-30）· 修「生成的文件不能用」：不再另建"这个项目"，文件里不再混围栏
+## 最新：v0.31.20（2026-09-30）· 修「继续却没干活」+「小人已经在运行一直弹」，定时关机真能用
+
+- **①「继续」不再白干**：日志显示续改路由**命中了** `D://geo`，但那个目录是**空的**，
+  旧逻辑仍按"改旧版"处理 → 没有旧代码可改 → **一个文件都没产出**。
+  现在：**空目录 = 从零建**，且保证落盘目录就是你说的那个。
+- **②「小人已经在运行」不再弹个没完**：18:26–18:29 日志里 **11 行「日志启动」** ——
+  旧版重复启动只弹提示就退出、**不唤醒已有窗口**。现在改为**通知已有实例把窗口弹到最前面**；
+  另加**陈旧锁自愈**（崩溃残留的锁以前只能靠重启电脑）。
+- **③「关机」不再被做成项目**：你说「晚上七点半帮我关机」，旧版因含"帮我"被判成"开工"，
+  **真建了一个名叫这句话的项目目录**（app.py / index.html / scheduler.py…）。
+  现在：关机/重启 → **真执行**；提醒/闹钟 → 直通已有提醒功能；
+  「打开文件夹 / 查天气 / 整理文件」也不再被当成开工；而「帮我做一个关机软件」仍照常开工。
+- **④「定时关机」真能用**：说「晚上七点半帮我关机」或「半小时后关机」，确认一次后设定
+  **系统级倒计时**（程序关掉也照样到点执行）；取消说「取消关机」。
+  若本机安全策略禁止执行电源命令，会**如实告诉你**并给出可自己执行的命令，**绝不假装已设好**。
+- **⑤** 「帮我关掉微信 / 企业微信 / 钉钉 / 飞书」现在能识别（写死白名单，认不出就说不认识——
+  结束进程不可逆，宁可不杀错）。
+
+> **验收**：8 套守卫 **304 项全绿**。守卫保留**反例**：真开发需求必须仍开工、
+> 有文件的目录必须仍走"改旧版"、认不出的进程名必须不猜。
+
+> **下载**：Windows 见本页 Releases（Gitee 上是**分卷版**：把 `-gitee.exe` 与同目录 `.bin`
+> 全部下到**同一个文件夹**再运行 exe，**不需要手动合并**）。macOS / Linux 在 GitHub / GitCode 同一 tag。
+
+同时包含 **0.31.19 / 0.31.18 / 0.31.16 / 0.31.15** 的全部修复。
+
+### v0.31.19（2026-09-30）· 修「生成的文件不能用」：不再另建"这个项目"，文件里不再混围栏
 
 **你 17:09 反馈的两条，是同一个病根**：模型输出**没经净化**就被拿去当路径名 / 直写磁盘。
 
@@ -871,7 +897,37 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 > **It never loses what you typed, and never claims to have done something it didn't** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.31.19 (2026-09-30) · "Generated files are unusable" fixed: no more phantom project folders, no more markdown fences inside files
+## Latest: v0.31.20 (2026-09-30) · "Continue" now actually works, no more repeated "already running", real scheduled shutdown
+
+- **① "Continue" no longer produces nothing**: logs show the continuation router **did** resolve `D://geo`,
+  but that folder was **empty**, and the old code still treated it as "edit existing" (`update_project`)
+  → nothing to edit → **zero files produced**. Now an empty folder means **build from scratch**,
+  and the output folder is guaranteed to be the one you named.
+- **② "The pet is already running" no longer spams**: 11 "log start" lines in 4 minutes —
+  the old code only showed a message box and exited, **never bringing the existing window to the front**.
+  Now a duplicate launch **notifies the running instance to raise its window**; plus **stale-lock self-healing**
+  (a leftover lock after a crash used to require rebooting).
+- **③ "Shut down" is no longer turned into a project**: saying "shut my PC down at 7:30pm" was classified
+  as *start building* (it contains "help me") and literally **created a project folder named after that
+  sentence** (app.py / index.html / scheduler.py…). Now power actions are a real feature, reminders reuse the
+  existing reminder engine, and open-folder / weather / tidy-up are no longer treated as builds —
+  while "build me a shutdown app" still correctly starts a project.
+- **④ Real scheduled shutdown**: "shut down at 7:30pm" or "in half an hour" → one confirmation → a
+  **system-level countdown** (works even if the app is closed). Cancel by saying "cancel shutdown".
+  If this machine's policy forbids power commands, it **says so honestly** and gives you the exact command
+  to run yourself — never pretending it was set.
+- **⑤** "Close WeChat / WeCom / DingTalk / Feishu" now works (a hard-coded whitelist; unknown names are
+  refused rather than guessed — killing processes is irreversible).
+
+> **Verification**: 8 guard suites, **304 checks, all green** — including counter-examples so the fix
+> cannot degrade into "does nothing".
+
+> **Download**: Windows via the Releases of this page (on Gitee it is a **split archive**).
+> macOS / Linux builds are attached to the same tag on **GitHub / GitCode**.
+
+Also includes every fix from **0.31.19 / 0.31.18 / 0.31.16 / 0.31.15**.
+
+### v0.31.19 (2026-09-30) · "Generated files are unusable" fixed: no more phantom project folders, no more markdown fences inside files
 
 **Your two reports at 17:09 share one root cause**: model output was written to disk / used as a
 path name **without sanitisation**.
