@@ -343,14 +343,77 @@ def _extract_target_dir(text: str) -> str:
         return ""
     for m in re.finditer(r"[A-Za-z]:[\\/][^\s，。；;：:）)】」\"'、,]+", str(text)):
         cand = m.group(0).strip(" \t\"'")
-        # 路径后面常直接粘中文（"…springcloud-business 的骨架" / "…的骨架"），逐字回退
-        while len(cand) > 3 and not os.path.isdir(cand):
-            if re.match(r"[\u4e00-\u9fa5。，、；：！？]$", cand[-1]):
+        # 路径后面常直接粘中文（"…springcloud-business 的骨架"），逐字回退到合法边界
+        while len(cand) > 3:
+            if os.path.isdir(cand):
+                return cand
+            # 尾部是中文/标点 → 回退一个字符，剥掉"的骨架"这类粘连
+            if re.match(r"[\u4e00-\u9fa5。，、；：！？\s]$", cand[-1]):
                 cand = cand[:-1]
+                continue
+            # 到这里尾部是合法路径字符：父目录（或盘符根）存在 → 视为"待创建目录"
+            parent = os.path.dirname(cand)
+            if parent and os.path.isdir(parent):
+                return cand
+            if re.match(r"^[A-Za-z]:[\\/]?$", cand):
+                return cand
+            # 既不存在、父也不存在、尾部又不是中文 → 不是有效锚点，放弃这条
+            break
+    # ★ F1（0.31.16）：自然语言盘符 ——「我要求在D盘建一个geo文件夹」里没有字面
+    #   `D:\geo`，旧逻辑漏检 → 目标为空 → 项目名兜底取"geo文件夹"、落回默认工作根，
+    #   D 盘被无视（真机实录 2026-09-30）。字面路径优先，没有字面路径再试盘符表达。
+    return _extract_drive_word_target(text)
+
+
+#: F1：匹配「D盘 / d 盘 / D 盘」这类自然语言盘符
+_DRIVE_WORD_RE = re.compile(r"([A-Za-z])\s*盘")
+
+#: F1：这些"名字"等于没给名字（「建个项目」），不能拿来当目录
+_DRIVE_STOPWORDS = {"", "项目", "工程", "东西", "软件", "应用", "程序", "平台", "系统", "工具"}
+
+
+def _extract_drive_word_target(text: str) -> str:
+    """F1（0.31.16）：从「在D盘建一个geo文件夹」这类**自然语言盘符**表达里抽目标目录。
+
+    返回 `D:\\geo` 这种**待创建**路径（盘根必然存在，与上面 R2 的
+    "父目录存在即接受待创建路径"口径一致）；识别不出就返回空串。
+    """
+    if not text:
+        return ""
+    t = str(text)
+    for m in _DRIVE_WORD_RE.finditer(t):
+        drive = m.group(1).upper()
+        if not os.path.isdir(drive + ":\\"):
+            continue                      # 盘符不存在（X盘）→ 跳过
+        tail = t[m.end(): m.end() + 60]
+        name = ""
+        # ① 动词 + 名字 + 文件夹/目录：「建一个geo文件夹」「创建 GEO优化平台 目录」
+        mm = re.search(
+            r"(?:建|创建|新建|放|放到|放在|装)[\s一个到里]*"
+            r"([\w\u4e00-\u9fa5][\w\u4e00-\u9fa5\-\·]{0,30}?)"
+            r"(?:文件夹|目录)", tail)
+        if mm:
+            name = mm.group(1)
+        else:
+            # ② 「名为 geo」「叫 geo」—— 截到「的/里/中」与标点为止
+            #   （「名为shop的项目里开发」→ shop，不能整段吞进去）
+            mm = re.search(r"(?:名为|叫)\s*[「『\"“]?([A-Za-z0-9_\-\u4e00-\u9fa5]{1,30})", tail)
+            if mm:
+                name = re.split(r"[的里中，。,.\s！？?；;：:]", mm.group(1))[0]
             else:
-                break
-        if os.path.isdir(cand):
-            return cand
+                # ③ 动词 + 名字（到标点/空白为止）：「在D盘建一个GEO优化平台，…」
+                mm = re.search(
+                    r"(?:建|创建|新建|放|装)[\s一个到里]*"
+                    r"([\w\u4e00-\u9fa5][\w\u4e00-\u9fa5\-\·]{0,30})"
+                    r"(?=[，。,.\s！？?；;：]|$)", tail)
+                if mm:
+                    name = mm.group(1)
+        name = re.sub(r"^(一个|个|一款|一套)", "", name)
+        name = re.sub(r"(?:项目|工程)$", "", name)      # 「blog项目文件夹」→ blog
+        name = name.strip(" -_·。，")
+        if name.lower() in _DRIVE_STOPWORDS or not (1 <= len(name) <= 32):
+            continue
+        return "%s:\\%s" % (drive, name)
     return ""
 
 
@@ -14744,17 +14807,49 @@ class CompanionWindow(QMainWindow):
             logging.exception("project self-verify: 收集文件失败")
             return ""
         err_sum = ""
+        _t0 = time.time()
         for r in range(1, int(rounds) + 2):        # 首验 + 最多 rounds 轮修复 + 末验
+            # ★ R7（0.31.16）：自检**总预算 180s** —— 真机上复查循环空转 6+ 分钟，
+            #   用户晾在"复查中"。超预算就带着已发现的错误如实退出，不再续轮。
+            if time.time() - _t0 > 180:
+                self._step("err", "自检时间预算用尽（180s），停止循环",
+                           "已有错误如实上报，不继续空转", sync_wl=False)
+                break
             bad = []
             if err_text and r == 1:
                 err_sum = err_text[:1500]
             else:
+                # ★ R7：格式污染预检 —— 文件内容里混着 ===FILE:=== 标记 = 生成层
+                #   降级污染，修复轮修不好这种系统性问题，直接如实报告，不空转。
+                _polluted = []
+                for p in targets[:40]:
+                    try:
+                        _head = open(p, encoding="utf-8", errors="ignore").read(1200)
+                    except Exception:
+                        continue
+                    if re.search(r"===\s*(?:FILE|END)", _head):
+                        _polluted.append(p)
+                if _polluted:
+                    self._step("err", "文件内容混入生成标记，判定生成层故障，停止修复",
+                               "、".join(os.path.basename(p) for p in _polluted[:3]),
+                               sync_wl=False)
+                    return ("有 %d 个文件内容里混入了 ===FILE:=== 生成标记（模型输出降级"
+                            "污染了文件），自检已按 R7 规则立即停止 —— 请重试，或到"
+                            "「设置 → 模型」换更强的模型后重新生成。" % len(_polluted))
                 res = SV.run_cmds(SV.plan_verify(targets), timeout=40)
                 n_bad = len([x for x in res if not x["ok"]])
                 if n_bad == 0:
                     self._step("ok", "自我复查：语法校验 %d 个文件" % len(res),
                                "全部通过", sync_wl=False)
                     return ""
+                # ★ R7：过半文件不过 = 系统性损坏（截断/污染），逐个修没有意义，即停。
+                if n_bad > max(2, len(res) // 2):
+                    self._step("err", "%d/%d 个文件未过校验，判定系统性损坏，停止修复循环"
+                               % (n_bad, len(res)),
+                               "换模型重新生成比重修更快", sync_wl=False)
+                    return ("自检发现 %d/%d 个文件语法不过（系统性损坏，多半是生成被截断）。"
+                            "已按 R7 规则停止逐个修复 —— 建议重试，或换云端模型后重新生成。"
+                            % (n_bad, len(res)))
                 lbl, tail = SV.first_error(res)
                 err_sum = tail
                 self._step("err", "自我复查：语法校验 %d 个文件未过" % n_bad,
@@ -14785,6 +14880,8 @@ class CompanionWindow(QMainWindow):
             self._step("edit", "复查第 %d 轮：带报错自动修复" % r,
                        "%d 个文件" % len(bad), sync_wl=False)
             try:
+                # ★ F2：修复轮同样走 dev 画像（旧版 2600 tok 走 brain 画像，本地模型
+                #   又被收口到几百 tok，修一半截一半，越修越坏）。
                 fix = self._brain(
                     "你刚生成的项目没有通过自动复查（第 %d 轮）。下面是原始需求、报错、"
                     "以及出错文件的当前内容。请**只输出需要修正的文件**的完整新内容，"
@@ -14793,17 +14890,20 @@ class CompanionWindow(QMainWindow):
                     % (r, (req or "")[:400], err_sum[:1200], "\n".join(ctx)),
                     system="你是严谨的全栈工程师：定位报错、给出可直接运行的完整文件，"
                            "不要改动与报错无关的部分；注释与界面文案用中文。",
-                    max_tokens=2600, on_think=on_think)
+                    max_tokens=4000, task="dev", on_think=on_think)
                 newf = AT.parse_bundle(fix) or {}
                 if not newf:
                     self._step("err", "修复轮没有产出可用文件", "停止重试，如实汇报",
                                sync_wl=False)
                     break
                 for rel, content in newf.items():
-                    rel = str(rel).lstrip("/ ")
-                    if ".." in rel:
+                    # F4：与 save_project 同口径，杜绝盘符路径逃逸
+                    rel = AT.normalize_rel(rel)
+                    if not rel:
                         continue
                     full = os.path.join(base, *rel.split("/"))
+                    if os.path.relpath(full, base).startswith(".."):
+                        continue
                     os.makedirs(os.path.dirname(full) or base, exist_ok=True)
                     with open(full, "w", encoding="utf-8") as f:
                         f.write(content)
@@ -14820,9 +14920,13 @@ class CompanionWindow(QMainWindow):
         比旧版（直接跑一次、报错就交给用户）多了两层兜底；返回最终运行输出
         （修复后跑通会带上"（运行报错 → 自动修复后重跑通过）"的诚实标注）。
         """
-        self._project_self_verify(base, req, on_think=on_think)
+        # ★ R7（0.31.16）：自检判"系统性损坏/生成层污染"时**直接如实上报**，
+        #   不再往下运行一个注定跑不起来的半成品。
+        verr = self._project_self_verify(base, req, on_think=on_think)
+        if verr and ("生成标记" in verr or "系统性损坏" in verr):
+            return verr
         runmsg = AT.run_project(base)
-        self._step_run("运行项目", "python app.py（自动探测入口）", runmsg,
+        self._step_run("运行项目", "自动探测入口与技术栈", runmsg,
                        ok=not _looks_error(runmsg))
         if _looks_error(runmsg):
             tail = (runmsg or "").strip().splitlines()[-1][:160] \
@@ -14872,7 +14976,10 @@ class CompanionWindow(QMainWindow):
             or req
         _name_src = re.sub(r"^帮我(?:开发|做|写|建|搭)\s*(?:一|一个|个)?\s*项目[：:，,、 ]*",
                            "", _name_src).strip() or _name_src
-        name = _pick_project_name(_name_src)
+        # v0.31.15 R3：用户显式指定了输出目录时，项目名直接用该目录的 basename
+        # （"放在H:\\geo_plaform" → 项目名 geo_plaform），不再取整句片段当名字。
+        name = (os.path.basename(_tgt.rstrip("/\\")) if _tgt else "") \
+            or _pick_project_name(_name_src)
         # ★ v0.31.3：**明说这次在改哪个项目**。真机上用户遇到"不是我想要的开发"时，
         #   最需要知道的就是"它到底动了哪个项目、想开新的该怎么说" —— 旧版只在内联
         #   步骤里写一句"已有项目原地改"，用户看不到项目名，也不知道怎么另建。
@@ -14891,6 +14998,13 @@ class CompanionWindow(QMainWindow):
                 self._save_work_state()
         except Exception:
             logging.exception("remember project req failed")
+        # v0.31.15 R4：技术栈按需求**动态拼装**，不再锁死"前端单文件HTML+后端Python"。
+        # 真机：用户要 SpringBoot+Vue，旧版却给 Python+单HTML 还幻觉出 Django。
+        _want_java = bool(re.search(r"spring\s?boot|spring boot|java|maven|后端的?java", req, re.I))
+        _want_vue = bool(re.search(r"vue|前端框架|前端用\s?vue|vue\s?3|vue3", req, re.I))
+        _want_react = bool(re.search(r"react|前端用\s?react|antd|ant design|ant-design", req, re.I))
+        _want_py = bool(re.search(r"python|flask|fastapi|django|后端\s?python", req, re.I))
+        _want_node = bool(re.search(r"node|express|nest|next\.?js|后端\s?node", req, re.I))
         base_sys = ("你是全栈工程师。根据需求生成一个完整可运行的多文件项目"
                     "（前端页面+后端服务+数据库，按需求取舍，不要偷懒只给建议）。"
                     "输出格式必须严格遵守：每个文件用下面格式包裹，除此之外不要输出任何解释文字：\n"
@@ -14898,12 +15012,43 @@ class CompanionWindow(QMainWindow):
                     "（该文件的完整内容）\n"
                     "===END===\n"
                     "硬性要求：\n"
-                    "1) 前端用单文件 HTML（内联 CSS/JS），双击就能看效果；\n"
-                    "2) 后端优先 Python（Flask/FastAPI，标准库优先）或 Node.js，附启动说明；\n"
-                    "3) 数据用 SQLite/JSON 本地方案，附建表或初始化脚本（.sql 或 init 数据文件）；\n"
-                    "4) 有依赖时附 requirements.txt 或 package.json；\n"
-                    "5) 文件内不出现本机绝对路径；界面与注释全部中文；\n"
-                    "6) 代码要能直接运行，不要留 TODO 占位。")
+                    "1) 代码要能直接运行，不要留 TODO 占位；文件内不出现本机绝对路径；"
+                    "界面与注释全部中文；\n"
+                    "2) 有依赖时附 requirements.txt / package.json / pom.xml 等依赖清单与启动说明；\n"
+                    "3) 数据层给出可运行的初始化脚本（建表 SQL 或种子数据），不要只给伪代码。")
+        if _want_java:
+            base_sys += ("\n技术栈要求：后端用 **Spring Boot 3.x**（标准 Maven 工程，"
+                         "含 Controller / Service / Entity / Repository 分层，application.yml "
+                         "配置端口与数据源，用 Spring Data JPA 或 MyBatis 接数据库）；前端"
+                         + ("用 **Vue 3 + Vite**（组件化，vue-router + axios 调后端 API）"
+                            if _want_vue else
+                            ("用 **React**（组件化，axios 调后端 API）" if _want_react else
+                             "用单文件 HTML 或 Vue/React 均可，并给出清晰的前后端联调说明"))
+                         + "。")
+        elif _want_vue or _want_react:
+            base_sys += ("\n技术栈要求：前端用 **"
+                         + ("Vue 3 + Vite" if _want_vue else "React")
+                         + "**（组件化，router/axios 调后端 API）；后端"
+                         + ("用 Spring Boot 3.x（Maven 分层工程）" if _want_java else
+                            ("用 Python（FastAPI/Flask，附 requirements.txt 与启动说明）"
+                             if _want_py else
+                             ("用 Node.js（Express/Nest，附 package.json 与启动说明）"
+                              if _want_node else
+                              "用 Python（FastAPI/Flask）或 Node.js 均可，附启动说明")))
+                         + "。")
+        elif _want_py:
+            base_sys += ("\n技术栈要求：后端用 **Python（FastAPI 或 Flask，标准库优先）**，"
+                         "附 requirements.txt 与启动说明；前端"
+                         + ("用 Vue 3 + Vite" if _want_vue else
+                            "用单文件 HTML（内联 CSS/JS）或 Vue/React 均可")
+                         + "。")
+        elif _want_node:
+            base_sys += ("\n技术栈要求：后端用 **Node.js（Express 或 Nest）**，附 package.json "
+                         "与启动说明；前端用单文件 HTML 或 Vue/React 均可。")
+        else:
+            base_sys += ("\n未指定技术栈时的默认组合：前端用单文件 HTML（内联 CSS/JS，双击即可看效果）；"
+                         "后端用 Python（FastAPI/Flask，标准库优先）或 Node.js，附启动说明；"
+                         "数据用 SQLite/JSON 本地方案，附建表或初始化脚本。")
         if edit_mode:
             # 把旧项目入口文件读进来，让模型"看着旧代码改"而不是凭空另写
             ctx = []
@@ -14929,7 +15074,7 @@ class CompanionWindow(QMainWindow):
         # v0.31.2：模型推理期间不再全黑 —— 计划先说清楚，真思考接上过程流。
         self._step("plan", "让模型生成项目文件清单",
                    "已有项目原地改" if edit_mode else "新建项目",
-                   "max_tokens=3000（本地模型可能要几十秒到几分钟）")
+                   "max_tokens=8000（开发任务免聊天式收口，本地模型可能要几分钟）")
         _th = {"t": 0.0}
 
         def _on_think(_d, full):
@@ -14939,19 +15084,43 @@ class CompanionWindow(QMainWindow):
                 _th["t"] = now
                 self._step("think", "深度思考", detail=(full or "")[-320:], key="think")
 
-        bundle = self._brain("项目需求：" + req, system=base_sys, max_tokens=3000,
-                             on_think=_on_think)
+        # ★ F2（0.31.16）：生成走 **dev 任务画像**（单轮 8000 tok / 目标 600s /
+        #   续写 3 段）。真机实录：旧版走 brain 画像被聊天式收口 3000→720 tok
+        #   （目标 60s），全栈项目刚写完 pom.xml 就被截断 —— "没按要求开发"的直接根因。
+        bundle = self._brain("项目需求：" + req, system=base_sys, max_tokens=8000,
+                             task="dev", on_think=_on_think)
         files = AT.parse_bundle(bundle)
         if not files:
-            code = re.sub(r"```(?:\w+)?\n?", "", bundle).replace("```", "").strip()
-            if code:
-                ext = ".html" if "<html" in code[:300].lower() else ".py"
-                files = {"main" + ext: code + "\n"}
+            # v0.31.15 R5：严格格式缺失时**先让模型重试一次**（明确要求只输出
+            # ===FILE:=== 格式），绝不再把整段回复当代码落盘（旧版这种"毒兜底"
+            # 会把散文/裸标签/SyntaxError 写进 main.py）。
+            self._step("plan", "首轮未识别到文件，要求模型严格按格式重输", "重试一次", "")
+            bundle2 = self._brain(
+                "你上一轮回复没有使用要求的『===FILE: 相对路径=== … ===END===』格式，"
+                "导致文件无法落盘。请**严格只输出**该格式（每个文件一段，不要任何额外"
+                "解释文字，也不要用 FILES[\"x\"] = 三引号 这类写法）：\n需求：" + req,
+                system=base_sys, max_tokens=8000, task="dev", on_think=_on_think)
+            files = AT.parse_bundle(bundle2)
         if not files:
-            self._step("err", "模型没给出可用文件", detail=(bundle or "")[:200])
-            return ("这次没生成出项目文件（模型可能没理解需求）。"
+            self._step("err", "模型仍没给出可用文件", detail=(bundle or "")[:200])
+            return ("这次没生成出符合格式的项目文件（模型可能没理解需求或输出格式不对）。"
                     "可以把需求说得更具体些再试一次，例如：帮我开发一个 叫记账本 的 "
                     "待办应用，前端网页+Python后端+SQLite数据库。")
+        # ★ F3（0.31.16）：全栈请求只产出 1~2 个文件 = 被截断的半成品，**如实判失败**，
+        #   绝不虚报"搭好了"。真机实录：720 tok 截断后只落了 1 个 pom.xml，
+        #   回复却说"项目搭好了！共 1 个文件"—— 失败被包装成成功，比功能缺失更伤信任。
+        if len(files) < 3 and re.search(
+                r"前后端|前后端分离|全栈|分离开发|后端.{0,10}(api|接口)|管理系统|"
+                r"带数据库|数据库", req, re.I):
+            self._step("err", "产出不完整，如实判定失败",
+                       "仅 %d 个文件，完整前后端分离项目至少需要后端+前端+配置/依赖清单"
+                       % len(files))
+            return ("这次只生成出 %d 个文件，对「前后端分离」的需求来说**是个半成品**，"
+                    "我不能把它当“搭好了”报给你。\n\n多半是当前模型算力/输出上限不够被截断了，"
+                    "两个办法任选：\n1）到「设置 → 模型」里填一个云端 API Key（DeepSeek 等），"
+                    "质量会立刻上一个台阶，然后重发需求；\n2）不换模型的话，跟我说"
+                    "「分步生成」，我按 后端 → 前端 → 数据库/配置 一块一块拼，每块都完整。"
+                    % len(files))
         self._step("plan", "文件清单已就绪", "%d 个文件" % len(files),
                    "、".join(list(files)[:6]))
         if edit_mode:
@@ -14959,10 +15128,14 @@ class CompanionWindow(QMainWindow):
             n_updated = n_new = 0
             bk = os.path.join(proj, "旧版_" + time.strftime("%Y%m%d_%H%M%S"))
             for rel, content in files.items():
-                rel = rel.lstrip("/ ")
-                if ".." in rel:
+                # F4（0.31.16）：与 save_project 同口径 —— 盘符/绝对路径收进项目目录，
+                # 杜绝 os.path.join 遇 "D:/x" 丢前缀直写盘根（路径逃逸）。
+                rel = AT.normalize_rel(rel)
+                if not rel:
                     continue
                 full = os.path.join(proj, *rel.split("/"))
+                if os.path.relpath(full, proj).startswith(".."):
+                    continue
                 os.makedirs(os.path.dirname(full) or proj, exist_ok=True)
                 if os.path.exists(full) and os.path.isfile(full):
                     try:
@@ -14991,7 +15164,7 @@ class CompanionWindow(QMainWindow):
                     f"{tree}\n\n{runmsg}\n\n"
                     f"还要改哪里直接说：加个删除按钮 / 标题改成 xx / 加个统计页……"
                     f"我会继续在这个项目上改。")
-        pdir, tree = AT.save_project(name, files)
+        pdir, tree = AT.save_project(name, files, dest=_tgt if _tgt else None)
         self._ses_proj_dir = pdir
         self._stamp_conv_meta(proj_dir=pdir)
         self._step("new", "项目目录已创建", pdir, "%d 个文件落盘" % len(files))

@@ -3,11 +3,40 @@
 > **版本号说明**：本仓有两条版本轴，别混 ——
 > · **引擎/内核** `pasm.__version__`（当前 `0.7.2`）+ `pasm.cognitive.__version__`（`0.8.0`），
 >   与 `pyproject.toml` 的 `version` 必须一致；
-> · **桌面产品** PASM Studio `APP_VERSION`（当前 `0.31.15`，见 `desktop/appinfo.py`；本仓不逐版记录桌面发行，发行记录见 `pasm-qclaw/CHANGELOG.md`），
+> · **桌面产品** PASM Studio `APP_VERSION`（当前 `0.31.16`，见 `desktop/appinfo.py`；本仓不逐版记录桌面发行，发行记录见 `pasm-qclaw/CHANGELOG.md`），
 >   注意：v0.31.0 起桌面端**打包体积大幅上升**（+约 145MB，因为内嵌了 QtWebEngine）——
 >   安装包 82.7MB → 约 200MB。构建环境需要 `PySide6-Addons`（只装 Essentials 拿不到
 >   QtWebEngine 的 Python 绑定，会**静默降级**成原生渲染）。
 >   驱动安装包与升级通道，其发行记录见 `pasm-qclaw/CHANGELOG.md`。
+
+## 桌面 0.31.16（2026-09-30）· GEO 平台复测修复：落盘混乱 / 开发被限流 / 虚报成功
+
+用户真机复测（0.31.15 做「在D盘建geo文件夹 + springboot-vue 前后端分离 GEO 优化平台」）暴露的新问题。
+完整诊断见主仓 `docs/qa/2026-09-30-GEO平台复测-四处落盘与虚报成功诊断.md`。本次**全部修复**：
+
+- **F1（自然语言盘符被无视）**：「在**D盘**建一个geo文件夹」不被识别 → 目标为空、项目名兜底成
+  「geo文件夹」、落回默认工作根。`_extract_target_dir` 新增盘符解析（D盘+建/放+名字 → `D:\geo`），
+  字面路径仍优先；项目名取目录 basename。
+- **F2（开发被聊天式收口掐断，最关键）**：开发任务走 brain 画像，被按 60 秒目标从 3000 收口到
+  **720 token** —— 全栈项目刚写完 `pom.xml` 就被截断。新增 **dev 任务画像**：单轮 8000 token /
+  目标 600 秒 / 续写 3 段 / 本地超时下限 600 秒；生成轮与自检修复轮全部切换。
+- **F3（虚报成功）**：只落 1 个 `pom.xml` 却回「项目搭好了！共 1 个文件」。现在前后端分离类需求
+  产出 <3 文件 → **如实判失败**，给出「填云端 Key 重发」/「分步生成」两条出路。
+- **F4（盘符路径逃逸）**：模型输出 `D:/geo/pom.xml` 时 `os.path.join` 丢前缀直写盘根，
+  注册目录与实际落盘不一致。新增 `normalize_rel` 统一归一化（盘符/绝对路径收进项目目录、
+  含 `..` 直接丢弃），`save_project` / 原地编辑分支 / 自检修复三处同口径。
+- **R6（多栈启动命令）**：`run_project` 按技术栈识别 —— `pom.xml` → `mvn spring-boot:run`、
+  `package.json` → 按 scripts 给 `npm run dev/serve/start`；前后端分目录时两条命令都说明。
+- **R7（自检即停）**：三道闸 —— 格式污染预检（文件里混 `===FILE:===` 标记即停）、
+  过半文件不过判系统性损坏即停、总预算 180 秒；判系统性故障时直接如实上报，不再运行半成品。
+- **附带修复**：`desktop/version_info.txt` 静态漂移（打包实测仍写 0.31.14.0，导致 exe 文件属性
+  与杀软启发式看到旧版本号）→ 改为构建前从 `appinfo.APP_VERSION` 现读现写（`build_common.sync_version_info`）。
+
+**同时包含 V2 认知引擎 2.0.0a11**（契约 1.2，新增可选面 attach_llm_bridge / speak / apply_growth /
+flush_growth；`pasm/engine_api.py` 镜像同步，向后兼容）。
+
+**验收**：dev 复测脚本 35 项全过 · 开发端到端回归 28/0 · V2 开关 28/28 · V2 表达层 39/39 ·
+pasm2 自校验 29 项 ALL GREEN · 冻结包冒烟与真机安装后启动冒烟（0 崩溃特征）全过。
 
 ## 桌面 0.31.15（2026-09-30）· 紧急修复：「🖥 开发」工种整条链路失效
 

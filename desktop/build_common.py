@@ -237,8 +237,58 @@ def _repo_root() -> str:
     return os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
 
+def sync_version_info() -> str:
+    """★ 0.31.16：把 `desktop/version_info.txt` 的版本号与 `appinfo.APP_VERSION` 对齐。
+
+    为什么要有：`--version-file` 只读不写，历次发版靠"记得手改" —— 0.31.16 打包时
+    该文件**还停在 0.31.14.0**，于是 exe 文件属性与杀软启发式看到的都是旧版本号
+    （用户装的最新版、属性里却写着旧版，很像"没更新成功"）。改成构建时现读现写，
+    让"版本号只有一个真相源"这条规则真正落地。
+
+    返回 version_info.txt 路径（读不到 appinfo 就保持原样，不阻断构建）。
+    """
+    import re
+    here = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(here, "version_info.txt")
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "_pasm_appinfo", os.path.join(here, "appinfo.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        ver = str(getattr(mod, "APP_VERSION", "")).strip()
+    except Exception as ex:            # 构建环境异常不该阻断打包
+        print("[build_common] 读不到 appinfo.APP_VERSION（%s）→ version_info 保持原样"
+              % type(ex).__name__, file=sys.stderr)
+        return path
+    if not ver:
+        return path
+    nums = [int(x) for x in re.findall(r"\d+", ver)[:4]]
+    while len(nums) < 4:
+        nums.append(0)
+    tup = ", ".join(str(x) for x in nums)
+    try:
+        src = open(path, encoding="utf-8").read()
+    except Exception:
+        return path
+    src = re.sub(r"filevers=\([^)]*\)", "filevers=(%s)" % tup, src)
+    src = re.sub(r"prodvers=\([^)]*\)", "prodvers=(%s)" % tup, src)
+    src = re.sub(r"StringStruct\('FileVersion', '[^']*'\)",
+                 "StringStruct('FileVersion', '%s.0')" % ver, src)
+    src = re.sub(r"StringStruct\('ProductVersion', '[^']*'\)",
+                 "StringStruct('ProductVersion', '%s.0')" % ver, src)
+    try:
+        with open(path, "w", encoding="utf-8", newline="\n") as f:
+            f.write(src)
+        print("[build_common] version_info.txt 已对齐 APP_VERSION=%s" % ver)
+    except Exception as ex:
+        print("[build_common] version_info.txt 写入失败：%s" % ex, file=sys.stderr)
+    return path
+
+
 def cli_args() -> list:
     """把上面这些参数转成 PyInstaller **命令行**参数（供 shell 脚本用）。"""
+    sync_version_info()                # ★ 0.31.16：版本号现读现写，杜绝 exe 属性漂移
     # ⚠️ 必须是命令行的 `--paths`（不是 spec 字段名 `--pathex`）。
     #    Linux/macOS 通过 `build_common.py lines` 把这些参数直接喂给 pyinstaller 命令行，
     #    `--pathex` 不是合法命令行参数 → pyinstaller 直接报 unrecognized arguments。

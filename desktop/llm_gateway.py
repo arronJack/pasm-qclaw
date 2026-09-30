@@ -58,6 +58,11 @@ TASK_PROFILES: Dict[str, Dict[str, Any]] = {
     "chat":     dict(max_tokens=1600, temperature=0.9,  timeout=90,  retries=1, continue_cuts=2, concurrency=1),
     "tool":     dict(max_tokens=900,  temperature=0.85, timeout=120, retries=0, continue_cuts=0, concurrency=1),
     "brain":    dict(max_tokens=1500, temperature=0.7,  timeout=120, retries=1, continue_cuts=1, concurrency=1),
+    # ★ F2（0.31.16）：开发工种专用 —— 真机实录（2026-09-30）开发任务走 brain 画像，
+    #   被聊天式收口 3000→720 tok（目标 60s），全栈项目刚写完 pom.xml 就被截断。
+    #   dev 画像：单轮 8000 tok、目标 600s（收口公式仍生效但以 10 分钟为宽限）、
+    #   续写 3 段 —— 前后端分离项目一个文件普遍 200~800 tok，8000 够写 10~30 个文件。
+    "dev":      dict(max_tokens=8000, temperature=0.6,  timeout=600, retries=1, continue_cuts=3, concurrency=1),
     "skill":    dict(max_tokens=3000, temperature=0.7,  timeout=180, retries=1, continue_cuts=2, concurrency=1),
     "filegen":  dict(max_tokens=2200, temperature=0.7,  timeout=150, retries=1, continue_cuts=2, concurrency=1),
     "study":    dict(max_tokens=800,  temperature=0.3,  timeout=120, retries=1, continue_cuts=0, concurrency=1),
@@ -74,6 +79,7 @@ TASK_PROFILES: Dict[str, Dict[str, Any]] = {
 _LOCAL_TIMEOUT_FLOOR: Dict[str, int] = {
     "chat": 300, "tool": 480, "brain": 360, "skill": 480, "filegen": 480,
     "study": 360, "selftest": 300, "pet": 240, "warm": 300,
+    "dev": 600,                          # F2：开发单轮兜底 10 分钟
 }
 _HB_SEG_CLOUD = 25.0                     # 云端：25s 心跳分片（点停止 ≤25s 断开）
 _HB_SEG_LOCAL = 120.0                    # 本地：单段要罩得住冷加载（实测 81s）
@@ -229,6 +235,7 @@ def budget(model: str, host: str = "", *, want_first_secs: float = 10.0,
 _TASK_TARGET_SECS = {
     "chat": 45.0, "tool": 30.0, "brain": 60.0, "study": 30.0,
     "selftest": 30.0, "pet": 20.0, "skill": 120.0, "filegen": 90.0,
+    "dev": 600.0,                        # F2：开发单轮目标 10 分钟（不再按聊天 60s 收口）
 }
 
 
@@ -530,7 +537,7 @@ def _local_guard_note(origin: str, model: str) -> None:
 #   想要"每句话都深思"可在设置「思考链」里选「始终开启」。
 _THINK_OFF = ("tool", "warm", "skill", "study")   # 机械提炼/技能/暖场 → 不思考
 _THINK_ON = ("selftest",)                        # 学后自测是"诚实自检" → 必须想（后台，延迟不可见）
-_THINK_AUTO = ("brain", "filegen", "chat")        # 按问题是否"值得想"决定（chat 默认可见深思）
+_THINK_AUTO = ("brain", "dev", "filegen", "chat")     # 按问题是否"值得想"决定（chat 默认可见深思）
 # 开思考时额外预留的输出配额。实测思考正文 1200~4000 字 ≈ 1000~3000 tok，
 # 与正文共用 num_predict —— 不预留就是"想完了没额度说话"（正文 0 字）。
 _THINK_RESERVE = 1600
@@ -866,7 +873,7 @@ _CLOUD_CONCURRENCY = 4                  # 云端 OpenAI 兼容：宽松并发
 # 否则后台读书/精炼与聊天共用同一条 host 车道 → 聊天静默排队数百秒（真机 400s 无响应根因之一）。
 # v0.27.10：把「用户在等的活」全部划入前台——聊天/工具/技能/出文件/双脑都算，
 # 后台学习（study/pet/selftest）必须给它们让路。
-_INTERACTIVE_TASKS = ("chat", "tool", "skill", "filegen", "brain", "warm")
+_INTERACTIVE_TASKS = ("chat", "tool", "skill", "filegen", "brain", "dev", "warm")
 
 # v0.27.10 前台优先调度（本地单模型端点尤其重要：Ollama 内部串行，后台不腾手聊天就得干等）
 _FG_QUIET_GAP = 6.0      # 前台空闲满这么多秒，后台才允许占用模型（避免刚答完又被学习插队）
@@ -951,8 +958,14 @@ class Gateway:
             if c is None:
                 # max_retries=0：SDK 层的静默重试会整单重发、把等待时间翻倍还刷屏日志
                 # （真机日志"Retrying request …"每 25s 一条即此）；重试统一由网关自己管
-                c = OpenAI(api_key=api_key or "local", base_url=base_url,
-                           max_retries=0)
+                try:
+                    c = OpenAI(api_key=api_key or "local", base_url=base_url,
+                               max_retries=0)
+                except Exception as ex:
+                    # v0.31.15（R1 防御）：底层 httpcore2/httpx2 元数据偶发缺失会让构造直接抛
+                    # PackageNotFoundError，不能让上层 agent 拿到一段裸 traceback。
+                    raise RuntimeError(
+                        "模型客户端初始化失败（%s）：%s" % (type(ex).__name__, ex))
                 self._clients[key] = c
             return c
 

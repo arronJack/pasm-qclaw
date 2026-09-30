@@ -18,7 +18,7 @@
 | `pasm-domain-advisor` · `pasm-medical` · `pasm-customer-service` | 领域智能体：领域顾问引擎 / 医疗辅助 / 专业客服 | 公开 | 0.1.1 · 0.1.0 · 0.2.0 |
 | `PASM-Lite` | 教学版 + 认知引擎接口（不接 V2，保持纯净） | 公开 | — |
 | `PASM` | 核心引擎（七层仿生 / 世界模型，含 `pasm2/`；桌面源码 0.31.16） | 私有 | 0.7.2 |
-| **`pasm-qclaw`（本仓）** | **桌面应用发行通道（安装包 + `latest.json` 升级源）** | **公开** | **0.31.15（已发行）** |
+| **`pasm-qclaw`（本仓）** | **桌面应用发行通道（安装包 + `latest.json` 升级源）** | **公开** | **0.31.16（已发行）** |
 
 本仓**现在包含 PASM Studio 桌面端的开源源码**（[`desktop/`](desktop/README.md) 目录，基于 PySide6 的 Windows 桌面应用 UI/外壳层），
 同时仍是安装包与更新清单 `latest.json` 的**发行通道**。
@@ -46,7 +46,43 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.31.15（2026-09-30）· 紧急修复：「🖥 开发」工种整条链路失效
+## 最新：v0.31.16（2026-09-30）· GEO 平台复测整批修复：落盘混乱 / 开发被限流 / 虚报成功
+
+**这一版是你拿「在D盘建一个geo文件夹…用 springboot-vue 做前后端分离的 GEO 优化平台」实测后
+反馈的问题整批修复。** 上一版（0.31.15）把「开发」从崩溃里救回来了，但真机复测暴露了新的一层：
+路径散乱、项目没按你说的做、还回你「搭好了」。这次把**五条新根因一次修完**：
+
+- **① 「D 盘」听懂了**：你说「在**D盘**建一个geo文件夹」，旧版识别不了这种说法 →
+  目标为空 → 项目名兜底取了「geo文件夹」三个字、落回默认工作目录。
+  现在会解析成 `D:\geo`（字面路径仍然优先），项目名取 `geo`。
+- **② 开发不再被限流掐断（本版最关键）**：旧版把开发任务当聊天处理，
+  按"60 秒出结果"把单轮长度从 3000 收到 **720 token** —— 一个前后端分离项目刚写完 `pom.xml`
+  就被截断，于是"没按要求开发"。现在开发走**独立额度**：单轮 8000 token、目标 10 分钟、
+  三段续写，后端+前端+配置一次写全。
+- **③ 不再虚报成功**：旧版只生成 1 个文件也回你「🏗 项目搭好了！共 1 个文件」。
+  现在"前后端分离"这类需求产出 <3 个文件就**如实告诉你没做成**，并给你两条出路：
+  到「设置 → 模型」填云端 Key 后重发，或说一句「分步生成」让我按 后端→前端→数据库 一块块拼。
+- **④ 路径不再乱跑**：模型偶尔会写出带盘符的路径（`D:/geo/pom.xml`），
+  旧版拼路径时会把项目目录前缀整个丢掉、直接把文件写到盘根（注册目录与实际落盘"精神分裂"，
+  也是个路径逃逸口子）。现在一律**收敛回项目目录内**，含 `..` 的越界路径直接拒绝。
+- **⑤ 启动命令按技术栈给对了**：Spring Boot 项目给 `mvn spring-boot:run`、
+  前端项目给 `npm install && npm run dev`（读 `package.json` 的 scripts 判断 dev/serve/start）；
+  不再只找 `.py/.js` 入口、找不到就一句「没找到可执行入口」。
+
+**另外两件**：
+
+- **自检不再空转**：发现文件里混进生成标记（生成层降级污染）、或过半文件语法不过时，
+  立刻停止并如实报告；自检总预算 180 秒 —— 不再让你对着「复查中」等六分钟。
+- **安装包版本属性修好了**：以前文件属性里显示的版本号会停在旧版（0.31.14），
+  现在与安装包一致（构建时自动同步，不会再漂移）。
+
+> 本版同时包含 **V2 认知引擎 2.0.0a11**（契约 1.2，新增可选面：LLM 桥 / 语言出口 / 成长落地）
+> 与 0.31.15 的全部修复。
+
+**验收目标**：「在D盘建一个geo文件夹…springboot-vue 前后端分离」→ 真落 `D:\geo`、
+项目名 `geo`、含 backend/frontend、启动命令对口；产出不完整时**如实报失败**而不是说"搭好了"。
+
+## v0.31.15（2026-09-30）· 紧急修复：「🖥 开发」工种整条链路失效
 
 **如果你在 0.31.14 上用过「🖥 开发」**，会发现它基本不可用：报「执行工具时出错」、
 你指定"文件放 H:\geo_plaform"它不听、要 SpringBoot+Vue 它给 Python+单页 HTML 还幻觉出 Django、
@@ -288,7 +324,7 @@ Gitee 侧为**分卷版**（`-gitee.exe` + `.bin` 切片）：**全部下到同�
 安装程序会自己找分卷，不需要手动合并。
 **macOS / Linux 本版未重出**（需 CI 跑 PyInstaller，本机不能交叉编译）。
 
-> 后续版本见上方 **v0.31.15**（最新）。
+> 后续版本见上方 **v0.31.16**（最新）。
 
 ---
 
@@ -703,10 +739,10 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 ## 下载与安装
 
-最新版见仓库 **Releases**（v0.31.15）：
+最新版见仓库 **Releases**（v0.31.16）：
 
-1. 下载安装包。**GitHub / GitCode** 上下载 `PASMStudio-Setup-0.31.15.exe`（单文件整包）；
-   **Gitee** 上是**分卷版** `PASMStudio-Setup-0.31.15-gitee.exe` + `.bin` 切片 ——
+1. 下载安装包。**GitHub / GitCode** 上下载 `PASMStudio-Setup-0.31.16.exe`（单文件整包）；
+   **Gitee** 上是**分卷版** `PASMStudio-Setup-0.31.16-gitee.exe` + `.bin` 切片 ——
    请把 `.exe` 与**全部 `.bin` 分卷下到同一个目录**，然后直接运行 exe 即可
    （安装程序会自己找同目录的分卷，**不需要手动合并**）。
 2. 双击安装 → 打开 PASM Studio → 点右上「设置」填 LLM Key（或留空用本地 Ollama）
@@ -768,7 +804,40 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 > **It never loses what you typed, and never claims to have done something it didn't** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.31.15 (2026-09-30) · Hotfix: the "🖥 Dev" work mode was broken end-to-end
+## Latest: v0.31.16 (2026-09-30) · Full fix batch from the GEO-platform retest: stray writes / throttled dev / false success
+
+**This release fixes the whole batch of issues you hit when you asked for a SpringBoot+Vue
+"GEO optimization platform" in a `D:\` folder.** 0.31.15 rescued the "🖥 Dev" mode from crashing,
+but the real-machine retest exposed a second layer: files landing in the wrong places, the project
+not built as asked, and a cheerful "it's done!" for a one-file stub. Five new root causes, all fixed:
+
+- **① "D drive" is understood now**: "create a geo folder on **D drive**" was not recognized →
+  the target was empty → the project name fell back to the literal words "geo文件夹" and everything
+  landed in the default workspace. It now resolves to `D:\geo` (literal paths still win), name `geo`.
+- **② Dev work is no longer throttled (the key fix)**: the dev task was treated as chat and its
+  per-turn length was clamped from 3000 down to **720 tokens** ("60-second target") — a full-stack
+  project was cut off right after `pom.xml`. Dev now has its own budget: **8000 tokens per turn,
+  10-minute target, three continuations**, so backend + frontend + config can land in one pass.
+- **③ No more false success**: generating a single file used to answer「🏗 项目搭好了！共 1 个文件」.
+  Now, for "front-end/back-end separated" requests, fewer than 3 files **honestly reports failure**
+  and offers two ways out: add a cloud API key in *Settings → Model* and resend, or say
+  "generate step by step" and I'll build backend → frontend → database one block at a time.
+- **④ No more stray paths**: models sometimes emit a drive-lettered path (`D:/geo/pom.xml`); the old
+  code joined it in a way that dropped the project prefix and wrote straight to the drive root
+  (registry vs. real location "split personality", plus a path-escape hole). Paths are now
+  **normalized back into the project directory**, and `..`-containing paths are rejected outright.
+- **⑤ Startup commands match the stack**: Maven/Spring Boot projects get `mvn spring-boot:run`,
+  front-end projects get `npm install && npm run dev` (read from `package.json` scripts:
+  dev/serve/start) — instead of only looking for `.py`/`.js` entries and giving up.
+
+**Plus two more**: the self-check now stops immediately on generation-layer pollution or when most
+files fail syntax checks (180-second budget overall — no more six-minute "verifying…"), and the
+installer's file-properties version number is finally correct (it used to be stuck on 0.31.14).
+
+> This release also bundles **V2 cognitive engine 2.0.0a11** (contract 1.2 — new optional surface:
+> LLM bridge / speech outlet / growth application) and every fix from 0.31.15.
+
+## v0.31.15 (2026-09-30) · Hotfix: the "🖥 Dev" work mode was broken end-to-end
 
 **If you tried the "🖥 Dev" work mode on 0.31.14**, you found it essentially unusable: "error
 executing tool" on the first turn, your "put the files in H:\geo_plaform" instruction ignored,

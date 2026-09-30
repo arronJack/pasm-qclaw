@@ -1046,7 +1046,11 @@ def parse_bundle(text: str) -> dict:
     ===FILE: 路径===
     内容
     ===END===
-    返回 {相对路径: 内容}。也兼容 ```lang 围栏内的单文件。"""
+    返回 {相对路径: 内容}。
+
+    v0.31.15 增强：仍优先认 ===FILE: 路径=== 标记；额外兼容模型退化时用的
+    字典格式（FILES["rel"] = 三引号长内容三引号），避免"解析为空 → 把整段回复当代码
+    落盘"的毒兜底（见 pasm_companion._project_run）。"""
     files = {}
     marks = list(FILE_MARK.finditer(text))
     if marks:
@@ -1057,24 +1061,69 @@ def parse_bundle(text: str) -> dict:
             body = re.sub(r"^===END===\s*$", "", body.strip(), flags=re.M).strip()
             if body:
                 files[m.group(1).strip().replace("\\", "/")] = body + "\n"
+    if not files:
+        # R5：字典格式兜底（FILES["x"] = """长内容"""）
+        for m in re.finditer(
+                r'\b\w+\s*\[\s*["\']([^"\']+)["\']\s*\]\s*=\s*["\']{3}(.*?)["\']{3}',
+                text, flags=re.S):
+            rel = m.group(1).strip().replace("\\", "/")
+            body = m.group(2)
+            if rel and body.strip():
+                files[rel] = body + "\n"
     return files
 
 
-def save_project(name: str, files: dict) -> Tuple[str, str]:
-    """把 {相对路径: 内容} 写入 projects/<名字>/，返回 (项目目录, 文件树文本)。"""
-    safe = re.sub(r"[^\w\- ]", "_", name)[:24].strip() or "project"
-    pdir = os.path.join(projects_dir(), safe)
+def normalize_rel(rel: str) -> str:
+    """F4（0.31.16）：把模型给的"相对路径"归一化为**真的相对路径**（非法返回空串）。
+
+    真机实录（2026-09-30 GEO 平台复测）：模型在文件标记里写了 `D:/geo/pom.xml`，
+    旧代码 `os.path.join(项目目录, "D:/geo/pom.xml")` 遇到**带盘符的路径**会把
+    项目目录前缀整个丢掉，直写 `D:\\geo\\pom.xml` —— 注册表记的是项目目录、
+    文件却落 elsewhere，"精神分裂"的同时还是一个**路径逃逸漏洞**（模型想写哪就写哪）。
+
+    规则：① 统一正斜杠、去首尾空白与引号；② 剥掉盘符前缀与开头的 / ——
+    **一律收进项目目录**，绝不落回原绝对位置；③ `.` / `..` 成分剔除（防穿越）；
+    ④ 剔完为空 → 返回空串（调用方跳过该文件）。
+    """
+    if not rel:
+        return ""
+    r = str(rel).strip().strip("\"'").replace("\\", "/")
+    if ".." in r.split("/"):                     # 含 .. = 穿越企图 → 整个丢弃
+        return ""
+    r = re.sub(r"^[A-Za-z]:", "", r)             # 盘符前缀 → 收进项目目录
+    parts = [p for p in r.split("/") if p not in ("", ".", "..")]
+    return "/".join(parts)
+
+
+def save_project(name: str, files: dict, dest: str = None) -> Tuple[str, str]:
+    """把 {相对路径: 内容} 写入 projects/<名字>/（或 dest 指定目录），返回 (项目目录, 文件树文本)。
+
+    v0.31.15：dest 非空时**直接以 dest 为项目根**（用户显式指定的输出目录，如 H:\\geo_plaform），
+    不再强制塞进工作根下的子目录——这是"用户说放哪就放哪"的关键修复（R2）。
+    v0.31.16（F4）：每个 rel 先过 `normalize_rel` —— 盘符/绝对路径一律收进项目目录，
+    杜绝 os.path.join 丢前缀直写盘根（注册目录与实际落盘必须一致）。"""
+    if dest:
+        pdir = dest
+        safe = os.path.basename(dest.rstrip("/\\")) or "project"
+    else:
+        safe = re.sub(r"[^\w\- ]", "_", name)[:24].strip() or "project"
+        pdir = os.path.join(projects_dir(), safe)
     os.makedirs(pdir, exist_ok=True)
+    written = []
     for rel, content in files.items():
-        rel = rel.lstrip("/ ")
-        if ".." in rel:
+        rel = normalize_rel(rel)
+        if not rel:
             continue
         full = os.path.join(pdir, *rel.split("/"))
-        os.makedirs(os.path.dirname(full), exist_ok=True)
+        # 双保险：归一化后仍校验 full 确实在项目目录内（防未来改坏 normalize_rel）
+        if os.path.relpath(full, pdir).startswith(".."):
+            continue
+        os.makedirs(os.path.dirname(full) or pdir, exist_ok=True)
         with open(full, "w", encoding="utf-8") as f:
             f.write(content)
+        written.append(rel)
     tree = "📁 " + pdir + "\n" + _tree(pdir)
-    _register_project(safe, pdir, list(files))
+    _register_project(safe, pdir, written)
     return pdir, tree
 
 
@@ -1365,8 +1414,62 @@ def _register_project(name: str, pdir: str, files: list):
 
 
 @_with_ledger("run_project")
+def _find_stack_files(pdir: str, names, max_depth: int = 3) -> list:
+    """R6（0.31.16）：在项目里找技术栈标记文件（pom.xml / package.json 等），限深防扫全盘。"""
+    hits = []
+    if not os.path.isdir(pdir):
+        return hits
+    for root, dirs, fs in os.walk(pdir):
+        if root[len(pdir):].count(os.sep) >= max_depth:
+            dirs[:] = []
+        dirs[:] = [d for d in dirs
+                   if d not in ("node_modules", ".git", "__pycache__",
+                                "target", "dist", ".idea", ".vscode")]
+        for f in fs:
+            if f.lower() in names:
+                hits.append(os.path.join(root, f))
+    return hits
+
+
 def run_project(pdir: str, timeout: int = 45) -> str:
-    """尝试运行项目入口：python/node 入口直接跑；index.html 浏览器打开。"""
+    """尝试运行项目入口：python/node 入口直接跑；index.html 浏览器打开。
+
+    v0.31.16（R6）：先按技术栈识别 —— Spring Boot（pom.xml）与前端
+    （package.json）项目给**对口的启动命令**（mvn spring-boot:run / npm run dev），
+    不再只找 .py/.js 入口、找不到就一句"没找到可执行入口"了事。"""
+    # ★ R6：技术栈优先 —— Maven 后端
+    poms = _find_stack_files(pdir, {"pom.xml", "build.gradle"})
+    pkgs = _find_stack_files(pdir, {"package.json"})
+    if poms:
+        be = os.path.dirname(poms[0])
+        gradle = poms[0].lower().endswith("build.gradle")
+        msg = ("这是 %s 后端项目，启动命令：\n```\ncd %s\n%s\n```\n"
+               "（首次运行会自动下载依赖；本机需装有 JDK 17+ 与 %s）"
+               % ("Gradle" if gradle else "Maven（Spring Boot）", be,
+                  "gradle bootRun" if gradle else "mvn spring-boot:run",
+                  "Gradle" if gradle else "Maven"))
+        fe = [p for p in pkgs if os.path.dirname(p) != be]
+        if fe:
+            fed = os.path.dirname(fe[0])
+            msg += ("\n\n前端项目启动（**另开一个终端**，后端跑着它才能联调）：\n"
+                    "```\ncd " + fed + "\nnpm install\nnpm run dev\n```\n"
+                    "启动后浏览器访问它打印的地址（Vite 默认 http://localhost:5173）。")
+        return msg
+    # ★ R6：纯前端 / Node 项目 —— 读 package.json 的 scripts 给对命令
+    if pkgs:
+        d = os.path.dirname(pkgs[0])
+        try:
+            scripts = (json.load(open(pkgs[0], encoding="utf-8")) or {}).get("scripts", {}) or {}
+        except Exception:
+            scripts = {}
+        if "dev" in scripts:
+            run_cmd = "npm run dev"
+        elif "serve" in scripts:
+            run_cmd = "npm run serve"
+        else:
+            run_cmd = "npm start"
+        return ("这是 Node/前端项目，启动命令：\n```\ncd " + d +
+                "\nnpm install\n" + run_cmd + "\n```")
     entries = []
     for root, dirs, fs in os.walk(pdir):
         dirs[:] = [d for d in dirs if d not in ("node_modules", ".git", "__pycache__")]
