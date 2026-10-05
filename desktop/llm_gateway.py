@@ -64,7 +64,11 @@ TASK_PROFILES: Dict[str, Dict[str, Any]] = {
     #   续写 3 段 —— 前后端分离项目一个文件普遍 200~800 tok，8000 够写 10~30 个文件。
     "dev":      dict(max_tokens=8000, temperature=0.6,  timeout=600, retries=1, continue_cuts=3, concurrency=1),
     "skill":    dict(max_tokens=3000, temperature=0.7,  timeout=180, retries=1, continue_cuts=2, concurrency=1),
-    "filegen":  dict(max_tokens=2200, temperature=0.7,  timeout=150, retries=1, continue_cuts=2, concurrency=1),
+    # v0.31.22：filegen 2200 → 8000。实测（2026-10-05 真 key 端到端）单文件
+    #   常需 3000~4200 tokens，2200 会 finish_reason=length **硬截断**，
+    #   代码写到一半成残句 → SyntaxError（rank.py line 437 elif / report.py）。
+    #   这不是模型不行，是预算不够；与 dev 档看齐，并放宽 timeout 容纳长文件。
+    "filegen":  dict(max_tokens=8000, temperature=0.7,  timeout=600, retries=1, continue_cuts=3, concurrency=1),
     "study":    dict(max_tokens=800,  temperature=0.3,  timeout=120, retries=1, continue_cuts=0, concurrency=1),
     "selftest": dict(max_tokens=400,  temperature=0.5,  timeout=120, retries=1, continue_cuts=0, concurrency=1),
     "pet":      dict(max_tokens=240,  temperature=0.95, timeout=90,  retries=1, continue_cuts=0, concurrency=1),
@@ -251,7 +255,11 @@ def budget(model: str, host: str = "", *, want_first_secs: float = 10.0,
 #: 各任务"用户愿意等多久才看到完整回答"的目标秒数（用于反推 max_tokens）。
 _TASK_TARGET_SECS = {
     "chat": 45.0, "tool": 30.0, "brain": 60.0, "study": 30.0,
-    "selftest": 30.0, "pet": 20.0, "skill": 120.0, "filegen": 90.0,
+    "selftest": 30.0, "pet": 20.0, "skill": 120.0,
+    # v0.31.22：filegen 90 → 300s。max_tokens 放宽到 8000 后，生成单个长源文件
+    #   本来就要几十秒~数分钟；目标秒数太小会被 clamp_max_tokens 反压回小预算
+    #   （这正是 2200 硬截断的机制来源）。与 dev 同量级但略短。
+    "filegen": 300.0,
     "dev": 600.0,                        # F2：开发单轮目标 10 分钟（不再按聊天 60s 收口）
 }
 
