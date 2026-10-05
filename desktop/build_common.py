@@ -108,6 +108,12 @@ HIDDEN_IMPORTS = [
     'sniffio',
     'distro',
     'tqdm',
+    # 这三个实测已进包（靠 collect_all('pasm'/'playwright' 与静态分析），
+    # 但**没有显式声明** → 一旦 import 路径变化就会静默掉出去。
+    # 守卫 verify_v0322_frozen_deps.py 会把"未显式声明"判红，故显式列出。
+    'pydantic',
+    'numpy',
+    'PySide6',
     'creators',
     'audio',
     'sysops',

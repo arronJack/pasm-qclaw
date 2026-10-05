@@ -26,6 +26,8 @@ hiddenimports = ['executors', 'media_job', 'kb_bridge', 'msg_source', 'asr', 'up
                #   装好后报 `RuntimeError: openai 库未安装`，云端模型全废。
                #   本版修复：与 build_common.HIDDEN_IMPORTS 同步补齐（两处都要有）。
                'openai', 'httpx', 'httpcore', 'anyio', 'sniffio', 'distro', 'tqdm',
+               # 实测已进包但未显式声明的三个（守卫 verify_v0322_frozen_deps 会判红）：
+               'pydantic', 'numpy', 'PySide6',
                'creators', 'audio', 'sysops', 'cando', 'platform_ops', 'accent', 'persona_style', 'worklog', 'symbolic', 'memrouter', 'memvec', 'workctx', 'facts', 'worldmodel', 'engine_factory', 'pasm2_bridge', 'pasm2_voice',   # pasm2_voice 在 pasm2_bridge 里'pasm2_voice',
                # ↑ pasm2_voice 在 pasm2_bridge 里是 try 内导入，PyInstaller 静态分析
                #   看不到 → 漏声明会让 frozen 版**静默丢掉整个表达层**（不报错）
