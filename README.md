@@ -33,12 +33,6 @@
 >
 > **许可证范围**：本仓开源代码（含 `desktop/` 外壳与文档）以根目录 [`LICENSE`](LICENSE)（MIT）授权；
 > 私有核心引擎 `PASM/` 与已发行的安装包二进制**不在此 MIT 覆盖范围内**。
->
-> **许可证范围**：本仓开源代码（含 `desktop/` 外壳与文档）以根目录 [`LICENSE`](LICENSE)（MIT）授权；
-> 私有核心引擎 `PASM/` 与已发行的安装包二进制**不在此 MIT 覆盖范围内**。
->
-> **许可证范围**：本仓开源代码（含 `desktop/` 外壳与文档）以根目录 [`LICENSE`](LICENSE)（MIT）授权；
-> 私有核心引擎 `PASM/` 与已发行的安装包二进制**不在此 MIT 覆盖范围内**。
 
 地址：[Gitee](https://gitee.com/arronzheng/pasm-qclaw) ·
 [GitHub](https://github.com/arronJack/pasm-qclaw) ·
