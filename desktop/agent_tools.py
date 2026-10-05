@@ -1164,7 +1164,14 @@ def parse_bundle(text: str) -> dict:
             start = m.end()
             end = marks[i + 1].start() if i + 1 < len(marks) else len(text)
             body = text[start:end]
-            body = re.sub(r"^===END===\s*$", "", body.strip(), flags=re.M).strip()
+            body = re.sub(r"^===END===\s*$", "", body.strip(), flags=re.M)
+            # ★ 0.31.21：剥离体内残留的边界标记（**含行内**，典型如
+            #   `white-space===FILE: frontend/README.md===` —— 模型漏写 ===END===
+            #   把下一个文件的标记吞进本文件，造成 Report.vue 与 README.md 被拼接）。
+            #   这是「生成器写文件机制」缺陷的治本点（与 frontend/frontend 嵌套同源）。
+            body = re.sub(r"={3}\s*FILE:\s*.+?={3}", "", body)
+            body = re.sub(r"={3}\s*END\s*={3}", "", body)
+            body = body.strip()
             rel = m.group(1).strip().replace("\\", "/")
             # ★ 0.31.19：落盘前统一净化（剥 markdown 围栏 / 修注释符号）
             body, _note = sanitize_file(rel, body)
@@ -1226,6 +1233,16 @@ def save_project(name: str, files: dict, dest: str = None) -> Tuple[str, str]:
         rel = normalize_rel(rel)
         if not rel:
             continue
+        # ★ 0.31.21：折叠与「项目根目录名」同名的顶层段，杜绝 frontend/frontend
+        #   嵌套（生成器把 dest 设成 frontend 目录、模型又写 `frontend/...` 时触发）。
+        #   正常 springboot+vue 项目根名不会是 frontend，故不影响正常结构。
+        _bn = os.path.basename(os.path.normpath(pdir)).lower()
+        _parts = rel.split("/")
+        while _parts and _parts[0].lower() == _bn:
+            _parts.pop(0)
+        if not _parts:
+            continue
+        rel = "/".join(_parts)
         full = os.path.join(pdir, *rel.split("/"))
         # 双保险：归一化后仍校验 full 确实在项目目录内（防未来改坏 normalize_rel）
         if os.path.relpath(full, pdir).startswith(".."):
@@ -1569,18 +1586,72 @@ def _find_stack_files(pdir: str, names, max_depth: int = 3) -> list:
     return hits
 
 
+def _try_build_maven(be: str, timeout: int = 300) -> tuple:
+    """真跑 mvn 编译（不跑测试），返回 (rc|None, out)。None = 工具链缺失。
+
+    ★ 0.31.21：之前 run_project 只**返回启动命令字符串**、根本没真跑构建，却仍被
+    账本记 ok=True（ops_ledger 误报成功）。现在真正执行并捕获退出码。"""
+    exe = shutil.which("mvn")
+    if not exe:
+        return None, ""
+    try:
+        r = subprocess.run([exe, "-q", "-DskipTests", "compile"], cwd=be,
+                           capture_output=True, text=True, timeout=timeout)
+        out = (r.stdout or "") + (r.stderr or "")
+        return r.returncode, out[-2000:]
+    except subprocess.TimeoutExpired:
+        return -1, "构建超时（%ds），未等待完成。" % timeout
+    except Exception as ex:                                       # noqa: BLE001
+        return -2, str(ex)
+
+
+def _try_build_npm(d: str, timeout: int = 300) -> tuple:
+    """真跑 npm 构建（缺 node_modules 先 install），返回 (rc|None, out)。"""
+    node = shutil.which("node")
+    npm = shutil.which("npm")
+    if not (node and npm):
+        return None, ""
+    try:
+        if not os.path.isdir(os.path.join(d, "node_modules")):
+            subprocess.run([npm, "install", "--no-audit", "--no-fund"], cwd=d,
+                           capture_output=True, text=True, timeout=timeout)
+        scripts = {}
+        try:
+            scripts = (json.load(open(os.path.join(d, "package.json"), encoding="utf-8"))
+                       or {}).get("scripts", {}) or {}
+        except Exception:                                         # noqa: BLE001
+            pass
+        cmd = "build" if "build" in scripts else "dev"
+        r = subprocess.run([npm, "run", cmd], cwd=d, capture_output=True,
+                           text=True, timeout=timeout)
+        out = (r.stdout or "") + (r.stderr or "")
+        return r.returncode, out[-2000:]
+    except subprocess.TimeoutExpired:
+        return -1, "构建超时（%ds）。" % timeout
+    except Exception as ex:                                       # noqa: BLE001
+        return -2, str(ex)
+
+
 def run_project(pdir: str, timeout: int = 45) -> str:
     """尝试运行项目入口：python/node 入口直接跑；index.html 浏览器打开。
 
     v0.31.16（R6）：先按技术栈识别 —— Spring Boot（pom.xml）与前端
-    （package.json）项目给**对口的启动命令**（mvn spring-boot:run / npm run dev），
-    不再只找 .py/.js 入口、找不到就一句"没找到可执行入口"了事。"""
+    （package.json）项目给**对口的启动命令**（mvn spring-boot:run / npm run dev）。
+    v0.31.21：maven/npm 项目**真正执行一次构建**并捕获退出码，构建失败则如实返回
+    （账本记为失败），不再"只给命令就报成功"。"""
     # ★ R6：技术栈优先 —— Maven 后端
     poms = _find_stack_files(pdir, {"pom.xml", "build.gradle"})
     pkgs = _find_stack_files(pdir, {"package.json"})
     if poms:
         be = os.path.dirname(poms[0])
         gradle = poms[0].lower().endswith("build.gradle")
+        # ★ 0.31.21：Maven 项目真正编译一次，捕获退出码（gradle 暂只给命令）。
+        if not gradle:
+            _rc, _out = _try_build_maven(be)
+            if _rc is not None and _rc != 0:
+                return ("⛔ 后端构建失败（Maven，rc=%s）：\n```\n%s\n```\n"
+                        "请修复编译错误后重试；常见原因：JDK 版本不匹配（项目需 Java 17+）、"
+                        "pom 依赖版本缺失。" % (_rc, _out[:1500]))
         msg = ("这是 %s 后端项目，启动命令：\n```\ncd %s\n%s\n```\n"
                "（首次运行会自动下载依赖；本机需装有 JDK 17+ 与 %s）"
                % ("Gradle" if gradle else "Maven（Spring Boot）", be,
@@ -1596,6 +1667,11 @@ def run_project(pdir: str, timeout: int = 45) -> str:
     # ★ R6：纯前端 / Node 项目 —— 读 package.json 的 scripts 给对命令
     if pkgs:
         d = os.path.dirname(pkgs[0])
+        # ★ 0.31.21：真跑一次构建，捕获退出码（失败则如实返回，账本记失败）。
+        _rc, _out = _try_build_npm(d)
+        if _rc is not None and _rc != 0:
+            return ("⛔ 前端构建失败（npm，rc=%s）：\n```\n%s\n```\n请修复后重试。"
+                    % (_rc, _out[:1500]))
         try:
             scripts = (json.load(open(pkgs[0], encoding="utf-8")) or {}).get("scripts", {}) or {}
         except Exception:

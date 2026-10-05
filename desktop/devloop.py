@@ -315,8 +315,40 @@ def decompose(req: str, name: str = "app") -> list:
 # ----------------------------------------------------------------------------
 # ④ 每步验证：静态必做；有工具链就跑真构建
 # ----------------------------------------------------------------------------
+def _java_quick_check(path: str) -> str:
+    """Java 单文件启发式校验（**不依赖 javac**，因为单文件 javac 会因缺依赖误报）。
+
+    抓三类真凶（都来自"模型产出未净化 / 生成边界错位"）：
+      ① 文件内残留 ```java 围栏 或 ===FILE:/===END=== 标记（0.31.19 / Report.vue 类）；
+      ② 括号 {} () [] 未平衡（PlanService.java:13 这类语法错的最常见形态）；
+      ③ 行首 `#` 注释（Python 注释被写进 .java 的典型污染）。
+    返回 "" 表示通过，否则返回原因片段。"""
+    try:
+        s = open(path, encoding="utf-8", errors="replace").read()
+    except Exception as ex:                                      # noqa: BLE001
+        return "读不了：%s" % ex
+    if re.search(r"^\s*```|```\s*$", s, re.M):
+        return "残留 ``` 代码围栏（未净化）"
+    if re.search(r"={3}\s*(FILE|END)\b[^\n]*?={3}", s):
+        return "残留 ===FILE:/===END=== 边界标记"
+    # 行首 # 注释（排除 URL/她# 在字符串里的情况：仅查独立成行的 #...）
+    if re.search(r"^\s*#[^\s!]", s, re.M):
+        return "行首 '#' 注释（疑似 Python 注释污染）"
+    pairs = {")": "(", "]": "[", "}": "{"}
+    opens = {"(": 0, "[": 0, "{": 0}
+    close_map = {")": "(", "]": "[", "}": "{"}
+    for ch in s:
+        if ch in opens:
+            opens[ch] += 1
+        elif ch in close_map:
+            opens[close_map[ch]] -= 1
+    if opens["("] != 0 or opens["["] != 0 or opens["{"] != 0:
+        return "括号未平衡（()=%d []=%d {}=%d）" % (opens["("], opens["["], opens["{"])
+    return ""
+
+
 def _static_check(path: str) -> tuple:
-    """单文件静态校验（.py / .json / .yml 结构）。"""
+    """单文件静态校验（.py / .json / .yml / .java）。"""
     low = path.lower()
     try:
         if low.endswith(".py"):
@@ -337,9 +369,104 @@ def _static_check(path: str) -> tuple:
                     pass
         elif low.endswith(".json"):
             json.loads(open(path, encoding="utf-8", errors="replace").read())
+        elif low.endswith((".yml", ".yaml")):
+            _yaml_quick_check(path)
+        elif low.endswith(".java"):
+            jerr = _java_quick_check(path)
+            if jerr:
+                return False, "%s：%s" % (os.path.basename(path), jerr)
     except Exception as ex:                                     # noqa: BLE001
         return False, "%s：%s" % (os.path.basename(path), str(ex)[:200])
     return True, ""
+
+
+def _yaml_quick_check(path: str) -> None:
+    """YAML 轻量结构校验：禁止 Tab 缩进、冒号后缺值、明显缩进错位。"""
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for i, line in enumerate(f, 1):
+            if "\t" in line[:-1]:
+                raise ValueError("第 %d 行用了 Tab 缩进（YAML 不允许）" % i)
+            stripped = line.lstrip()
+            if stripped and not stripped.startswith(("#", "- ", "-", "{", "}", "[")):
+                if ":" not in stripped:
+                    # 非列表/注释/映射行但无冒号 → 结构可疑
+                    if not stripped.endswith((":", ">", "|")):
+                        raise ValueError("第 %d 行缺冒号：%s" % (i, stripped[:60]))
+
+
+def _vue_sfc_check(path: str) -> str:
+    """Vue 单文件组件结构校验：抓 Report.vue 类缺陷（<style> 未闭 + 边界标记残留）。"""
+    try:
+        s = open(path, encoding="utf-8", errors="replace").read()
+    except Exception as ex:                                      # noqa: BLE001
+        return "读不了：%s" % ex
+    # 残留边界标记（生成器漏写 ===END=== 的典型后果，会把下一文件名写进本文件）
+    if re.search(r"={3}\s*(FILE|END)\b[^\n]*?={3}", s):
+        return "文件内残留 ===FILE:/===END=== 标记（生成边界错位）"
+    # 三个顶层块必须有闭合标签（只检查确实开了的）
+    for tag in ("template", "script", "style"):
+        opens = len(re.findall(r"<%s[\s>]" % tag, s))
+        closes = len(re.findall(r"</%s>" % tag, s))
+        if opens and opens != closes:
+            return "<%s> 标签未闭合（开 %d / 闭 %d）" % (tag, opens, closes)
+    # script 块内花括号平衡
+    m = re.search(r"<script[^>]*>(.*?)</script>", s, re.S)
+    if m and m.group(1).count("{") != m.group(1).count("}"):
+        return "script 块花括号未平衡"
+    return ""
+
+
+def _frontend_static_check(pdir: str) -> list:
+    """前端静态校验：.vue SFC 标签平衡 + .js/.ts 用 node --check（有 node 才跑）。
+
+    ★ 修 Report.vue 类事故：之前 node/vue 分支在 verify_project 里是 `pass`，
+      前端构建错误（半截 <style> / 残留 ===FILE: 标记）从不验证，直接漏到用户手上。"""
+    bad = []
+    node = shutil.which("node")
+    for root, dirs, fs in os.walk(pdir):
+        dirs[:] = [d for d in dirs
+                   if d not in (".git", "__pycache__", "node_modules", "dist", "target")]
+        for f in fs:
+            low = f.lower()
+            full = os.path.join(root, f)
+            if low.endswith(".vue"):
+                err = _vue_sfc_check(full)
+                if err:
+                    bad.append("%s：%s" % (f, err))
+            elif node and low.endswith((".js", ".mjs", ".cjs", ".ts")):
+                try:
+                    r = subprocess.run([node, "--check", full], capture_output=True,
+                                       text=True, timeout=30)
+                    if r.returncode != 0:
+                        bad.append("%s：%s" % (f, (r.stderr or r.stdout or "").strip()[:300]))
+                except Exception:                                 # noqa: BLE001
+                    pass
+    return bad
+
+
+def _decode_mvn_error(msg: str) -> str:
+    """把 mvn 构建失败的原始 stderr 解码成**人话**：重点识别 JDK 版本不匹配。
+
+    返回 "" 表示不是 JDK 问题（维持原样）；否则返回可直接给用户看的引导。"""
+    low = (msg or "").lower()
+    hit = any(k in low for k in (
+        "invalid target release", "unsupported class file major version",
+        "source option", "release version", "class file version",
+        "requires java", "no longer supported", "fatal error compiling",
+        "java 8", "java 17", "java 21"))
+    if not hit:
+        return ""
+    try:
+        from pasm.cognitive.coder import probe_jdk
+        jdk = probe_jdk()
+    except Exception:                                       # noqa: BLE001
+        jdk = {"major": None}
+    major = jdk.get("major")
+    if isinstance(major, int) and major < 17:
+        return ("项目目标 Java 17+（Spring Boot 3），但本机 JDK 为 %d。"
+                "请安装 JDK 17 后重试，或在需求里写明「生成兼容 JDK8 的 "
+                "Spring Boot 2.7 版本」让我自适应。" % major)
+    return ("疑似 JDK 版本不匹配（项目需 Java 17+）。请核对 JAVA_HOME 与构建用 JDK 版本。")
 
 
 def verify_project(pdir: str, req: str = "") -> dict:
@@ -365,10 +492,24 @@ def verify_project(pdir: str, req: str = "") -> dict:
                 os.path.join(pdir, "mvnw")) else "mvn -q -DskipTests compile"
             ran = run_cmd(cmd, pdir, timeout=420)
             if not ran["ok"]:
-                bad.append("构建失败：%s" % (ran["out"] or ran["why"])[:1500])
-        elif (st["py"] or st["node"]) and os.path.isfile(os.path.join(pdir, "package.json")) \
+                _raw = (ran["out"] or ran["why"] or "")[:1500]
+                _decoded = _decode_mvn_error(_raw)
+                bad.append("构建失败：" + (_decoded or _raw))
+        elif os.path.isfile(os.path.join(pdir, "package.json")) \
                 and shutil.which("node"):
-            pass                       # 前端缺 node_modules，不在这里强制装依赖
+            # ★ 0.31.21：前端不再 `pass`。有 node 就真做静态校验（SFC 标签平衡 +
+            #   node --check），抓住 Report.vue 类半截 <style> / 残留边界标记，
+            #   不让构建错误漏到用户手上。缺 node_modules 不强制装依赖，只做语法层。
+            fe = _frontend_static_check(pdir)
+            if fe:
+                bad.extend(fe)
+    if bad:
+        # ★ 0.31.21：verify 失败要流入健康监控（之前 selfheal 永远显示 0 错误）。
+        try:
+            import selfheal as HEAL
+            HEAL.record_build_issue("error", pdir, (bad[0] or "")[:400])
+        except Exception:                                          # noqa: BLE001
+            pass
     return {"ok": not bad, "errors": bad, "build": ran}
 
 

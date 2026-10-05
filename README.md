@@ -897,7 +897,11 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 > **It never loses what you typed, and never claims to have done something it didn't** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.31.20 (2026-09-30) · "Continue" now actually works, no more repeated "already running", real scheduled shutdown
+## Latest: v0.31.21 (2026-10-05) · Reliability fixes for the generation pipeline (H:\geo evidence)
+
+This release plugs the systemic reliability holes that let broken generated code slip through: verification is no longer a no-op (it really checks Java brace balance / Vue tag closure), the run ledger no longer reports "built successfully" when nothing was actually built, multi-file output no longer garbles/ nests (fixes Report.vue splice + frontend/frontend nesting), and Java projects auto-adapt to the local JDK (JDK 8 → generates Java 8 / Spring Boot 2.7 compatible code). See [CHANGELOG](CHANGELOG.md).
+
+### v0.31.20 (2026-09-30) · "Continue" now actually works, no more repeated "already running", real scheduled shutdown
 
 - **① "Continue" no longer produces nothing**: logs show the continuation router **did** resolve `D://geo`,
   but that folder was **empty**, and the old code still treated it as "edit existing" (`update_project`)
