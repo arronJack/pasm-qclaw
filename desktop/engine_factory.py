@@ -87,15 +87,39 @@ def _note(report: dict) -> None:
     LAST_REPORT.update(report or {})
 
 
+#: 轻量模式的实话（供 UI / 自检展示，避免把"刻意取舍"说成"故障"）
+LIGHT_MODE_NOTE = (
+    "当前为轻量认知模式：桌面版不携带 torch（安装包体积约束），"
+    "因此神经符号推理与元认知反思层未启用。日常对话、记忆、人格、"
+    "以及开发闭环（语法自愈 / 真构建回灌 / 依赖校验）不受影响。"
+)
+
+
+def _annotate(report: dict) -> dict:
+    """给降级报告补上人话说明，供界面如实展示（而不是只列一串缺失能力名）。"""
+    r = dict(report or {})
+    if r.get("degraded"):
+        r["light_mode"] = True
+        r["note"] = LIGHT_MODE_NOTE
+    return r
+
+
 def _log(report: dict) -> None:
     used = report.get("used")
     if not used:
         return
     if report.get("degraded"):
         gap = report.get("gap") or []
-        logging.info("引擎降级运行：%s（相对 %s 缺：%s）",
-                     used, report.get("gap_vs") or "完整引擎",
-                     "、".join(gap) if gap else "无")
+        # ★ v0.31.22：措辞订正。诊断（docs/qa/2026-10-05-引擎降级诊断-torch依赖与桌面取舍.md）
+        #   证明这不是"故障"：完整引擎 pasm 硬依赖 torch+numpy，桌面刻意不带
+        #   （安装包已 200MB，再加 torch 会翻倍）。原措辞「降级运行…缺 X」会让
+        #   用户误以为软件坏了。改为说明"轻量模式 + 为什么"，并给出能力边界。
+        logging.info(
+            "认知引擎：轻量模式 %s（桌面版不携带 torch，完整 %s 引擎未启用）"
+            "；深度推理/神经符号反思不在本模式内，但开发闭环的"
+            "语法自愈、真构建回灌、依赖校验照常工作。能力边界：%s",
+            used, report.get("gap_vs") or "pasm",
+            ("、".join(gap) if gap else "无"))
     else:
         logging.debug("引擎就绪：%s", used)
 
@@ -123,7 +147,7 @@ def make_engine(personality_seed=None, seed: int = 0,
             eng, report = EA.create_best(
                 PREFERENCE, seed=seed, plan_samples=plan_samples,
                 plan_iters=plan_iters, personality_seed=personality_seed)
-            _note(report)
+            _note(_annotate(report))
             _log(report)
             return eng
         except Exception as ex:                       # noqa: BLE001
