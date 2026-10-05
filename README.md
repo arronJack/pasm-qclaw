@@ -30,6 +30,9 @@
 > 核心引擎的算法、记忆/世界模型/规划器等仍在闭源仓迭代；
 > **PASM V2.0 认知底座已落地为独立包 `pasm2`（Alpha，已上 PyPI）**，
 > 经基座/框架的探测式工厂（`PASM_BACKEND=v2`）可选切换，默认仍走 V1、零侵入。
+>
+> **许可证范围**：本仓开源代码（含 `desktop/` 外壳与文档）以根目录 [`LICENSE`](LICENSE)（MIT）授权；
+> 私有核心引擎 `PASM/` 与已发行的安装包二进制**不在此 MIT 覆盖范围内**。
 
 地址：[Gitee](https://gitee.com/arronzheng/pasm-qclaw) ·
 [GitHub](https://github.com/arronJack/pasm-qclaw) ·
