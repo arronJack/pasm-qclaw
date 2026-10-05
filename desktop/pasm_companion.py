@@ -15621,7 +15621,12 @@ class CompanionWindow(QMainWindow):
         _logs = []
 
         def _llm(p: str):
-            return self._brain(p, max_tokens=1500, task="dev", on_think=_on_think) or ""
+            # ★ v0.31.22：不再硬编码 max_tokens=1500，改为 None = 走档位默认。
+            #   dev 档在 llm_gateway 已放宽到 8000（filegen 档同理）。
+            #   注意必须传 None 不能传 0 —— llm_gateway 判的是
+            #   `max_tokens if max_tokens is not None else prof[...]`，传 0 会被
+            #   当成"要 0 个 token"直接把输出掐死。
+            return self._brain(p, max_tokens=None, task="dev", on_think=_on_think) or ""
 
         def _log(m):
             _logs.append(str(m))
@@ -15630,11 +15635,14 @@ class CompanionWindow(QMainWindow):
             except Exception:                                    # noqa: BLE001
                 pass
 
+        # ★ v0.31.22：max_steps 4 → 8，budget 420 → 900。
+        #   spring-boot + vue + Spring Cloud 分解出 6~7 步，原 max_steps=4
+        #   会把后端与网关步骤直接砍掉 → 用户看到"只生成前端"。
         self._step("plan", "任务分解 → 逐步生成（devloop）",
-                   "每步验证 + 失败重试", "预算 420s")
-        loop = DL.agent_loop(_llm, pdir, req, name=name, max_steps=4,
+                   "每步验证 + 失败重试", "预算 900s")
+        loop = DL.agent_loop(_llm, pdir, req, name=name, max_steps=8,
                              rounds_per_step=2, allow_run=False,
-                             log=_log, budget_s=420)
+                             log=_log, budget_s=900)
         filled = list(dict.fromkeys(loop.get("wrote") or []))
         # —— 项目级验证；有工具链就跑真构建的「写→跑→读错→改」闭环 ——
         _v = DL.verify_project(pdir, req)

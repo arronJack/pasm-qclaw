@@ -248,6 +248,26 @@ def main():
         check("typer 已自动写入 requirements", "typer" in f.read())
     shutil.rmtree(t, ignore_errors=True)
 
+    # ---------- I. devloop 技术栈识别（0.31.22：spring-boot/springcloud 曾漏判） ----------
+    print("\n-- devloop 栈识别与任务分解 --")
+    sys.path.insert(0, os.path.join(ROOT, "desktop"))
+    import devloop as DL
+    for _txt, _want in (("后端 spring-boot+vue", True), ("springboot", True),
+                        ("spring-boot", True), ("springcloud + vue", True),
+                        ("Spring Cloud 微服务", True), ("java 后端", True),
+                        ("纯 vue 项目", False)):
+        check("stack_of(%r).java=%s" % (_txt, _want), DL.stack_of(_txt)["java"] is _want,
+              DL.stack_of(_txt))
+    _req = "做一个 geo+seo 优化平台，后端用spring-boot+vue 或 springcloud + vue 前后端分离，后台管理"
+    _st = DL.decompose(_req, "geo")
+    check("分解出 >=6 步（含后端）", len(_st) >= 6, len(_st))
+    check("分解含 Java 文件", any(f.endswith(".java") for s in _st for f in s.get("files", [])))
+    check("分解含 vue 文件", any(f.endswith(".vue") for s in _st for f in s.get("files", [])))
+    check("分解含 mvn 真构建验证", any("mvn" in str(s.get("verify")) for s in _st))
+    check("分解含 application.yml（网关配置）",
+          any("application.yml" in f for s in _st for f in s.get("files", [])))
+    check("步数 <= max_steps=8（不被砍）", len(_st) <= 8, len(_st))
+
     print("\n=== 结果：%d 项断言，失败 %d ===" % (CNT[0], len(FAILS)))
     if FAILS:
         print("FAILED: %s" % FAILS)

@@ -262,9 +262,16 @@ def apply_tools(pdir: str, calls: list, allow_run: bool = True,
 # ③ 任务分解：按栈把需求切成有序小步（每步 1~2 个文件 + 验证方式）
 # ----------------------------------------------------------------------------
 def stack_of(req: str) -> dict:
+    """从需求文本识别技术栈。
+
+    ★ v0.31.22 修正：原正则漏判了用户最常写的「spring-boot」（连字符）与
+    「springcloud / spring cloud」，导致 decompose 只规划前端、**后端一步都不生成**
+    （真机 geo 需求实测：stack.java=False，只分解出 3 步全是 vue）。
+    这是「给了 SpringBoot 却拿到 Django/纯前端」这类栈错与幻觉的根因之一。
+    """
     r = req or ""
     return {
-        "java": bool(re.search(r"spring\s?boot|spring boot|java|maven|gradle", r, re.I)),
+        "java": bool(re.search(r"spring\s*-?\s*boot|spring\s*-?\s*cloud|java|maven|gradle|mybatis", r, re.I)),
         "vue": bool(re.search(r"vue|vue3", r, re.I)),
         "react": bool(re.search(r"react|antd", r, re.I)),
         "py": bool(re.search(r"python|flask|fastapi|django", r, re.I)),
@@ -297,6 +304,15 @@ def decompose(req: str, name: str = "app") -> list:
         add("后端 REST 接口（Controller，供前端调用）",
             ["src/main/java/com/example/%s/controller/MainController.java" % pkg],
             "mvn -q -DskipTests compile")
+        # ★ v0.31.22：Spring Cloud / 微服务关键词 → 补网关与配置步骤。
+        #   0.31.21 及以前只判 java=True 就按单体规划，用户说 springcloud 时
+        #   拿不到网关/配置这类微服务骨架。
+        if re.search(r"spring\s*-?\s*cloud|微服务|gateway|nacos|eureka|zuul",
+                     req or "", re.I):
+            add("微服务网关与配置（Spring Cloud Gateway / Nacos）",
+                ["src/main/resources/application.yml",
+                 "src/main/java/com/example/%s/gateway/GatewayConfig.java" % pkg],
+                "static")
     if st["vue"] or st["react"]:
         add("前端 API 封装（统一请求）", ["frontend/src/api/index.js"], "static")
         add("前端主页面（列表 + 表单 + 调后端）",
