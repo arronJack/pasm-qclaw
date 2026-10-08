@@ -49,7 +49,21 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.31.20（2026-09-30）· 修「继续却没干活」+「小人已经在运行一直弹」，定时关机真能用
+## 最新：v0.31.23（2026-10-08）· 修「装好 0.31.22 后云端模型全废」等关键缺陷
+
+- **① 云端模型修复（最重要）**：0.31.22 安装包漏打了 openai 云端 SDK——装好后所有
+  **云端模型（DeepSeek / OpenAI 网关）全部不可用**，只能退回本地 Ollama。本版已补进包，
+  填 Key 即用。**强烈建议 0.31.22 用户立即升级。**
+- **② 实验性 V2 引擎修复**：三角校验安全层读错键名，导致 V2 引擎的工具提案**恒被拒绝**
+  （开了 V2 也没法真正干活）；连同 V2 版本轴升至 `2.0.0a12`。
+- **③ 代码生成更靠谱**：「开发」工种漏判 spring-boot 项目类型 + 分步生成预算过紧
+  （长项目中途被饿死）都已修复。
+- **④ 防复发**：新增**冻结版依赖完整性守卫**——打包后自动核对关键依赖真在包里，
+  防「漏装依赖」这类问题再次溜出去（本轮 ①就是它事后复盘抓出来的）。
+
+> **验收**：静态守门 26 文件 0 未定义名；冻结降级链路 8 项断言全过；PYZ 收录核验通过。
+
+### v0.31.20（2026-09-30）· 修「继续却没干活」+「小人已经在运行一直弹」，定时关机真能用
 
 - **①「继续」不再白干**：日志显示续改路由**命中了** `D://geo`，但那个目录是**空的**，
   旧逻辑仍按"改旧版"处理 → 没有旧代码可改 → **一个文件都没产出**。
@@ -420,7 +434,7 @@ Gitee 侧为**分卷版**（`-gitee.exe` + `.bin` 切片）：**全部下到同�
 安装程序会自己找分卷，不需要手动合并。
 **macOS / Linux 本版未重出**（需 CI 跑 PyInstaller，本机不能交叉编译）。
 
-> 后续版本见上方 **v0.31.16**（最新）。
+> 后续版本见上方 **v0.31.23**（最新）。
 
 ---
 
@@ -835,10 +849,10 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 ## 下载与安装
 
-最新版见仓库 **Releases**（v0.31.16）：
+最新版见仓库 **Releases**（v0.31.23）：
 
-1. 下载安装包。**GitHub / GitCode** 上下载 `PASMStudio-Setup-0.31.16.exe`（单文件整包）；
-   **Gitee** 上是**分卷版** `PASMStudio-Setup-0.31.16-gitee.exe` + `.bin` 切片 ——
+1. 下载安装包。**GitHub / GitCode** 上下载 `PASMStudio-Setup-0.31.23.exe`（单文件整包）；
+   **Gitee** 上是**分卷版** `PASMStudio-Setup-0.31.23-gitee.exe` + `.bin` 切片 ——
    请把 `.exe` 与**全部 `.bin` 分卷下到同一个目录**，然后直接运行 exe 即可
    （安装程序会自己找同目录的分卷，**不需要手动合并**）。
 2. 双击安装 → 打开 PASM Studio → 点右上「设置」填 LLM Key（或留空用本地 Ollama）
@@ -900,7 +914,19 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 > **It never loses what you typed, and never claims to have done something it didn't** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.31.21 (2026-10-05) · Reliability fixes for the generation pipeline (H:\geo evidence)
+## Latest: v0.31.23 (2026-10-08) · Critical fix: cloud models were broken in 0.31.22
+
+- **① Cloud-model fix (most important)**: the 0.31.22 installer accidentally shipped without the
+  OpenAI cloud SDK — after installing 0.31.22, **all cloud models (DeepSeek / OpenAI gateway)
+  were unusable**, falling back to local Ollama only. This release bundles the SDK again.
+  **0.31.22 users should upgrade immediately.**
+- **② Experimental V2 engine**: the tri-validation safety layer read the wrong key, so V2 tool
+  proposals were **always rejected**; engine axis bumped to `2.0.0a12`.
+- **③ Code generation**: spring-boot project-type misdetection and step-budget starvation fixed.
+- **④ Prevention**: a new **frozen-build dependency integrity guard** verifies key dependencies
+  actually landed in the package, so "missing dependency" releases can't slip through again.
+
+### v0.31.21 (2026-10-05) · Reliability fixes for the generation pipeline (H:\geo evidence)
 
 This release plugs the systemic reliability holes that let broken generated code slip through: verification is no longer a no-op (it really checks Java brace balance / Vue tag closure), the run ledger no longer reports "built successfully" when nothing was actually built, multi-file output no longer garbles/ nests (fixes Report.vue splice + frontend/frontend nesting), and Java projects auto-adapt to the local JDK (JDK 8 → generates Java 8 / Spring Boot 2.7 compatible code). See [CHANGELOG](CHANGELOG.md).
 

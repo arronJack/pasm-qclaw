@@ -94,6 +94,26 @@ HIDDEN_IMPORTS = [
     'pet_avatar',
     'skillstore',
     'llm_gateway',
+    # ★ v0.31.22 修复：openai 云端 SDK 必须显式声明。
+    #   真机事故：0.31.22 装好后日志刷 `RuntimeError: openai 库未安装`
+    #   （llm_gateway.client_for 里 `from openai import OpenAI` 直接失败）
+    #   → 云端模型完全调不起来，所有开发任务报"没有可用模型"。
+    #   根因：llm_gateway 对 openai 是**延迟导入**（try/except 包裹），
+    #   PyInstaller 静态分析看不见 → 不声明就静默不进包。
+    #   依赖链一起声明，避免只进 openai 缺 httpx/httpcore/distro/tqdm。
+    'openai',
+    'httpx',
+    'httpcore',
+    'anyio',
+    'sniffio',
+    'distro',
+    'tqdm',
+    # 这三个实测已进包（靠 collect_all('pasm'/'playwright' 与静态分析），
+    # 但**没有显式声明** → 一旦 import 路径变化就会静默掉出去。
+    # 守卫 verify_v0322_frozen_deps.py 会把"未显式声明"判红，故显式列出。
+    'pydantic',
+    'numpy',
+    'PySide6',
     'creators',
     'audio',
     'sysops',
