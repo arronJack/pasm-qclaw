@@ -49,7 +49,24 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.31.23（2026-10-08）· 修「装好 0.31.22 后云端模型全废」等关键缺陷
+## 最新：v0.31.24（2026-10-10）· 打开软件不再被拦 + 界面更轻快
+
+- **① 打开软件不再需要确认（重点）**：以前说一句「打开网易云音乐 / 打开浏览器」，
+  会被当成「高风险操作」拦下，有时还回你一句「没有可用的确认通道」。
+  现在**打开应用 / 文件 / 文件夹 / 浏览器都是直接执行** —— 只有删除这类不可逆操作才会问你。
+  （风险定级判据统一为「能不能造成不可逆后果」：打开程序随手可关、零副作用。）
+- **② 确认弹窗更靠谱**：以前小U 被压在别的窗口后面时，确认框你看不见、等到超时
+  就自动按"拒绝"处理。现在弹窗会主动**跳到最前面**，等待时间 60 → 90 秒；
+  超时与"你点了否"也分开记录，不再混为一谈。
+- **③ 界面更省资源**：桌面小人的动画原来固定每秒重绘 20 次，**每帧都要做一次 3D 渲染**，
+  空闲时就占掉约一个 CPU 核心的一成（聊天页 + 桌面浮窗两个小人同时显示时翻倍）。
+  现在改为**按需帧率**：说话 / 走路 / 飞行 / 互动时 20fps，静止待机 10fps，
+  窗口不可见或最小化时**完全停画**。所有动画改按真实时间推进，**观感速度丝毫不变**。
+
+> **验收**：权限自检 19/19；安全档实测打开类全部放行、`run_script`/`delete` 才弹窗；
+> 宠物降帧 15.8fps → 9.0fps 且动画速度守恒（漂移 0.6%）；静态守门 0 未定义名。
+
+### v0.31.23（2026-10-08）· 修「装好 0.31.22 后云端模型全废」等关键缺陷
 
 - **① 云端模型修复（最重要）**：0.31.22 安装包漏打了 openai 云端 SDK——装好后所有
   **云端模型（DeepSeek / OpenAI 网关）全部不可用**，只能退回本地 Ollama。本版已补进包，
@@ -434,7 +451,7 @@ Gitee 侧为**分卷版**（`-gitee.exe` + `.bin` 切片）：**全部下到同�
 安装程序会自己找分卷，不需要手动合并。
 **macOS / Linux 本版未重出**（需 CI 跑 PyInstaller，本机不能交叉编译）。
 
-> 后续版本见上方 **v0.31.23**（最新）。
+> 后续版本见上方 **v0.31.24**（最新）。
 
 ---
 
@@ -849,10 +866,10 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 ## 下载与安装
 
-最新版见仓库 **Releases**（v0.31.23）：
+最新版见仓库 **Releases**（v0.31.24）：
 
-1. 下载安装包。**GitHub / GitCode** 上下载 `PASMStudio-Setup-0.31.23.exe`（单文件整包）；
-   **Gitee** 上是**分卷版** `PASMStudio-Setup-0.31.23-gitee.exe` + `.bin` 切片 ——
+1. 下载安装包。**GitHub / GitCode** 上下载 `PASMStudio-Setup-0.31.24.exe`（单文件整包）；
+   **Gitee** 上是**分卷版** `PASMStudio-Setup-0.31.24-gitee.exe` + `.bin` 切片 ——
    请把 `.exe` 与**全部 `.bin` 分卷下到同一个目录**，然后直接运行 exe 即可
    （安装程序会自己找同目录的分卷，**不需要手动合并**）。
 2. 双击安装 → 打开 PASM Studio → 点右上「设置」填 LLM Key（或留空用本地 Ollama）
@@ -914,7 +931,28 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 > **It never loses what you typed, and never claims to have done something it didn't** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.31.23 (2026-10-08) · Critical fix: cloud models were broken in 0.31.22
+## Latest: v0.31.24 (2026-10-10) · Opening apps no longer blocked + a lighter UI
+
+- **① Opening apps no longer needs confirmation (headline)**: saying "open NetEase Cloud Music"
+  or "open the browser" used to be treated as a *high-risk operation* and blocked — sometimes with
+  a "no confirmation channel available" reply. Now **opening an app / file / folder / browser just
+  runs** — only irreversible actions like deleting still ask you first. (Risk tiers now follow a
+  single rule: *can it cause an irreversible effect?* Launching a program is zero-side-effect.)
+- **② More reliable confirmation dialog**: if 小U was buried behind other windows, you never saw the
+  prompt and it auto-declined on timeout. The dialog now **jumps to the foreground**, the timeout is
+  raised from 60 s to 90 s, and a timeout is recorded separately from an explicit "No".
+- **③ Lighter on resources**: the desktop pet used to repaint a fixed 20 times per second, and
+  **every frame ran a software 3D render** — idling alone cost roughly 10 % of one CPU core
+  (doubled when both the chat-page pet and the desktop-float pet are visible). It now uses an
+  **on-demand frame rate**: 20 fps while talking / walking / flying / interacting, 10 fps when idle,
+  and it **stops painting entirely** when the window is hidden or minimized. All animation
+  increments are driven by real time, so **the visual speed is unchanged**.
+
+> **Verified**: permission self-test 19/19; in the default safe tier all open-* tools pass through
+> while `run_script`/`delete` still prompt; pet idling 15.8 fps → 9.0 fps with animation-speed drift
+> of only 0.6 %; static gate reports 0 undefined names.
+
+### v0.31.23 (2026-10-08) · Critical fix: cloud models were broken in 0.31.22
 
 - **① Cloud-model fix (most important)**: the 0.31.22 installer accidentally shipped without the
   OpenAI cloud SDK — after installing 0.31.22, **all cloud models (DeepSeek / OpenAI gateway)

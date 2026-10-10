@@ -33,15 +33,29 @@ TOOL_RISK = {
     "read": "low", "list": "low", "peek_file": "low", "read_folder": "low",
     "read_project": "low", "list_dir": "low", "find_files": "low",
     "fetch_text": "low", "web_search": "low", "recall": "low", "verify": "low",
-    # 中风险（可恢复）
+    # ★ 打开类：打开应用 / 文件 / 文件夹 / 浏览器 —— **无副作用、可逆**
+    #   打开软件不会改任何东西，随手就能关掉；它和"删除/执行脚本"不是一个量级。
+    #   旧版误登记为 med，导致「安全档」下说一句"打开网易云音乐"都被拦成
+    #   "需要确认"（且没有通道时直接拒绝）—— 不符合直觉，也不符合最小惊讶原则。
+    #   风险定级只认"能不能造成不可逆后果"：打开 = 没有，故 low。
+    "open_app": "low", "open_browser": "low", "open_path": "low",
+    # 中风险（可恢复：会写盘/改状态，但可撤销）
     "genfile": "med", "write": "med", "save_project": "med",
-    "open_path": "med", "open_app": "med", "open_browser": "med",
     "write_script": "med",
-    # 高风险
+    # 高风险（可能造成不可逆后果：执行代码、下载、安装、推远端）
     "run_script": "high", "run_project": "high", "run": "high",
     "open_url_download": "high", "install": "high", "git_push": "high",
     # 危险
     "delete": "crit", "clean_junk": "crit", "remove": "crit", "format": "crit",
+}
+
+#: 给用户看的风险中文名（拒绝/确认文案用）。**必须与风险等级一一对应** ——
+#: 旧版把 med 也写成"高风险操作"，用户看到"打开软件 = 高风险"自然觉得不对劲。
+RISK_LABEL = {
+    "low": "只读操作",
+    "med": "会改动系统的操作",
+    "high": "高风险操作",
+    "crit": "不可逆操作",
 }
 
 _LEVEL = "safe"
@@ -136,10 +150,11 @@ def guard(tool: str, target: str = "") -> dict:
         # 没有确认通道 → 拒绝（安全默认），并把原因说清（不静默、不假装做了）
         why = "需要确认但没有确认通道 → 已拒绝"
         _audit(tool, target, "deny", d["risk"], why)
+        _rk = RISK_LABEL.get(d["risk"], "需要确认的操作")
         return {"ok": False, "need_confirm": True, "risk": d["risk"],
-                "reason": "这一步属于高风险操作（%s，%s档），需要你确认；"
+                "reason": "这一步属于%s（%s，%s档），需要你确认；"
                           "当前没有可用的确认通道，所以我**没有执行**。"
-                          % (d["risk"], _level())}
+                          % (_rk, d["risk"], _level())}
     t0 = time.time()
     try:
         approved = bool(ask(tool, d["risk"], target))
@@ -184,12 +199,21 @@ def selftest() -> int:
     ck("执行脚本是高危", risk_of("run_script") == "high")
     ck("删除是危险级", risk_of("delete") == "crit")
     ck("**未登记工具按 high 处理**（fail-safe）", risk_of("某个新工具") == "high")
+    # ★ 契约：打开类 = 无副作用 = low（否则安全档下"打开网易云音乐"会被拦）
+    ck("打开应用/浏览器/路径都是 low",
+       risk_of("open_app") == "low" and risk_of("open_browser") == "low"
+       and risk_of("open_path") == "low")
 
-    print("\n=== 安全档：高危必须问，且无通道时拒绝 ===")
+    print("\n=== 安全档：打开类放行，高危必须问 ===")
     configure(level="safe", ask=None)
+    ck("安全档打开应用直接放行", guard("open_app", "网易云音乐")["ok"])
+    ck("安全档打开浏览器直接放行", guard("open_browser", "https://x")["ok"])
+    ck("安全档打开文件夹直接放行", guard("open_path", r"D:\下载")["ok"])
     g = guard("run_script", "a.py")
     ck("安全档跑脚本被拒（无确认通道）", not g["ok"], g)
-    ck("拒绝理由说得清", "没有执行" in g["reason"] and "高风险" in g["reason"], g["reason"])
+    ck("拒绝理由说得清", "没有执行" in g["reason"], g["reason"])
+    ck("med 不再被误写成「高风险」",
+       "高风险" not in guard("write", "x.txt")["reason"], guard("write", "x.txt")["reason"])
     g = guard("read", "a.py")
     ck("只读放行", g["ok"], g)
 

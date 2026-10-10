@@ -11196,16 +11196,25 @@ class CompanionWindow(QMainWindow):
         self._warm_local(model)
 
     def _warm_local(self, model):
-        """后台预热：提前把模型加载进内存，首条消息不再等冷加载。"""
+        """后台预热：提前把模型加载进内存，首条消息不再等冷加载。
+
+        v0.31.24 改用「只装载、不推理」的原生 /api/generate（GW.prewarm_local）——
+        真机 2026-10-08：冷装载（llama-server 启动）实测 68~116s，而 warm 任务的
+        120s 预算到点就把 HTTP 连接掐了，Ollama 端表现为 "client connection closed
+        before llama-server finished loading, aborting load"——**预热自己把装载掐死**，
+        且顺带作废了正在装载的正式请求（单槽位）。改成 load-only + 150s 预算后，
+        装载不会再被半途取消（实测 ctx=16384 时仅 11s 完成）。
+        """
         if not model:
             return
         def job():
             try:
-                GW.gw.complete(
-                    "http://127.0.0.1:11434/v1", model, "local",
-                    [{"role": "user", "content": "hi"}],
-                    task="warm", max_tokens=1)
-                logging.info("warmup ok %s", model)
+                if GW.prewarm_local("http://127.0.0.1:11434/v1", model,
+                                    timeout=150.0):
+                    logging.info("warmup ok %s", model)
+                else:
+                    logging.warning("warmup fail %s: prewarm_local 返回 False"
+                                    "（模型不在已装列表或装载失败）", model)
             except Exception as ex:
                 logging.warning("warmup fail %s: %s", model, ex)
         threading.Thread(target=job, daemon=True).start()
@@ -13399,18 +13408,40 @@ class CompanionWindow(QMainWindow):
     def _ask_perm(self, tool: str, risk: str, target: str) -> bool:
         """高风险工具的人工确认（P0-3）。**跨线程安全**：经 `_ui` 弹到主线程。"""
         import threading as _th
+        # 风险名走同一张表（toolperm.RISK_LABEL）——别在这里写死"高风险"，
+        # 否则 med 级（写文件）也会被说成"高风险"，用户会以为连保存文件都危险。
+        try:
+            import toolperm as _TP
+            _rk = _TP.RISK_LABEL.get(str(risk), str(risk))
+        except Exception:                                        # noqa: BLE001
+            _rk = str(risk)
         box = {"v": False}
         ev = _th.Event()
 
         def _ask_ui():
             try:
-                _r = QMessageBox.warning(
-                    self, "需要你确认",
-                    "小U 想执行一个**高风险**操作：\n\n"
+                # ★ v0.31.24：弹窗前把主窗口带到前台并置顶 —— 真机上小U 常被压在
+                #   别的窗口后面，确认框弹出来用户根本没看见，60 秒后按"未确认"
+                #   处理 → 用户的观感是"被拒绝了，而且没有确认通道"。
+                try:
+                    _w = self.window()
+                    if _w is not None:
+                        _w.raise_()
+                        _w.activateWindow()
+                except Exception:                                # noqa: BLE001
+                    pass
+                _box_ui = QMessageBox(self)
+                _box_ui.setWindowTitle("需要你确认")
+                _box_ui.setIcon(QMessageBox.Warning)
+                _box_ui.setText("小U 想执行一个需要你确认的操作：")
+                _box_ui.setInformativeText(
                     "· 工具：%s\n· 风险：%s\n· 对象：%s\n\n"
                     "确定允许吗？（选「否」我就不会执行）"
-                    % (tool, risk, str(target)[:180]),
-                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+                    % (tool, _rk, str(target)[:180]))
+                _box_ui.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+                _box_ui.setDefaultButton(QMessageBox.No)
+                _box_ui.setWindowFlag(Qt.WindowStaysOnTopHint, True)
+                _r = _box_ui.exec()
                 box["v"] = (_r == QMessageBox.Yes)
             except Exception:                                    # noqa: BLE001
                 box["v"] = False
@@ -13421,11 +13452,17 @@ class CompanionWindow(QMainWindow):
             self._ui(_ask_ui)
         except Exception:                                        # noqa: BLE001
             return False
-        ev.wait(timeout=60)
+        _waited = ev.wait(timeout=90)          # 60 → 90s：给用户足够时间看到并点
+        if not _waited:
+            # 超时 ≠ 用户拒绝。如实区分（旧版一律记"用户拒绝"，排查时误导）。
+            logging.warning("权限确认超时（%s/%s）→ 按未确认处理，不执行", tool, risk)
         try:
             import sysops as _SYS
-            _SYS.note_action("perm_ask", "%s/%s" % (tool, str(target)[:40]),
-                             ok=box["v"], reason="用户%s" % ("同意" if box["v"] else "拒绝"))
+            _SYS.note_action(
+                "perm_ask", "%s/%s" % (tool, str(target)[:40]),
+                ok=box["v"],
+                reason=("超时未确认" if not _waited else
+                        "用户%s" % ("同意" if box["v"] else "拒绝")))
         except Exception:                                        # noqa: BLE001
             pass
         return bool(box["v"])
@@ -14634,6 +14671,12 @@ class CompanionWindow(QMainWindow):
             logging.exception("connector hub start failed")
         self._start_memory_replay()
         self._init_memory_backends()
+        # ★ v0.31.24：工具层权限门**在这里就注册**（原来只在 _route_endpoint
+        #   首轮"懒注册"）。真机后果：若某次工具调用没走那条业务路径，
+        #   ask provider 为 None → med/high 被直接拒绝、回"当前没有可用的
+        #   确认通道"（用户反馈"被定性为高风险、而且并没有确认通道"）。
+        #   启动阶段注册好，任何时刻的工具调用都有确定的确认通道。
+        self._register_toolperm()
         # v0.30.11：把老位置散落的产物收进统一工作根（只做一次；失败静默、原件保留）
         self._ws_auto_migrate()
 

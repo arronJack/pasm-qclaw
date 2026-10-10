@@ -57,6 +57,18 @@ def _look_color(c):
 
 
 class PetAvatar(QWidget):
+    #: 基准帧间隔（秒）。**所有动画增量都按它换算** —— 这样把定时器间隔从
+    #: 50ms 调成 100ms 时，动画速度不变，只是少画几帧（不会"慢半拍"）。
+    _FRAME_S = 0.05
+    #: 忙 / 闲 两种帧间隔（毫秒）。
+    #:   忙（说话/走路/飞行/拖尾/被戳）→ 20fps，保证顺滑；
+    #:   闲（静止待机，只有呼吸+眨眼）→ 10fps，肉眼几乎无差。
+    #: 为什么值得降：每一帧 paintEvent 都要跑一次**软件 3D 光栅化**
+    #: （_render_3d_face → sc.image），20fps 常开实测空转就吃掉约 13% 单核，
+    #: 用户反馈"占用变高、发卡"——降半帧率即省近一半。
+    _FRAME_MS_BUSY = 50
+    _FRAME_MS_IDLE = 100
+
     def __init__(self, size: int = 96, parent=None):
         super().__init__(parent)
         self.setFixedSize(size, int(size * 1.40))   # v0.28.3：顶部 0.28× 留给工作气泡
@@ -109,9 +121,55 @@ class PetAvatar(QWidget):
         self._dragging = False
         self._moved = False
         self._last_release = 0.0
+        # ★ v0.31.24 帧率按需：上一次 _tick 的真实时刻（用于换算 dt）。
+        self._last_tick = 0.0
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
-        self._timer.start(50)
+        self._timer.start(self._FRAME_MS_BUSY)
+
+    # ---------- 帧率控制（省 CPU，观感不变） ----------
+    def _busy_animating(self) -> bool:
+        """当前是否处在"需要 20fps"的状态。
+
+        判据：正在飞行/变形、有拖尾粒子、在说话、在走路、被戳互动、正在拖动。
+        其余时刻（静止待机）只是呼吸 + 眨眼，10fps 足够。
+        """
+        return bool(
+            self.fly > 0.001 or self._fly_target > 0.001 or self._trail
+            or self.speaking or self.mode in ("walk", "talk")
+            or self._poke > 0 or self._dragging
+        )
+
+    def _sync_frame_rate(self) -> None:
+        """按忙/闲切换定时器间隔（幂等：值没变不动定时器）。"""
+        try:
+            if not self._timer.isActive():
+                return
+            want = (self._FRAME_MS_BUSY if self._busy_animating()
+                    else self._FRAME_MS_IDLE)
+            if self._timer.interval() != want:
+                self._timer.setInterval(want)
+        except Exception:                                    # noqa: BLE001
+            pass
+
+    # ---------- 可见性：不可见就停表 ----------
+    def showEvent(self, ev):  # noqa: N802
+        super().showEvent(ev)
+        try:
+            if not self._timer.isActive():
+                self._last_tick = 0.0            # 复位 dt，避免跨隐藏期算出一个大跳
+                self._timer.start(self._FRAME_MS_BUSY)
+                self.update()
+        except Exception:                                    # noqa: BLE001
+            pass
+
+    def hideEvent(self, ev):  # noqa: N802
+        super().hideEvent(ev)
+        # 不可见 → 停表：后台不再重绘，也不再跑 3D 光栅化。
+        try:
+            self._timer.stop()
+        except Exception:                                    # noqa: BLE001
+            pass
 
     # ---------- 外部接口（保持兼容） ----------
     def set_state(self, valence, arousal, serotonin=None, speaking=False):
@@ -444,35 +502,51 @@ class PetAvatar(QWidget):
     # ---------- 动画 ----------
     def _tick(self):
         now = time.monotonic()
+        # ★ v0.31.24：帧率可变（忙 20fps / 闲 10fps），所有增量按**真实 dt** 换算，
+        #   保证降帧不改变动画速度。k = 本次间隔相当于几个基准帧（50ms）。
+        if self._last_tick <= 0.0:
+            k = 1.0
+        else:
+            k = max(1e-3, min(0.25, now - self._last_tick)) / self._FRAME_S
+        self._last_tick = now
+        # 不可见 / 窗口最小化 → 不重绘（定时器仍在，省掉整帧 3D 光栅化）。
+        try:
+            _win = self.window()
+            if not self.isVisible() or (_win is not None and _win.isMinimized()):
+                return
+        except Exception:                                    # noqa: BLE001
+            pass
         if self._expr_until and now >= self._expr_until:
             self.expr, self._expr_until = "calm", 0.0
         if self._act_until and now >= self._act_until:
             self.act, self._act_until = "", 0.0
-        self._phase += 0.10 if self.mode == "walk" else 0.055
-        self._blink_cd -= 0.05
+        self._phase += (0.10 if self.mode == "walk" else 0.055) * k
+        self._blink_cd -= self._FRAME_S * k                    # = 真实秒数
         if self._blink_cd <= 0:
             self._blink = 2
             self._blink_cd = random.uniform(2.2, 5.5)
         if self._blink > 0:
             self._blink -= 1
         if self._poke > 0:
-            self._poke = max(0.0, self._poke - 0.08)
+            self._poke = max(0.0, self._poke - 0.08 * k)
         self._look = math.sin(self._phase * 0.35) * 0.35
-        # 飞天：形变推进 + 尾气粒子（_tick 每 50ms 一次）
+        # 飞天：形变推进 + 尾气粒子（按 dt 换算，与帧率解耦）
         if abs(self.fly - self._fly_target) > 1e-3:
             _up = self._fly_target > self.fly
-            self.fly = max(0.0, min(1.0, self.fly + (0.055 if _up else -0.045)))
-        if self.fly > 0.55 and random.random() < PT.trail_prob():
+            self.fly = max(0.0, min(1.0,
+                                    self.fly + (0.055 if _up else -0.045) * k))
+        if self.fly > 0.55 and random.random() < min(1.0, PT.trail_prob() * k):
             self._emit_trail()
         _LIFE = max(0.01, PT.trail_life())
         if self._trail:
             _alive = []
             for _t in self._trail:
-                _t[3] += 0.05
-                _t[2] += 0.42                 # 越飘越大（扩散）
+                _t[3] += self._FRAME_S * k        # 生命周期按时间推进
+                _t[2] += 0.42 * k                 # 越飘越大（扩散）
                 if _t[3] < _LIFE:
                     _alive.append(_t)
             self._trail = _alive
+        self._sync_frame_rate()                   # 闲时降帧、忙时恢复
         self.update()
 
     # ---------- 手势（内建，注入事件实测通过） ----------

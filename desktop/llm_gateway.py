@@ -808,6 +808,9 @@ def _is_ollama(base_url: str, ttl: float = 30.0) -> bool:
     """这个本地端点是不是 Ollama（决定能否走原生 /api/chat）。
 
     首次探测 GET {origin}/api/tags，结果按 TTL 缓存——失败也缓存（避免每次请求都白探）。
+    v0.31.24：失败必须 **WARNING 留痕（含原因）+ 立即重试一次**再缓存失败——
+    这条分支一旦静默判 False，本请求就会掉进兼容端点（keep_alive/num_ctx/think
+    全被丢弃），而日志里一个字都不会有（坑 1.5 的"静默降级"翻版）。
     """
     if not _is_local(base_url):
         return False
@@ -816,11 +819,22 @@ def _is_ollama(base_url: str, ttl: float = 30.0) -> bool:
     if origin in _OLLAMA_OK and now < _OLLAMA_PROBE.get(origin, 0.0):
         return _OLLAMA_OK[origin]
     ok = False
-    try:
-        with urllib.request.urlopen(origin + "/api/tags", timeout=3) as r:
-            ok = r.status == 200 and b"models" in r.read(4096)
-    except Exception:
-        ok = False
+    last_err = ""
+    for attempt in (1, 2):                    # 失败立即重试一次再缓存
+        try:
+            with urllib.request.urlopen(origin + "/api/tags", timeout=3) as r:
+                ok = r.status == 200 and b"models" in r.read(4096)
+            last_err = ""
+            break
+        except Exception as ex:
+            ok = False
+            last_err = " ".join(str(ex).split())[:100]
+            if attempt == 1:
+                time.sleep(0.3)
+    if not ok and last_err:
+        # 降级分支必须 WARNING：否则"为什么本地模型没常驻"永远查不到
+        log.warning("Ollama 原生端点探测失败（%s）→ 本请求改走兼容端点"
+                    "（keep_alive/num_ctx 将失效）：%s", origin, last_err)
     _OLLAMA_OK[origin] = ok
     _OLLAMA_PROBE[origin] = now + (ttl if ok else 10.0)
     return ok
