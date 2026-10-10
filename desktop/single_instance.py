@@ -28,6 +28,38 @@ _MSG_SHOW = b"show"
 _MSG_ACK = b"ok"
 
 
+def scoped_name(base: str = NAME, data_dir: str = "") -> str:
+    """把单实例名**绑定到数据目录**（2026-10-10 修）。
+
+    为什么必须绑定：名字原本是固定的全局串 ——
+      · 用户**开着应用**时，任何"用隔离数据目录真启动 exe"的验证
+        （`frozen_startup_smoke` / `verify_v2_switch` 冻结段）都会被真实实例
+        顶掉：新进程连上旧进程 → 收到 ack → 安静退出 → 验证假红；
+      · 源码 dev 环境（`.pasmstudio_dev`）与安装版（`%APPDATA%\\PASMStudio`）
+        数据目录不同，却共用一把锁 → 后开的被前一个顶掉，用户看到的是
+        "双击了没反应"。两者本是两套数据、两个实例，不该互踢。
+
+    绑定后：**同一数据目录仍严格单实例**（第二次启动照样唤醒已有窗口），
+    不同数据目录互不打扰。空 data_dir 时退回旧名，保证既有行为不变。
+    """
+    if not data_dir:
+        try:
+            import logsetup
+            data_dir = logsetup.data_dir()
+        except Exception:                                        # noqa: BLE001
+            data_dir = ""
+    if not data_dir:
+        return base
+    try:
+        import hashlib
+        digest = hashlib.sha1(
+            os.path.normcase(os.path.abspath(data_dir)).encode("utf-8")
+        ).hexdigest()[:10]
+    except Exception:                                            # noqa: BLE001
+        digest = str(abs(hash(data_dir)))[:10]
+    return "%s.%s" % (base, digest)
+
+
 class SingleInstance:
     """跨进程单实例 + 唤醒。
 
@@ -190,8 +222,32 @@ def selftest() -> int:
     except Exception:                                            # noqa: BLE001
         pass
 
+    # ④ ★ 2026-10-10：名字**绑定数据目录** → 不同数据目录不该互踢
+    #   （源码 dev 版与安装版、隔离目录验证都靠这条不假红）。
+    n_same1 = scoped_name("T.v1", r"C:\x\PASMStudio")
+    n_same2 = scoped_name("T.v1", r"C:\x\PASMStudio")
+    n_other = scoped_name("T.v1", r"C:\y\PASMStudio")
+    n_upper = scoped_name("T.v1", r"c:\X\PASMStudio")
+    # 不传 data_dir → 解析**当前**数据目录（pasm_main 就靠这个），必须与显式传一致
+    try:
+        import logsetup
+        _amb = logsetup.data_dir()
+    except Exception:                                            # noqa: BLE001
+        _amb = ""
+    n_amb = scoped_name("T.v1")
+    print("  [%s] 同一数据目录 → 同名（仍是单实例）"
+          % ("OK" if n_same1 == n_same2 else "FAIL"))
+    print("  [%s] 不同数据目录 → 不同名（互不打扰）"
+          % ("OK" if n_same1 != n_other else "FAIL"))
+    print("  [%s] 大小写不同的同目录 → 同名（Windows 不区分大小写）"
+          % ("OK" if n_same1 == n_upper else "FAIL"))
+    print("  [%s] 不传目录 → 解析当前数据目录（与显式传一致）"
+          % ("OK" if n_amb == scoped_name("T.v1", _amb) else "FAIL"))
+
     si.close()
-    ok = ok_first and p.returncode == 0 and got["n"] >= 1 and took
+    ok = (ok_first and p.returncode == 0 and got["n"] >= 1 and took
+          and n_same1 == n_same2 and n_same1 != n_other
+          and n_same1 == n_upper and n_amb == scoped_name("T.v1", _amb))
     print("RESULT: %s" % ("PASS" if ok else "FAILED"))
     return 0 if ok else 1
 

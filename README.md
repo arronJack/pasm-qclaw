@@ -49,7 +49,21 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.31.25（2026-10-10）· 修「说打开网易云音乐，结果播放了一个 mp3」
+## 最新：v0.31.26（2026-10-10）· 修「问天气查错城市」
+
+- **① 说「广东省佛山市」不再报北京**：以前城市名解析失败就**默默兜底成北京**，
+  看起来像在瞎报。现在提了地名却查不到会如实说「没找到城市」，只有**完全没提地名**
+  才用默认城市。
+- **② 各种写法都认得**：逗号分隔（广东，佛山）、省市后缀（广东省，佛山市）、
+  「哦对，我这是…」这类补充说法，都能正确解析。
+- **③ 不再抓到同名小地方**：实测地图库里「佛山」会命中**云南**的同名小镇、
+  「上海市」首位是**美国**同名小镇 —— 现在按「省份 + 行政级别 + 名称」综合挑对。
+- **④ 网络抖动自动重试**：天气接口偶发 SSL 抖动，以前一抖就报「查天气失败」。
+
+> **验收**：新增天气专项自检（候选生成 11 项离线断言 + 2 项真查询）·
+> 8 条真机说法全部正确 · 桌面自检全套 1514+ 项 · 镜像守卫 20/0 · 静态守门 0 未定义名。
+
+### v0.31.25（2026-10-10）· 修「说打开网易云音乐，结果播放了一个 mp3」
 
 - **① 打开应用不再被误判（重点）**：以前说「帮我打开网易云音乐，我想听歌了」，
   会因为句子里有「音乐」二字被当成「找个音乐文件」—— 结果打开了一个 mp3
@@ -469,7 +483,7 @@ Gitee 侧为**分卷版**（`-gitee.exe` + `.bin` 切片）：**全部下到同�
 安装程序会自己找分卷，不需要手动合并。
 **macOS / Linux 本版未重出**（需 CI 跑 PyInstaller，本机不能交叉编译）。
 
-> 后续版本见上方 **v0.31.25**（最新）。
+> 后续版本见上方 **v0.31.26**（最新）。
 
 ---
 
@@ -884,10 +898,10 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 ## 下载与安装
 
-最新版见仓库 **Releases**（v0.31.25）：
+最新版见仓库 **Releases**（v0.31.26）：
 
-1. 下载安装包。**GitHub / GitCode** 上下载 `PASMStudio-Setup-0.31.25.exe`（单文件整包）；
-   **Gitee** 上是**分卷版** `PASMStudio-Setup-0.31.25-gitee.exe` + `.bin` 切片 ——
+1. 下载安装包。**GitHub / GitCode** 上下载 `PASMStudio-Setup-0.31.26.exe`（单文件整包）；
+   **Gitee** 上是**分卷版** `PASMStudio-Setup-0.31.26-gitee.exe` + `.bin` 切片 ——
    请把 `.exe` 与**全部 `.bin` 分卷下到同一个目录**，然后直接运行 exe 即可
    （安装程序会自己找同目录的分卷，**不需要手动合并**）。
 2. 双击安装 → 打开 PASM Studio → 点右上「设置」填 LLM Key（或留空用本地 Ollama）
@@ -949,7 +963,25 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 > **It never loses what you typed, and never claims to have done something it didn't** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.31.25 (2026-10-10) · Fix: "open NetEase Cloud Music" played an mp3 instead
+## Latest: v0.31.26 (2026-10-10) · Fix: weather lookup picked the wrong city
+
+- **① "Guangdong, Foshan" no longer reports Beijing.** City parsing used to fall back to a
+  hard-coded default silently — which looks like the assistant is making things up. Now, if you
+  named a place and it can't be found, it says so; the default is only used when **no** place
+  was mentioned at all.
+- **② Many more phrasings are understood**: comma-separated ("Guangdong, Foshan"),
+  with province/city suffixes ("Guangdong Province, Foshan City"), and later additions such as
+  "by the way, I'm in ...".
+- **③ No more same-name small places**: in the geocoding database "Foshan" resolves to a village
+  in **Yunnan**, and "Shanghai City" ranks a **US** town first. Results are now scored on
+  province + administrative level + name.
+- **④ Network hiccups are retried** — a transient SSL error used to fail the whole lookup.
+
+> **Verified**: new weather-specific self-check (11 offline assertions on candidate extraction +
+> 2 live queries) · all 8 real-world phrasings correct · desktop suite 1514+ assertions ·
+> mirror guard 20/0 · zero undefined names.
+
+### v0.31.25 (2026-10-10) · Fix: saying "open NetEase Cloud Music" played an mp3 instead
 
 - **① App names are no longer mistaken for file types (headline)**: saying
   "open NetEase Cloud Music" used to be parsed as "find a music file" — because the sentence

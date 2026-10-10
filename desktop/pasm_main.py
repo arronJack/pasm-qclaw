@@ -260,9 +260,11 @@ def _main() -> int:
     #   日志里 11 行「日志启动」，而新进程每次都只是弹框退出）。
     #   现在：先尝试连已有实例 → 连上就发 show 让它把窗口带到前台，自己安静退出；
     #   连不上才成为主实例监听，之后的重复启动都会走"唤醒"这条路。
-    from single_instance import SingleInstance
+    from single_instance import SingleInstance, scoped_name
 
-    _si = SingleInstance("PASMStudio.SingleInstance.v1")
+    # ★ 2026-10-10：名字**绑定数据目录** —— 同一数据目录仍严格单实例，
+    #   但隔离目录（测试/源码 dev vs 安装版）互不打扰。详见 single_instance.scoped_name。
+    _si = SingleInstance(scoped_name())
     if not _si.try_become_primary():
         return 0                       # 已有实例：已通知它唤醒，本进程退出
 
