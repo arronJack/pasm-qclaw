@@ -504,16 +504,23 @@ class PetAvatar(QWidget):
         now = time.monotonic()
         # ★ v0.31.24：帧率可变（忙 20fps / 闲 10fps），所有增量按**真实 dt** 换算，
         #   保证降帧不改变动画速度。k = 本次间隔相当于几个基准帧（50ms）。
+        #   ⚠️ k **下限 1.0**：连续同步调用（间隔≈0，自检/异常场景）时若 k≈0，
+        #   动画会完全停住 —— 真机回归（verify_fly / verify_pet_v0309 /
+        #   verify_pet_tuning 共 10 项失败）就是这么来的。宁可"至少推进一帧"。
         if self._last_tick <= 0.0:
             k = 1.0
         else:
-            k = max(1e-3, min(0.25, now - self._last_tick)) / self._FRAME_S
+            k = max(1.0, min(0.25, now - self._last_tick) / self._FRAME_S)
         self._last_tick = now
-        # 不可见 / 窗口最小化 → 不重绘（定时器仍在，省掉整帧 3D 光栅化）。
+        # 不可见 / 最小化 → **只省重绘、不省状态推进**：状态推进是纯算术，
+        #   真正的大头是 paintEvent 里的软件 3D 光栅化。若在这里直接 return，
+        #   隐藏期间动画会"冻住"，且自检里"手动驱动 _tick"的用例全挂
+        #   （verify_fly / verify_pet_v0309 / verify_pet_tuning 共 10 项回归）。
+        _draw = True
         try:
             _win = self.window()
-            if not self.isVisible() or (_win is not None and _win.isMinimized()):
-                return
+            _draw = bool(self.isVisible()) and not (
+                _win is not None and _win.isMinimized())
         except Exception:                                    # noqa: BLE001
             pass
         if self._expr_until and now >= self._expr_until:
@@ -547,7 +554,8 @@ class PetAvatar(QWidget):
                     _alive.append(_t)
             self._trail = _alive
         self._sync_frame_rate()                   # 闲时降帧、忙时恢复
-        self.update()
+        if _draw:
+            self.update()                         # 不可见时不重绘（状态照常推进）
 
     # ---------- 手势（内建，注入事件实测通过） ----------
     def mousePressEvent(self, ev):  # noqa: N802

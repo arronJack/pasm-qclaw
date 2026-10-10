@@ -49,7 +49,25 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.31.24（2026-10-10）· 打开软件不再被拦 + 界面更轻快
+## 最新：v0.31.25（2026-10-10）· 修「说打开网易云音乐，结果播放了一个 mp3」
+
+- **① 打开应用不再被误判（重点）**：以前说「帮我打开网易云音乐，我想听歌了」，
+  会因为句子里有「音乐」二字被当成「找个音乐文件」—— 结果打开了一个 mp3
+  （`E:\AI\...\music\HedwigsTheme.mp3`，某个源码仓库里的示例音频）。
+  现在**应用名优先识别**，说打开什么应用就打开什么应用；
+  「腾讯视频 / 图片浏览器」这类**类型词撞应用名**的情况一并修好。
+  （这是 v0.31.4 引入的退化 —— 旧版没有"含糊文件"那条分支，所以你会觉得"以前是对的"。）
+- **② 找文件更靠谱**：说「打开E盘的音乐」不会再翻出代码仓库里的示例音频；
+  说「打开D盘那个word」也不会再打开**程序自己的**模板文件。
+- **③ 小人的动画更稳**：上一版引入的「按需帧率」在个别情况下会让动画停住，本版已修正，
+  **观感速度保持不变**。
+- **④ 顺手修了一个只在真跑时才炸的 bug**（`agent_tools` 里一个从未被 import 的 `sys`）。
+
+> **验收**：桌面自检全套 **1514 项通过**（本轮修复的 3 个动画专项 94/0 全绿）·
+> 意图回归 26 条指令全部合理 · 权限自检 19/19 · 镜像守卫 20/0 · 静态守门 0 未定义名 ·
+> 冻结版真启动冒烟 PASS。
+
+### v0.31.24（2026-10-10）· 打开软件不再被拦 + 界面更轻快
 
 - **① 打开软件不再需要确认（重点）**：以前说一句「打开网易云音乐 / 打开浏览器」，
   会被当成「高风险操作」拦下，有时还回你一句「没有可用的确认通道」。
@@ -451,7 +469,7 @@ Gitee 侧为**分卷版**（`-gitee.exe` + `.bin` 切片）：**全部下到同�
 安装程序会自己找分卷，不需要手动合并。
 **macOS / Linux 本版未重出**（需 CI 跑 PyInstaller，本机不能交叉编译）。
 
-> 后续版本见上方 **v0.31.24**（最新）。
+> 后续版本见上方 **v0.31.25**（最新）。
 
 ---
 
@@ -866,10 +884,10 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 ## 下载与安装
 
-最新版见仓库 **Releases**（v0.31.24）：
+最新版见仓库 **Releases**（v0.31.25）：
 
-1. 下载安装包。**GitHub / GitCode** 上下载 `PASMStudio-Setup-0.31.24.exe`（单文件整包）；
-   **Gitee** 上是**分卷版** `PASMStudio-Setup-0.31.24-gitee.exe` + `.bin` 切片 ——
+1. 下载安装包。**GitHub / GitCode** 上下载 `PASMStudio-Setup-0.31.25.exe`（单文件整包）；
+   **Gitee** 上是**分卷版** `PASMStudio-Setup-0.31.25-gitee.exe` + `.bin` 切片 ——
    请把 `.exe` 与**全部 `.bin` 分卷下到同一个目录**，然后直接运行 exe 即可
    （安装程序会自己找同目录的分卷，**不需要手动合并**）。
 2. 双击安装 → 打开 PASM Studio → 点右上「设置」填 LLM Key（或留空用本地 Ollama）
@@ -931,7 +949,26 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 > **It never loses what you typed, and never claims to have done something it didn't** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.31.24 (2026-10-10) · Opening apps no longer blocked + a lighter UI
+## Latest: v0.31.25 (2026-10-10) · Fix: "open NetEase Cloud Music" played an mp3 instead
+
+- **① App names are no longer mistaken for file types (headline)**: saying
+  "open NetEase Cloud Music" used to be parsed as "find a music file" — because the sentence
+  contains the word *music* — and opened an unrelated `.mp3` from a source-code checkout.
+  Now **app names win**: you get the app you asked for. The same class of bug
+  (type-word colliding with an app name, e.g. Tencent Video / Image Viewer) is fixed too.
+  (This was a regression introduced in v0.31.4, which is why it *used to* work.)
+- **② File search is safer**: "open the music on drive E" no longer surfaces sample audio from a
+  code repository, and "open that Word doc on drive D" no longer opens the app's *own* template.
+- **③ Pet animation is stable again**: the on-demand frame rate introduced in v0.31.24 could stall
+  the animation in edge cases — fixed, **with the visual speed unchanged**.
+- **④ Also fixed a latent crash** — a `sys` that was never imported in `agent_tools`
+  (only blows up at runtime, not at compile time).
+
+> **Verified**: desktop self-check suite **1514 assertions passing** (the three animation suites
+> fixed this round: 94/0), intent regression across 26 instructions, permission self-test 19/19,
+> mirror guard 20/0, zero undefined names, frozen-build startup smoke PASS.
+
+### v0.31.24 (2026-10-10) · Opening apps no longer blocked + a lighter UI
 
 - **① Opening apps no longer needs confirmation (headline)**: saying "open NetEase Cloud Music"
   or "open the browser" used to be treated as a *high-risk operation* and blocked — sometimes with

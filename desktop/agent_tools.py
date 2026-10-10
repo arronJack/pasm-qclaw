@@ -17,6 +17,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 
 def _sp(*a, **kw):
     """subprocess.run 包装：Windows 下自动加 CREATE_NO_WINDOW，运行脚本不弹黑窗。"""
@@ -115,7 +116,10 @@ _TXT_EXT = {".txt", ".md", ".json", ".py", ".csv", ".js", ".ts", ".html", ".css"
             ".ini", ".log", ".xml", ".yaml", ".yml", ".toml", ".bat", ".sh", ".sql"}
 _IGNORE_DIRS = {"$recycle.bin", "system volume information", "node_modules",
                 ".git", "__pycache__", "appdata", "program files", "windows",
-                "workbuddy", ".workbuddy"}
+                "workbuddy", ".workbuddy",
+                # PyInstaller 冻结版结构与 Python 依赖目录 —— 永远是程序自带的，
+                # 不可能是"用户的文件"（真机：D:\PASMStudio\_internal\docx\templates\*.docx）
+                "_internal", "site-packages", "dist-info", "pyinstaller"}
 _MAX_RESULTS = 15
 
 # ============ 本机路径 & 打开应用能力（v0.15 / v0.26.1 真验证） ============
@@ -545,8 +549,78 @@ _TYPE_HINTS = {
 }
 
 
+#: 应用名特征词 —— 命中这些的短语应当按**应用名**处理，绝不能当成"文件类型"去搜盘。
+#: 真机事故（2026-10-10）：用户说「帮我打开网易云音乐，我想听歌了」，「音乐」命中
+#: _TYPE_HINTS → 浅扫各盘根 2 层 → 命中 E:\AI\...\music\HedwigsTheme.mp3 →
+#: 把"打开音乐应用"做成了"播放一个 mp3"。用户回忆"以前明明能正确打开"（旧版
+#: 没有"含糊文件"这条分支），所以这是**功能退化**而非新需求。
+_APP_WORD_HINTS = (
+    # 音视频播放类（最容易被 "音乐/视频/图片" 这类类型词误伤）
+    "网易云", "qq音乐", "酷狗", "酷我", "虾米", "咪咕", "汽水音乐",
+    "spotify", "foobar", "千千", "播放器", "影音", "爱奇艺", "优酷",
+    "腾讯视频", "哔哩哔哩", "bilibili", "b站", "抖音", "快手", "剪映",
+    # 通讯 / 办公
+    "微信", "企业微信", "钉钉", "飞书", "腾讯会议", "zoom", "tim",
+    # 系统自带（与 _APP_ALIASES 对齐）
+    "记事本", "计算器", "画图", "写字板", "命令提示符", "终端", "资源管理器",
+    "此电脑", "我的电脑", "控制面板", "任务管理器", "注册表", "系统信息",
+    "磁盘清理", "浏览器", "chrome", "edge", "firefox", "steam",
+)
+
+
+def looks_like_app_name(text: str) -> bool:
+    """这段文本是在说**某个应用的名字**吗（而不是在指代某个文件）？
+
+    判据（只认证据，不猜）：
+      · 整串就是已知别名；或
+      · 含已知品牌应用名（_KNOWN_APPS 的键）；或
+      · 含应用特征词（_APP_WORD_HINTS）。
+
+    宁可漏判（返回 False，退回旧行为）也不误判 —— 误判会把
+    "打开 D 盘的音乐.mp3" 这类**真文件需求**抢成"打开应用"。
+    所以只在**短句**（≤30 字）上生效。
+    """
+    t = (text or "").strip().lower()
+    if not t or len(t) > 30:
+        return False
+    if t in _APP_ALIASES:
+        return True
+    for k in _KNOWN_APPS:
+        if k in t:
+            return True
+    return any(w in t for w in _APP_WORD_HINTS)
+
+
+#: 目录内含这些文件（或含 `.git` 子目录）→ 判定为「代码项目 / 工作目录」，
+#: 搜"含糊文件"时**整体跳过、不深入**。真机（2026-10-10）：说「打开E盘的音乐」，
+#: 浅扫命中了 `E:\AI\BaiLongma-main\music\HedwigsTheme.mp3` —— 那是某个源码仓库里的
+#: 示例音频，不是**用户的**音乐。_IGNORE_DIRS 只按目录名拦，拦不住 `BaiLongma-main`
+#: 这类项目目录，所以这里补一层"按工程标记识别"。
+_PROJECT_MARKERS = ("package.json", "pom.xml", "pyproject.toml", "requirements.txt",
+                    "cargo.toml", "go.mod", "build.gradle", "composer.json",
+                    "setup.py", "makefile", ".gitignore", ".gitattributes")
+
+
+def _app_own_dirs() -> tuple:
+    """程序**自己**所在目录（冻结版 = exe 所在目录；源码版 = desktop 目录）。
+
+    用户说「打开 D 盘的 word」时，绝不该把程序自带的模板当成结果
+    （真机 2026-10-10：命中了 `D:\\PASMStudio\\_internal\\docx\\templates\\default.docx`）。
+    """
+    out = []
+    for p in (os.path.dirname(os.path.abspath(sys.executable)),
+              os.path.dirname(os.path.abspath(__file__))):
+        n = os.path.normcase(os.path.abspath(p))
+        if n and n not in out:
+            out.append(n)
+    return tuple(out)
+
+
+_APP_OWN_DIRS = _app_own_dirs()
+
+
 def _walk_for(root, exts, kw, max_hits=40, max_depth=4):
-    """在单根下做**有界**递归：深度受限 + 命中即停 + 跳过系统/缓存目录。"""
+    """在单根下做**有界**递归：深度受限 + 命中即停 + 跳过系统/缓存/代码项目/自身目录。"""
     if not os.path.isdir(root):
         return []
     res = []
@@ -557,6 +631,16 @@ def _walk_for(root, exts, kw, max_hits=40, max_depth=4):
                 dirs[:] = []
             dirs[:] = [d for d in dirs if d.lower() not in _IGNORE_DIRS
                        and not d.startswith(".")]
+            _cur = os.path.normcase(os.path.abspath(cur))
+            # ★ 程序自身目录（含子目录）不搜 —— 别把自带模板当"用户的文件"。
+            if any(_cur == a or _cur.startswith(a + os.sep) for a in _APP_OWN_DIRS):
+                dirs[:] = []
+                continue
+            # ★ 代码项目目录整体跳过：含工程标记文件、或直接含 .git 子目录 → 不深入。
+            _low = {f.lower() for f in files}
+            if (_low & set(_PROJECT_MARKERS)) or any(d.lower() == ".git" for d in dirs):
+                dirs[:] = []
+                continue
             for fn in files:
                 low = fn.lower()
                 ok = (any(low.endswith(e) for e in exts) if exts
@@ -580,6 +664,11 @@ def resolve_vague_file(text):
     命中多个时优先「用户目录」且按修改时间最新排序（最符合"最近要找的那份"）。
     """
     if not text:
+        return ""
+    # ★ 应用名保护（2026-10-10 真机事故）：说的是应用名，就别当文件类型去搜盘。
+    #   「打开网易云音乐」曾因「音乐」命中 _TYPE_HINTS → 浅扫盘根 2 层命中一个
+    #   mp3 → 把"打开音乐应用"做成了"播放 mp3"。应用名一律交给 open_app。
+    if looks_like_app_name(text):
         return ""
     low = text.lower()
     # 1) 盘符（"E盘" / "e盘" / "E:"）
