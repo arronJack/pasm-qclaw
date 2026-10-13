@@ -762,7 +762,120 @@ def render_detail_long(plan: dict, images: dict, out_dir: str) -> str:
     ok = save_image(img, out)
     render_detail_long.last_notes = notes
     render_detail_long.last_size = (W, max(400, H))
+    # ★ v0.31.28：把「逐块高度」记下来 —— `render_detail_slices()` 靠它在**块边界**
+    #   裁切，这样切出来的每张详情图与长图**逐像素一致**（比"再画一遍"稳得多：
+    #   重画要么养两套绘制代码迟早漂移，要么把长图函数拆两半、风险高）。
+    render_detail_long.last_blocks = [(k, bh) for k, bh, _ in blocks]
+    render_detail_long.last_pad = pad
+    render_detail_long.last_gap = gap
     return out if ok else ""
+
+
+#: 自然分屏：每个「小标题块」开一屏（`head` 就是各屏的分界）
+def _natural_groups(blocks):
+    groups, cur = [], []
+    for i, (k, _h) in enumerate(blocks):
+        if k == "head" and cur:
+            groups.append(cur)
+            cur = []
+        cur.append(i)
+    if cur:
+        groups.append(cur)
+    return groups
+
+
+def _split_by_count(blocks, count: int):
+    """把**连续的块**分成正好 `count` 组（块不可切，免得切坏文字）。
+
+    ★ 做法：在**块边界**里挑「最接近等分点」的切点（不是「累加到均值就收口」）。
+      后者会因块高很不均匀而分不够（实测：要 10 张只给出 6 张 —— banner 与裁切块
+      动辄 550~660px，占了大半高度，贪心收口到后面就没块可分了）。
+      挑切点则**张数一定准**（`count ≤ 块数` 时），代价是各张高度不一定完全相等 ——
+      对「一屏一张」的详情图来说，**张数准确比高度均匀重要得多**。
+    """
+    n = len(blocks)
+    count = max(1, min(int(count), n))
+    if count <= 1:
+        return [list(range(n))]
+    heights = [h for _k, h in blocks]
+    cum = [0]
+    for h in heights:
+        cum.append(cum[-1] + int(h))
+    total = cum[-1] or 1
+    cuts: List[int] = []
+    for i in range(1, count):
+        want = total * i / float(count)
+        lo = (cuts[-1] if cuts else 0) + 1
+        hi = n - (count - i)                     # 后面每屏至少留一块
+        if lo > hi:
+            break
+        best = lo
+        for j in range(lo, hi + 1):
+            if abs(cum[j] - want) < abs(cum[best] - want):
+                best = j
+        cuts.append(best)
+    groups, prev = [], 0
+    for c in cuts + [n]:
+        groups.append(list(range(prev, c)))
+        prev = c
+    return groups
+
+
+def render_detail_slices(plan: dict, images: dict, out_dir: str,
+                         long_path: str = "",
+                         count: Optional[int] = None) -> List[str]:
+    """把详情长图**按屏**切成若干张独立详情图（宽度同版心），返回文件路径列表。
+
+    为什么要切：淘宝/京东的详情区**可以多图上传**，商家习惯一屏一张；而整张
+    5000+ px 的长图在个别编辑器里会被压缩得看不清。**两种都给**最稳。
+
+    ★ 实现取"**裁长图**"而不是"重画一遍"：在**块边界**裁，切出来的每张与长图
+      逐像素一致，且只有一套绘制代码（不会出现"长图改了、切片没跟上"的漂移）。
+
+    `count` 为空 → **一屏一张**（按小标题自然分屏）；给了数字 → 尽量均分成那么多张。
+    返回 `[]` 表示没切成（缺长图/缺布局信息），此时调用方保留长图即可。
+    """
+    q = _qt()
+    src = str(long_path or "")
+    if not (src and os.path.isfile(src)):
+        return []
+    blocks = getattr(render_detail_long, "last_blocks", None)
+    pad = int(getattr(render_detail_long, "last_pad", 26) or 26)
+    gap = int(getattr(render_detail_long, "last_gap", 18) or 18)
+    if not blocks:
+        return []
+    img = load_image(src)
+    if img is None or img.isNull():
+        return []
+    W, H = img.width(), img.height()
+    ys, y = [], pad
+    for _k, h in blocks:
+        ys.append(y)
+        y += int(h) + gap
+    groups = (_split_by_count(blocks, count) if count else _natural_groups(blocks))
+    out_files: List[str] = []
+    for idx, grp in enumerate(groups, 1):
+        if not grp:
+            continue
+        y0 = ys[grp[0]]
+        if grp[-1] + 1 < len(blocks):
+            y1 = ys[grp[-1] + 1] - gap          # 去掉与下一屏之间的间隙
+        else:
+            y1 = H                              # 最后一屏带到页脚
+        y0 = max(0, min(int(y0), H - 8))
+        y1 = max(y0 + 40, min(int(y1), H))
+        sub = img.copy(q["QRect"](0, y0, W, y1 - y0))
+        if sub is None or sub.isNull():
+            continue
+        fp = os.path.join(out_dir, "详情图%02d.png" % idx)
+        if save_image(sub, fp):
+            out_files.append(fp)
+    return out_files
+
+
+# --------------------------------------------------------------------------
+# 总入口
+# --------------------------------------------------------------------------
 
 
 # --------------------------------------------------------------------------
@@ -770,7 +883,8 @@ def render_detail_long(plan: dict, images: dict, out_dir: str) -> str:
 # --------------------------------------------------------------------------
 def render_all(plan: dict, src_path: str, out_dir: str,
                images: Optional[dict] = None,
-               allow_video_download: bool = False) -> dict:
+               allow_video_download: bool = False,
+               detail_count: Optional[int] = None) -> dict:
     """按方案产出整套图。
 
     返回 {ok, files:{main:[], crops:[], detail_long:""}, notes:[], reason:""}
@@ -779,7 +893,7 @@ def render_all(plan: dict, src_path: str, out_dir: str,
     """
     os.makedirs(out_dir, exist_ok=True)
     notes: List[str] = []
-    files = {"main": [], "crops": [], "detail_long": ""}
+    files = {"main": [], "crops": [], "detail_long": "", "detail_slices": []}
     if not available():
         return {"ok": False, "files": files, "notes": notes,
                 "reason": "渲染环境不可用（PySide6 未就绪）"}
@@ -840,6 +954,16 @@ def render_all(plan: dict, src_path: str, out_dir: str,
     if render_detail_long.last_notes:
         notes.append("详情长图有占位屏（如实标注「待生成」）：" +
                      "、".join(render_detail_long.last_notes))
+    # ★ v0.31.28：再切一套「按屏的独立详情图」（详情区可多图上传；长图也保留）
+    try:
+        files["detail_slices"] = render_detail_slices(
+            plan, imgs, out_dir, long_path=files["detail_long"],
+            count=detail_count)
+        if files["detail_slices"]:
+            notes.append("详情图已按屏切成 %d 张（长图同时保留，两种都能直接上传）"
+                         % len(files["detail_slices"]))
+    except Exception as ex:                                  # noqa: BLE001
+        notes.append("详情图切分失败（长图不受影响）：%s" % ex)
     # ---- 主图视频（1:1）：有 ffmpeg 出真 mp4；没有就出零依赖 HTML 预览 ----
     files.setdefault("video", "")
     files.setdefault("video_preview", "")
@@ -994,6 +1118,40 @@ def selftest() -> int:
         check(dl is not None and dl.height() > 1500,
               "详情长图确实是「长图」（高度 > 1500）",
               None if dl is None else dl.height())
+        # ---------- v0.31.28：按屏切分的独立详情图 ----------
+        _sl = r["files"].get("detail_slices") or []
+        check(len(_sl) >= 3,
+              "★ render_all 真产出了按屏切分的独立详情图", len(_sl))
+        check(all(os.path.isfile(x) and os.path.getsize(x) > 1000 for x in _sl),
+              "★ 每张独立详情图都真在盘上且非空", _sl)
+        _sw = [load_image(x).width() for x in _sl]
+        check(all(w == 750 for w in _sw),
+              "★ 每张详情图宽度 = 平台版心（淘宝 750）", _sw)
+        _tot = sum(load_image(x).height() for x in _sl)
+        # ⚠️ 相邻两屏之间那条**空白间隙**本来就不带进切片（少掉的是空白，不是内容）——
+        #    所以容差要 = 间隙×屏数，不能拍一个固定小数（第一版就假红在这上面）。
+        _gap = int(getattr(render_detail_long, "last_gap", 18) or 18)
+        _lh = dl.height() if dl is not None else 0
+        check(_tot >= _lh - _gap * (len(_sl) + 1) - 40,
+              "★ 切片之和 ≈ 长图高度（只少掉屏间空白，没有丢内容）",
+              (_tot, _lh, _gap, len(_sl)))
+        _sl10 = render_detail_slices(plan, {}, out_dir,
+                                     long_path=r["files"]["detail_long"], count=10)
+        check(len(_sl10) == 10, "★ 指定「10 张」时真切成 10 张", len(_sl10))
+        _sl6 = render_detail_slices(plan, {}, out_dir,
+                                    long_path=r["files"]["detail_long"], count=6)
+        check(len(_sl6) == 6, "★ 指定 6 张也给 6 张（不是只有 10 凑巧过）", len(_sl6))
+        _sl1 = render_detail_slices(plan, {}, out_dir,
+                                    long_path=r["files"]["detail_long"], count=1)
+        check(len(_sl1) == 1, "指定 1 张时退化为整张（等价长图）", len(_sl1))
+        _nblk = len(getattr(render_detail_long, "last_blocks", []) or [])
+        _sl99 = render_detail_slices(plan, {}, out_dir,
+                                     long_path=r["files"]["detail_long"], count=99)
+        check(len(_sl99) == _nblk,
+              "★ 越界张数（99）被夹到「块数」上限，不会切出碎片",
+              (len(_sl99), _nblk))
+        check(render_detail_slices(plan, {}, out_dir, long_path="") == [],
+              "反例：没有长图时切片如实返回空（不炸）")
         check(any("实拍" in n or "抠" in n or "能量" in n for n in r["notes"]),
               "渲染过程如实记录了做法（notes）", r["notes"])
 

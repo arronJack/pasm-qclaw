@@ -17,8 +17,8 @@
 | `pasm-mcp-server` | MCP 接入层：给任意 AI 客户端装长期记忆（`PASM2=1` 切 V2） | 公开 | 0.2.1 |
 | `pasm-domain-advisor` · `pasm-medical` · `pasm-customer-service` | 领域智能体：领域顾问引擎 / 医疗辅助 / 专业客服 | 公开 | 0.1.1 · 0.1.0 · 0.2.0 |
 | `PASM-Lite` | 教学版 + 认知引擎接口（不接 V2，保持纯净） | 公开 | — |
-| `PASM` | 核心引擎（七层仿生 / 世界模型，含 `pasm2/`；桌面源码 0.31.27） | 私有 | 0.7.2 |
-| **`pasm-qclaw`（本仓）** | **桌面应用发行通道（安装包 + `latest.json` 升级源）** | **公开** | **0.31.27（已发行）** |
+| `PASM` | 核心引擎（七层仿生 / 世界模型，含 `pasm2/`；桌面源码 0.31.28） | 私有 | 0.7.2 |
+| **`pasm-qclaw`（本仓）** | **桌面应用发行通道（安装包 + `latest.json` 升级源）** | **公开** | **0.31.28（已发行）** |
 
 本仓**现在包含 PASM Studio 桌面端的开源源码**（[`desktop/`](desktop/README.md) 目录，基于 PySide6 的 Windows 桌面应用 UI/外壳层），
 同时仍是安装包与更新清单 `latest.json` 的**发行通道**。
@@ -49,7 +49,30 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.31.27（2026-10-13）· 新增「🛒 电商」—— 喂图即出整套淘宝/京东物料
+## 最新：v0.31.28（2026-10-13）· 修「明明给过图却说没有图」+ 详情图可按屏切成 N 张
+
+- **① 说「上述的图」，现在认得（重点）**：以前你喂过产品图，过一会儿（或**重启软件**后）说
+  「**上述的图中**项链，帮我出五张主图」→ 它回你「没有可用的产品实拍图」，可图明明给过。
+  根因是「刚喂过的图」只存在**内存**里，关掉/重启就没了，而且程序不会去理解"上述的图"这种说法。
+  现在：喂过的图会**留存**（关掉软件再开还在），说「上述的图 / 刚才那张图 / 这个图」会自动**找回**，
+  并**明确告诉你用了哪一张**。真找不到时也不只说"没有图"——会把图片目录里现成的图**列出来**，
+  你说一句「就用 XX」即可。
+- **② 产品名与关键词不再抽错**：以前说「上述的图中项链…还有帮我出10张详情图」，
+  产品名被抽成「**还有帮我出10张详情图**」（目录名/标题/参数表全跟着错），关键词抽成
+  「上述的图中项 / 我需要你帮我」这类**半句话碎片**。现在产品名从**品类词**认
+  （认得出「项链」就用「项链」）；关键词**交给模型写**（买家真会打的搜索词），
+  拿不到模型才用类目词表兜底 —— **绝不会再拿你的句子当关键词**。
+- **③ 新增「饰品」类目**：以前项链落「通用」，参数表给的是"型号/产地"、资质也是通用模板。
+  现在有饰品专表（材质 / 链长 / 吊坠尺寸 / 重量 / 是否含证书 / 包装方式），
+  资质给的是「S925 标注 / 检测证书 / 过敏与佩戴注意 / 保养清洗」。
+- **④ 详情图可按屏切成 N 张**：详情区可以多图上传，现在**两种都给** —— 整张 750 宽的
+  **详情长图**，外加一套**按屏切好的独立详情图**（一屏一张）。你说「要 10 张详情图」
+  就给你**正好 10 张**。
+
+> **验收**：`ecom` 自检 83/83 · 渲染层自检 43/43 · 新增端到端 `verify_v0328_ecom_fix` **31/0** ·
+> 真实项链实拍图重跑：12 件产物 4.70MB（含 13.3s 主图视频）· 桌面自检全套详见下方。
+
+### v0.31.27（2026-10-13）· 新增「🛒 电商」—— 喂图即出整套淘宝/京东物料
 
 - **① 新工种「🛒 电商」**：把产品实拍图拖进对话框（或点「＋」选图片），再补一句产品信息
   （例：`加厚保暖外套，防水面料，品牌：XX，价格：199；要京东的`），一整套上架物料直接落盘。
@@ -504,7 +527,7 @@ Gitee 侧为**分卷版**（`-gitee.exe` + `.bin` 切片）：**全部下到同�
 安装程序会自己找分卷，不需要手动合并。
 **macOS / Linux 本版未重出**（需 CI 跑 PyInstaller，本机不能交叉编译）。
 
-> 后续版本见上方 **v0.31.27**（最新）。
+> 后续版本见上方 **v0.31.28**（最新）。
 
 ---
 
@@ -919,10 +942,10 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 ## 下载与安装
 
-最新版见仓库 **Releases**（v0.31.27）：
+最新版见仓库 **Releases**（v0.31.28）：
 
-1. 下载安装包。**GitHub / GitCode** 上下载 `PASMStudio-Setup-0.31.27.exe`（单文件整包）；
-   **Gitee** 上是**分卷版** `PASMStudio-Setup-0.31.27-gitee.exe` + `.bin` 切片 ——
+1. 下载安装包。**GitHub / GitCode** 上下载 `PASMStudio-Setup-0.31.28.exe`（单文件整包）；
+   **Gitee** 上是**分卷版** `PASMStudio-Setup-0.31.28-gitee.exe` + `.bin` 切片 ——
    请把 `.exe` 与**全部 `.bin` 分卷下到同一个目录**，然后直接运行 exe 即可
    （安装程序会自己找同目录的分卷，**不需要手动合并**）。
 2. 双击安装 → 打开 PASM Studio → 点右上「设置」填 LLM Key（或留空用本地 Ollama）
@@ -984,7 +1007,36 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 > **It never loses what you typed, and never claims to have done something it didn't** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.31.27 (2026-10-13) · New "🛒 E-commerce" — one product photo in, a full Taobao/JD listing out
+## Latest: v0.31.28 (2026-10-13) · Fix: "I already gave you the photo" + detail images split per screen
+
+- **① It now understands "the image above" (headline)**: you fed a product photo, then a bit later
+  (or **after restarting the app**) said "**for the necklace in the image above**, give me five main
+  images" — and it replied "no usable product photo", even though you had just given it one.
+  The cause: the "just-fed image" lived only in **memory**, so a restart wiped it, and the app never
+  understood phrases like "the image above". Now fed images are **kept** (surviving a restart),
+  "the image above / that photo / this image" is **resolved automatically**, and it **tells you which
+  photo it used**. When nothing can be found it no longer just says "no photo" — it **lists** the
+  images already in your picture folder so you can reply "use XX".
+- **② Product name and keywords are no longer extracted wrongly**: for "the necklace in the image
+  above ... also 10 detail images", the product name used to become
+  "**also 10 detail images**" (poisoning the folder name, title and spec table), and keywords came
+  out as **sentence fragments** like "the item in the im / I need you to". Now the product name is
+  taken from a **category noun** (find "necklace" → use "necklace"), and keywords are **written by
+  the model** (real search terms buyers type), falling back to a per-category word list only when no
+  model is available — **your sentence will never be used as keywords again**.
+- **③ New "Accessories / jewellery" category**: necklaces used to fall into "generic", so the spec
+  table showed model/origin and the qualification list was generic too. Now there is a jewellery
+  table (material / chain length / pendant size / weight / certificate included / packaging) and
+  qualifications such as S925 marking, test certificate, allergy & wear notes, care instructions.
+- **④ Detail images can be split per screen into N images**: the detail area supports multiple
+  uploads, so **you get both** — the single 750px-wide **detail long image**, plus a set of
+  **per-screen detail images**. Say "10 detail images" and you get **exactly 10**.
+
+> **Verified**: `ecom` self-test 83/83 · renderer self-test 43/43 · new end-to-end
+> `verify_v0328_ecom_fix` **31/0** · re-run with a real necklace photo: 12 assets, 4.70MB
+> (including a 13.3s main-image video).
+
+### v0.31.27 (2026-10-13) · New "🛒 E-commerce" — one product photo in, a full Taobao/JD listing out
 
 - **① New "🛒 E-commerce" work mode**: drop a real product photo into the chat (or use + → image),
   add one line of product info (e.g. `padded warm jacket, waterproof fabric, brand: XX, price: 199; for JD`),

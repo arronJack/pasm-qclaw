@@ -261,6 +261,44 @@ def _data_dir() -> str:
 
 DATA_DIR = _data_dir()
 os.makedirs(DATA_DIR, exist_ok=True)
+
+#: 「最近喂过的图」留档 —— ★ v0.31.28：喂图**必须跨重启保留**。
+#  真机教训（2026-10-13）：用户 15:12 喂了产品实拍图，应用 18:02 重启后回来说
+#  「**上述的图中**项链，帮我出五张主图」，程序回「没有可用的产品实拍图」——
+#  因为 `_pending_imgs` / `_last_fed_imgs` / `_ses_ecom_src` **全是内存变量**，
+#  一重启就清空，而那张图明明还在工作根里。用户的原话就是"我明明给过图"。
+RECENT_IMGS_FILE = os.path.join(DATA_DIR, "recent_imgs.json")
+RECENT_IMGS_MAX = 8
+#: 用户喂进来的图片扩展名（找"你说的那张图"时用）
+IMG_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif")
+
+
+def load_recent_imgs() -> list:
+    """读「最近喂过的图」留档 —— **只返回此刻真在盘上的**（图被删了就自动失效）。"""
+    try:
+        with open(RECENT_IMGS_FILE, encoding="utf-8") as f:
+            items = json.load(f) or []
+        return [it for it in items if isinstance(it, dict)
+                and os.path.isfile(str(it.get("path") or ""))]
+    except Exception:                                        # noqa: BLE001
+        return []
+
+
+def remember_img(path: str) -> None:
+    """把用户喂过的图记进留档（跨重启保留，最新的排最前，最多 RECENT_IMGS_MAX 张）。"""
+    try:
+        p = os.path.abspath(str(path or ""))
+        if not (p and os.path.isfile(p)):
+            return
+        items = [it for it in load_recent_imgs()
+                 if os.path.abspath(str(it.get("path") or "")) != p]
+        items.insert(0, {"path": p, "ts": time.time()})
+        tmp = RECENT_IMGS_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(items[:RECENT_IMGS_MAX], f, ensure_ascii=False, indent=1)
+        os.replace(tmp, RECENT_IMGS_FILE)
+    except Exception:                                        # noqa: BLE001
+        logging.debug("写喂图留档失败", exc_info=True)
 CONFIG = os.path.join(DATA_DIR, "config.json")
 NOTES = os.path.join(DATA_DIR, "user_notes.json")
 HISTORY = os.path.join(DATA_DIR, "chat_last.json")
@@ -8990,6 +9028,10 @@ class CompanionWindow(QMainWindow):
             conv_id = self.conv_id
 
             def job(path=p, cid=conv_id):
+                # ★ v0.31.28：**收到图就先落档**（跨重启保留）—— 即使视觉模型
+                #   不可用（拿不到描述），这张图的**路径**也必须留住：电商套件要的
+                #   是像素本身，不是模型的文字描述。
+                remember_img(path)
                 desc = PERC.describe_image(path)
                 def done():
                     if cid != self.conv_id:
@@ -9022,6 +9064,61 @@ class CompanionWindow(QMainWindow):
                                        str(it["desc"])[:600]))
         return "\n".join(parts)
 
+
+    def _find_prior_image(self, imgs=None) -> str:
+        """找回"用户说的那张图"。三级兜底，都找不到返回 ""。
+
+        ① 本轮/内存留档（`_pending_imgs`）→ ② **跨重启留档**（recent_imgs.json）
+        → ③ 工作根 `图片/` 下**最近修改**的那张图（用户刚喂过、但留档被清掉的兜底）。
+
+        ★ 只找"用户喂过的图"，**不碰电商产物**（`图片/电商/` 是我们自己生成的，
+        拿它当产品原图会越滚越歪）。
+        """
+        for it in (imgs or []):
+            p = str((it or {}).get("path") or "")
+            if p and os.path.isfile(p):
+                return p
+        for it in load_recent_imgs():
+            p = str(it.get("path") or "")
+            if p and os.path.isfile(p):
+                return p
+        try:
+            import workspace as WS
+            base = WS.cat_dir("image", self.cfg)
+        except Exception:                                    # noqa: BLE001
+            return ""
+        best, best_t, seen = "", 0.0, 0
+        for dp, dns, fns in os.walk(base):
+            dns[:] = [d for d in dns if d != "电商"]          # 产物目录排除
+            for fn in fns:
+                if not fn.lower().endswith(IMG_EXTS):
+                    continue
+                fp = os.path.join(dp, fn)
+                try:
+                    mt = os.path.getmtime(fp)
+                except OSError:
+                    continue
+                if mt > best_t:
+                    best, best_t = fp, mt
+                seen += 1
+                if seen > 3000:                              # 保险丝：别扫爆
+                    return best
+        return best
+
+    def _nearby_image_names(self, limit: int = 5):
+        """图片工作目录里现成的图（给"没图"提示用，让用户一句话就能指定）。"""
+        out = []
+        try:
+            import workspace as WS
+            base = WS.cat_dir("image", self.cfg)
+            for fn in sorted(os.listdir(base)):
+                if fn.lower().endswith(IMG_EXTS):
+                    out.append(fn)
+                if len(out) >= limit:
+                    break
+        except Exception:                                    # noqa: BLE001
+            return []
+        return out
 
     # ---------- v0.29：附件入口（＋） ----------
     def _plus_menu(self):
@@ -16608,8 +16705,18 @@ class CompanionWindow(QMainWindow):
                 say("（这轮没喂新图，沿用上次那张实拍图：%s）" % os.path.basename(src))
         if not (src and os.path.isfile(src)):
             src = ""
-        else:
+            # ★ v0.31.28：用户说「上述的图 / 刚才那张图」时 —— **去找**他给过的那张，
+            #   而不是回一句"没有可用的产品实拍图"（真机就是这么让用户失望的）。
+            if EC.refers_prior_image(req):
+                got = self._find_prior_image(imgs)
+                if got:
+                    src = got
+                    say("（你说的是「上面那张图」—— 我用这一张：`%s`）"
+                        % os.path.basename(src))
+        if src and os.path.isfile(src):
             self._ses_ecom_src = src
+        else:
+            src = ""
 
         platform = EC.norm_platform(req)
         plan = EC.build_plan(req, vision=vision, photos=[src] if src else [],
@@ -16645,10 +16752,14 @@ class CompanionWindow(QMainWindow):
         if src:
             # 真机路径允许自动下 ffmpeg（视频栏目一直是这个行为）；
             # 自检里绝不带这个开关，免得偷偷拉 90MB
+            # `parse_detail_count`：用户说「10 张详情图」时按他要的张数切
             r = ER.render_all(plan, src, out_dir, images=images,
-                              allow_video_download=True)
+                              allow_video_download=True,
+                              detail_count=EC.parse_detail_count(req))
         else:
-            r = {"ok": False, "files": {"main": [], "crops": [], "detail_long": ""},
+            r = {"ok": False,
+                 "files": {"main": [], "crops": [], "detail_long": "",
+                           "detail_slices": []},
                  "notes": [], "reason": "没有可用的产品实拍图"}
 
         # ④ 方案 md + 详情页 html：**有没有图都给**（图缺了如实写「待生成」）
@@ -16690,11 +16801,24 @@ class CompanionWindow(QMainWindow):
                 L.append("\n**③ 详情长图**（%d px 宽，可整张上传）"
                          % plan["spec"]["detail_width"])
                 L.append("![详情长图](%s)" % CRE._as_uri(r["files"]["detail_long"]))
+            _slices = list(r["files"].get("detail_slices") or [])
+            if _slices:
+                # ★ v0.31.28：详情区可多图上传 —— 除了整张长图，再给一套"一屏一张"
+                L.append("\n**③-b 详情图 %d 张**（按屏切好，详情区逐张上传用；"
+                         "长图同时保留，两种都行）" % len(_slices))
+                L += ["![%s](%s)" % (os.path.basename(p), CRE._as_uri(p))
+                      for p in _slices]
             L.append("")
         else:
+            _hint = self._nearby_image_names()
             L.append("\n⚠️ **这次只出了方案，没有出图**：%s\n"
                      "把一张产品实拍图拖进来（或点「＋」选图片）再发一次这句话，"
-                     "我就用你的图真合成主图 / 局部图 / 细节图 / 详情长图。" % r["reason"])
+                     "我就用你的图真合成主图 / 局部图 / 细节图 / 详情长图。"
+                     % r["reason"])
+            if _hint:
+                L.append("\n📎 我在你的图片工作目录里看到这些图，"
+                         "你说一句「就用 %s」我也能直接用：\n%s"
+                         % (_hint[0], "、".join("`%s`" % x for x in _hint)))
         if r["files"].get("video"):
             L.append("\n**⑧ 主图视频**（1:1，可直接上传）：`%s`"
                      % r["files"]["video"])
@@ -16753,6 +16877,7 @@ class CompanionWindow(QMainWindow):
         #   所以这里把**真在盘**的产物逐件记上（`add_artifact` 自带去重）。
         _wid = str(getattr(self, "_cur_wid", "") or "")
         _all_files = (list(r["files"]["main"]) + list(r["files"]["crops"]) +
+                      list(r["files"].get("detail_slices") or []) +
                       [x for x in (r["files"]["detail_long"], md_p, html_p,
                                    r["files"].get("video", ""),
                                    r["files"].get("video_preview", "")) if x])

@@ -93,6 +93,11 @@ CATEGORIES: Dict[str, dict] = {
         "specs": ["品牌", "型号", "材质", "规格", "产地", "售后"],
         "pains": ["怕买回来和图片不一样", "担心质量没保障", "售后找不到人"],
     },
+    "饰品": {
+        "dims": ["材质", "工艺", "长度", "搭配", "包装"],
+        "specs": ["品牌", "材质", "链长", "吊坠尺寸", "重量", "是否含证书", "包装方式"],
+        "pains": ["怕戴着过敏发黑", "担心实物和图片有色差", "长度不合适显廉价"],
+    },
     "服装": {
         "dims": ["面料", "版型", "做工", "尺码", "搭配"],
         "specs": ["品牌", "面料成分", "尺码", "颜色", "适用季节", "洗涤方式"],
@@ -132,6 +137,8 @@ CATEGORIES: Dict[str, dict] = {
 
 #: 类目识别词（命中即判类目；越具体的词排前面）
 _CAT_HINTS = (
+    ("饰品", ("项链", "手链", "耳环", "耳钉", "戒指", "吊坠", "手镯", "脚链", "胸针",
+             "锁骨链", "首饰", "珠宝", "饰品", "银饰", "镀金", "K金", "k金", "足金")),
     ("宠物", ("猫粮", "狗粮", "猫砂", "宠物", "猫窝", "狗窝", "牵引绳", "逗猫", "宠物用品")),
     ("母婴", ("婴儿", "宝宝", "母婴", "尿不湿", "奶瓶", "纸尿裤", "童装", "婴儿车")),
     ("美妆", ("护肤", "精华", "面膜", "口红", "粉底", "彩妆", "香水", "面霜", "洁面")),
@@ -299,32 +306,98 @@ def extract_field(text: str, names) -> str:
     return ""
 
 
-def _pick_product_name(text: str, category: str) -> str:
-    """产品名：优先显式字段（产品名/商品名/产品/品名），其次类目兜底。
+#: 产品名里**不该往左扩**的虚词/指代字（命中即停，"上述的图中项链" → "项链"）
+_NON_NAME_CHARS = set(
+    "的地得了着过和与及或把被让使给为我你他她它们这那哪些什么请帮要有还想能可会做生成出"
+    "一套张个只位件款图里中上下述边面幅该此原")
 
-    ⚠️ 不再"取最长短句" —— 真机样例里那会把「品牌：自有品牌。产品：主推款单品。
-    卖点：…」整段当成产品名，标题直接飙到 102/60 字符（超平台上限一半）。
-    拿不准宁可给「类目 + 商品」这种中性名，也不要一个 30 字的假产品名。
+
+def pick_category_word(text: str) -> str:
+    """从话里挑**品类词**（"上述的图中项链" → "项链"）。找不到返回 ""。
+
+    为什么需要它：用户说话是「上述的图中项链，帮我出五张主图」—— 产品名在哪一段
+    **看不出来**，但品类词是认得出的。先认品类词，再把它前面的修饰词带进来，
+    比"取最长短句"稳得多。
+    """
+    t = str(text or "")
+    best = ""
+    for _cat, hints in _CAT_HINTS:
+        for h in hints:
+            if h in t and len(h) > len(best):
+                best = h
+    return best
+
+
+def _noun_with_modifiers(text: str, noun: str) -> str:
+    """给品类词补上它前面的修饰词（"加厚保暖外套"），但**不越过虚词** ——
+    "上述的图中项链" 保持 "项链"，不会变成 "图中项链"。
+    """
+    t = str(text or "")
+    i = t.find(noun)
+    if i <= 0:
+        return noun
+    j = i
+    while j > 0 and (i - j) < 4:
+        ch = t[j - 1]
+        if ch in _NON_NAME_CHARS or not re.match(r"[\u4e00-\u9fffA-Za-z0-9]", ch):
+            break
+        j -= 1
+    return (t[j:i + len(noun)] or noun)[:24]
+
+
+def _pick_product_name(text: str, category: str) -> str:
+    """产品名：① 显式字段 → ② **品类词（带修饰）** → ③ 最短短句 → ④ 类目兜底。
+
+    ⚠️ 为什么**不能**"取最长短句"（v0.31.27 真机教训，用户原话：
+    「上述的图中项链，我需要你帮我出五张主图、包括副图和细节图，还有帮我出10张详情图」）：
+    句子被切成 5 段后**最长的一段是「还有帮我出10张详情图」** —— 于是产品名、目录名、
+    回复标题、参数表、资质清单全跟着错。改成"先认品类词"就稳了：认得出「项链」，
+    取的就是「项链」。
     """
     got = extract_field(text, ("产品名", "商品名", "品名", "产品", "商品"))
     if got:
         return got[:24]
-    # 退一步：找"像产品名"的短句（排除字段标签与客套前缀）
+    noun = pick_category_word(text)
+    if noun:
+        return _noun_with_modifiers(text, noun)
     cands = []
     for p in _split_phrases(text):
         if "：" in p or ":" in p:
             continue
         if any(p.startswith(w) for w in _FIELD_WORDS):
             continue
-        if re.match(r"^(帮我|请|做一?套|生成|给|要|我|我是|卖|上架|淘宝|京东)", p):
+        if re.match(r"^(帮我|请|做一?套|生成|给|要|我|我是|卖|上架|淘宝|京东|上述|上面)", p):
+            continue
+        if re.search(r"(出|生成|要|帮|请|张|套|图)", p):
             continue
         cands.append(p)
-    return (max(cands, key=len)[:24] if cands else "%s商品" % category)
-    cands = [p for p in _split_phrases(text) if not re.match(
-        r"^(帮我|请|做一?套|生成|给|要|我|我是|卖|上架|淘宝|京东)", p)]
+    # ★ 取**最短**的那段（长的多半是句子，不是产品名）
     if cands:
-        return max(cands, key=len)[:24]
+        return min(cands, key=len)[:24]
     return "%s商品" % category
+
+
+#: 用户话里"要几张详情图"（真机原话：「还有帮我出**10张详情图**」）
+_DETAIL_CNT_RE = re.compile(
+    r"(\d{1,2})\s*张\s*(?:独立)?\s*(?:详情|细节|商品详情)\s*图?"
+    r"|(?:详情|细节)\s*图\s*(\d{1,2})\s*张")
+
+
+def parse_detail_count(text: str, lo: int = 2, hi: int = 30) -> Optional[int]:
+    """从话里取"要几张详情图"；取不到返回 `None`（= 按屏自然切）。
+
+    为什么要有它：用户说「10 张详情图」时，按屏自然切可能给 8 张或 12 张 ——
+    他要的是**10 张**。取到了就照做（限制在 lo~hi，挡掉"要 999 张"这种）。
+    """
+    m = _DETAIL_CNT_RE.search(str(text or ""))
+    if not m:
+        return None
+    raw = m.group(1) or m.group(2) or ""
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return n if lo <= n <= hi else None
 
 
 def normalize_keywords(words) -> List[str]:
@@ -336,6 +409,54 @@ def normalize_keywords(words) -> List[str]:
             seen.add(w)
             out.append(w)
     return out[:10]
+
+
+#: 关键词的模型提示词（要"能直接填进平台搜索框"的词，不是句子）
+_KW_ASK = ("你是电商运营。根据下面的商品信息，给出 8~10 个买家会用来搜索的关键词"
+           "（淘宝/京东搜索框里真会打的词，2~6 个字，包含品类词、属性词、"
+           "送礼/人群/场景词）。只输出关键词，用空格分隔，不要编号、不要解释、不要标点。"
+           "\n商品信息：%s")
+
+
+def build_keywords(product: str, category: str, text: str = "", vision: str = "",
+                   n: int = 8, llm_fn: Optional[Callable] = None):
+    """关键词：**优先让模型给**，拿不到再用类目词表兜底。返回 `(words, source)`。
+
+    ★ 铁律：绝不把用户原句机械切片当关键词（见 CATEGORY_KEYWORDS 的注释）。
+    """
+    if llm_fn:
+        blob = "%s ｜ 类目：%s ｜ 用户描述：%s ｜ 画面：%s" % (
+            product, category, str(text or "")[:300], str(vision or "")[:150])
+        try:
+            got = llm_fn(_KW_ASK % blob)
+            words = [w for w in normalize_keywords(re.split(r"[\s,，、;；/|]+", str(got or "")))
+                     if w and w != product]
+            if len(words) >= 3:
+                return normalize_keywords([product] + words)[:n], "llm"
+        except Exception:                                    # noqa: BLE001
+            pass
+    out = [product] if product else []
+    out += list(CATEGORY_KEYWORDS.get(category) or CATEGORY_KEYWORDS["通用"])
+    out += [h for h in _SELL_HINTS if h in str(text or "")]
+    return normalize_keywords(out)[:n], "offline"
+
+
+#: 用户"指代上面那张图"的说法（真机原话：「上述的图中项链」）
+_PRIOR_IMG_RE = re.compile(
+    r"上述的?图|上面的?图|上面那[张幅个]?|刚(?:才)?(?:那|这)[张幅个]?图|"
+    r"刚发(?:的|过)的?图|刚给(?:的|过)的?图|之前的?图|"
+    r"我(?:发|给|上)(?:的|过)?(?:那|这)?[张幅个]?图|这[张幅个]图|这个图|"
+    r"该图|此图|图中|上图|原图|这[张幅](?:照片|图片)|那[张幅](?:照片|图片)")
+
+
+def refers_prior_image(text: str) -> bool:
+    """用户是否在**指代"上面那张图"**（而不是重新喂一张）。
+
+    真机场景：用户 15:12 喂过产品图，隔了两个多小时、应用重启之后回来说
+    「**上述的图中**项链，帮我出五张主图」—— 这时必须去**找**那张图，
+    而不是回一句"没有可用的产品实拍图"（用户的原话就是"我明明给过图"）。
+    """
+    return bool(_PRIOR_IMG_RE.search(str(text or "")))
 
 
 def optimize_title(product: str, keywords=None, category: str = "通用",
@@ -512,6 +633,8 @@ def build_crops(category: str, n: int = 3) -> List[dict]:
 #: 类目 → 应当具备的资质/检测（**列的是"应该有"，不是"已经有了"** ——
 #: 电商合规是专业度的底线：食品/美妆/母婴/宠物少一样就可能被下架或罚款）。
 QUALIFICATION = {
+    "饰品": ["材质与含量标识（如 S925 / 18K / 足金 标注）", "贵金属或珠宝检测证书（如 CMA）",
+             "过敏与佩戴注意说明（镍释放/防过敏）", "保养与清洗说明"],
     "食品": ["食品生产许可证（SC 编号）", "第三方检测报告", "配料表 / 营养成分表",
              "保质期与储存条件标注"],
     "美妆": ["国产普通化妆品备案号（或特殊化妆品批准文号）", "全成分表",
@@ -529,6 +652,24 @@ QUALIFICATION = {
     "通用": ["营业执照 / 品牌授权（如涉及）", "产品检测报告",
              "售后与退换规则", "生产日期与产地信息"],
 }
+
+#: 离线关键词兜底：**按类目给的"人话搜索词"**（有模型时由模型产出，这里是保底）。
+#  ★ 铁律：**绝不把用户原句机械切片当关键词**。v0.31.27 真机实测过 ——
+#  旧实现用 `re.findall(r"[\u4e00-\u9fff]{2,6}", text)` 切片，得到的是
+#  「上述的图中项 / 我需要你帮我 / 出五张主图 / 包括副图和细」这类**完全不可用**的
+#  碎片：既不是买家会打的搜索词，也不能进标题。
+CATEGORY_KEYWORDS = {
+    "饰品": ["项链女", "锁骨链", "轻奢饰品", "高级感", "生日礼物", "送女友", "小众设计", "日常百搭"],
+    "服装": ["显瘦", "百搭", "秋冬", "保暖", "通勤", "宽松", "气质", "日常"],
+    "食品": ["休闲零食", "独立包装", "办公室零食", "好吃不腻", "送礼", "即食"],
+    "数码": ["无线", "快充", "便携", "高性价比", "办公", "学生", "降噪", "长续航"],
+    "家居": ["收纳", "省空间", "北欧", "简约", "家用", "出租房", "实用", "免安装"],
+    "美妆": ["补水", "温和", "敏感肌", "持妆", "平价", "学生党", "日常妆", "便携装"],
+    "母婴": ["婴儿", "安全材质", "新手爸妈", "柔软", "易清洗", "待产包", "亲肤"],
+    "宠物": ["宠物用品", "猫咪", "狗狗", "无毒", "耐咬", "易清洁", "适口性好"],
+    "通用": ["正品", "热销", "新款", "实用", "送礼", "高性价比", "包邮", "现货"],
+}
+
 
 #: 「卖点 → 利益」句式（离线模板；有模型时由模型写，来源照旧如实标注）
 _BENEFIT_TPL = (
@@ -854,16 +995,10 @@ def build_plan(text: str = "", vision: str = "", photos=None,
                        text)
         price = _m.group(1) if _m else ""
     product = _pick_product_name(text, cat)
-    # 关键词：只留"能当搜索词"的词 —— 排掉字段名与客套，否则标题会被
-    # 「品牌/产品/卖点/规格」这种结构性词占满字数（真机样例实测标题超限一半）
-    _stop = set(_FIELD_WORDS) | {"帮我", "这是", "一个", "我要", "帮我做", "一套",
-                                 "整套", "以及", "之类", "还有", "就是", "而且"}
-    _toks = [w for w in re.findall(r"[\u4e00-\u9fff]{2,6}", text)
-             if w not in _stop]
-    # 命中的卖点词优先（它们才是"人话搜索词"），其余按原序补足
-    _hit = [w for w in _toks if any(h in w or w in h for h in _SELL_HINTS)]
-    _rest = [w for w in _toks if w not in _hit]
-    kws = normalize_keywords((_hit + _rest)[:10])
+    # ★ v0.31.28：关键词**走模型**产出（拿不到才用类目词表兜底）。
+    #   旧实现是把用户原句按 2~6 字机械切片 → 真机产出「上述的图中项 / 我需要你帮我」
+    #   这种完全不可用的碎片（回复的"来源标注"里唯独没有关键词，就是这条线索）。
+    kws, kws_src = build_keywords(product, cat, text, vision, 8, llm_fn)
     t = optimize_title(product, kws, cat, brand, pid, core, llm_fn)
     points = build_selling_points(text, vision, cat, llm_fn, n=5)
     crops = build_crops(cat, n_crops)
@@ -890,7 +1025,8 @@ def build_plan(text: str = "", vision: str = "", photos=None,
         "qualification": qualification_for(cat),
         "sku_guide": build_sku_guide(cat, product),
         "title_variants": build_title_variants(product, kws, cat, brand, pid),
-        "sources": {"title": t["source"], "selling_points":
+        "sources": {"title": t["source"], "keywords": kws_src,
+                    "selling_points":
                     ("llm" if any(p.get("source") == "llm" for p in points) else "offline"),
                     "copy": copy["source"]},
         "created": time.strftime("%Y-%m-%d %H:%M"),
@@ -933,6 +1069,9 @@ def render_plan_md(plan: dict) -> str:
     L.append("")
     L.append("## 一、关键词")
     L.append(" ".join("`%s`" % k for k in (p.get("keywords") or [])) or "（无）")
+    L.append("")
+    L.append("> 详情区**两种都能直接上传**：整张 750 宽的详情长图，以及按屏切好的"
+             "独立详情图（一屏一张）。你说「要 N 张详情图」时，切分张数按 N 来。")
     L.append("")
     L.append("## 二、主图 %d 张分工" % len(p.get("main_images") or []))
     L.append("")
@@ -1356,8 +1495,52 @@ def selftest() -> int:
                                   "copy", "violations")),
           "方案含标题/关键词/卖点/裁切/参数/主图/详情/文案/违禁词 九大块",
           sorted(plan.keys()))
-    check(set(plan["sources"]) == {"title", "selling_points", "copy"},
+    check(set(plan["sources"]) == {"title", "keywords", "selling_points", "copy"},
           "方案如实记录来源（sources）", plan["sources"])
+    # ---------- v0.31.28 回归：真机那句话不许再抽错 ----------
+    _REAL = ("上述的图中项链，我需要你帮我出五张主图、包括副图和细节图，"
+             "还有帮我出10张详情图，图中包括文案")
+    _rp = build_plan(_REAL)
+    check(_rp["product"] == "项链",
+          "★ 真机原句的产品名必须是「项链」（旧版抽成「还有帮我出10张详情图」）",
+          _rp["product"])
+    check(_rp["category"] == "饰品",
+          "★ 「项链」应判类目「饰品」（旧版落「通用」→ 规格/资质全走错模板）",
+          _rp["category"])
+    check(any("链长" in r[0] for r in _rp["spec_rows"]),
+          "★ 饰品参数表含「链长」等真实字段", [r[0] for r in _rp["spec_rows"]])
+    check(any("检测证书" in x or "CMA" in x for x in _rp["qualification"]),
+          "★ 饰品资质清单给的是检测证书这类真要求", _rp["qualification"])
+    _junk = {"上述的图中项", "我需要你帮我", "出五张主图", "包括副图和细",
+             "节图", "还有帮我出", "张详情图", "图中包括文案"}
+    check(not (_junk & set(_rp["keywords"])),
+          "★ 关键词绝不许再是原句机械切片（旧版 8 个词全是碎片）", _rp["keywords"])
+    check(len(_rp["keywords"]) >= 4 and "项链" in _rp["keywords"],
+          "★ 离线兜底关键词也要有品类词 + 类目词", _rp["keywords"])
+    # 认图判据
+    check(parse_detail_count(_REAL) == 10,
+          "★ 从「还有帮我出10张详情图」里取到 10 张", parse_detail_count(_REAL))
+    check(parse_detail_count("详情图 6 张") == 6 and
+          parse_detail_count("帮我做套主图") is None and
+          parse_detail_count("要999张详情图") is None,
+          "★ 数量解析：正例过、没提数量与越界都返回 None",
+          (parse_detail_count("详情图 6 张"), parse_detail_count("帮我做套主图"),
+           parse_detail_count("要999张详情图")))
+    check(refers_prior_image(_REAL) and refers_prior_image("就用我刚才那张图"),
+          "★ 认得出「上述的图 / 刚才那张图」这类指代")
+    check(not refers_prior_image("帮我做一套防水背包的主图方案"),
+          "★ 反例：没提图的句子不许被判成「指代上面那张图」")
+    # 修饰词左扩：该带上的要带上、不该带的不许带
+    check(_noun_with_modifiers("加厚保暖外套，防水面料", "外套") == "加厚保暖外套",
+          "★ 修饰词左扩：加厚保暖外套（带上修饰）",
+          _noun_with_modifiers("加厚保暖外套，防水面料", "外套"))
+    check(_noun_with_modifiers("上述的图中项链", "项链") == "项链",
+          "★ 修饰词左扩：不越过虚词（不许变成「图中项链」）",
+          _noun_with_modifiers("上述的图中项链", "项链"))
+    # 模型可用时关键词走模型并标 llm
+    check(_rp["sources"]["keywords"] in ("llm", "offline"),
+          "关键词来源标注合法", _rp["sources"])
+
     check({"面料成分", "尺码"} <= {r[0] for r in plan["spec_rows"]},
           "参数表字段来自类目模板（服装含面料成分/尺码）",
           [r[0] for r in plan["spec_rows"]])
