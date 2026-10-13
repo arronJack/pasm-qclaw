@@ -309,6 +309,70 @@ def exec_ad(step: dict, ctx: dict = None):
     return AD.executor(step, ctx)
 
 
+# --------------------------------------------------------------------------
+# 电商套件：一步「做一套电商图与详情」落到真产物（v0.31.27）
+#
+# ⚠️ 新增工种必须**同时**改三处（技能坑 46）：capability 注册 + 本文件 `_MAP`
+#    + 自检 `need` 列表。少改第三处，"装漏了"就永远抓不到
+#    （当年 "ad" 正是这样漏了一整个版本）。
+# --------------------------------------------------------------------------
+def exec_ecom(step: dict, ctx: dict = None):
+    """真产出一套电商物料：主图 / 局部图·细节图 / 详情长图 / 方案 md / 详情页 html。
+
+    诚实边界：
+      · **没有实拍图就不出图**（主图不能凭空捏），但仍交方案与文案，
+        并在日志里写明「图待生成」；
+      · 每一件产物都验过**真在盘**才算数（与 media_job 同一条纪律）。
+    """
+    ctx = ctx or {}
+    import ecom as EC
+    import ecom_render as ER
+    title = (step or {}).get("title") or ""
+    det = re.sub(r"^待执行[：:]\s*", "", ((step or {}).get("next_step") or "").strip())
+    req = (title + " " + det).strip() or "电商商品图"
+    src = str(ctx.get("src_image") or "")
+    if not (src and os.path.isfile(src)):
+        src = ""
+    plan = EC.build_plan(req, photos=[src] if src else [], llm_fn=ctx.get("llm_fn"))
+    out_dir = EC.out_dir_for(ctx.get("cfg") or {}, plan["product"])
+    try:
+        os.makedirs(out_dir, exist_ok=True)
+    except Exception as ex:                                  # noqa: BLE001
+        return False, "建目录失败：%s" % ex, []
+    arts, notes = [], []
+    try:
+        with open(EC.md_path_for(out_dir), "w", encoding="utf-8") as f:
+            f.write(EC.render_plan_md(plan))
+        arts.append(EC.md_path_for(out_dir))
+    except Exception as ex:                                  # noqa: BLE001
+        notes.append("方案 md 落盘失败：%s" % ex)
+    files = {"main": [], "crops": [], "detail_long": ""}
+    if src:
+        r = ER.render_all(plan, src, out_dir)
+        files = r.get("files") or files
+        notes += list(r.get("notes") or [])
+        arts += [p for p in files["main"] + files["crops"] if p]
+        if files["detail_long"]:
+            arts.append(files["detail_long"])
+    else:
+        notes.append("没有实拍图 → 未生成主图/局部图/细节图/详情长图（图待生成，不捏图）")
+    try:
+        EC.render_detail_html(
+            plan, images={"main": (files["main"][0] if files["main"] else ""),
+                          "crops": files["crops"]},
+            out_path=EC.html_path_for(out_dir))
+        arts.append(EC.html_path_for(out_dir))
+    except Exception as ex:                                  # noqa: BLE001
+        notes.append("详情页 html 落盘失败：%s" % ex)
+    arts = [p for p in arts if p and os.path.isfile(p)]       # 只认**真在盘**的产物
+    log = ("电商套件：%s · %s · 产物 %d 件（主图 %d / 局部细节 %d / 详情长图 %s）\n%s"
+           % (plan["platform_label"], plan["category"], len(arts),
+              len(files["main"]), len(files["crops"]),
+              "有" if files["detail_long"] else "无",
+              "；".join(notes) if notes else "无异常"))
+    return bool(arts), log, arts
+
+
 def _outline_of(step: dict, ctx: dict) -> str:
     """把一步工作流变成 `make_pptx/docx/xlsx` 认的 Markdown 大纲。
 
@@ -425,6 +489,8 @@ _MAP = {
     "ppt": lambda: exec_ppt,
     "xls": lambda: exec_xls,
     "copy": lambda: exec_copy,
+    # v0.31.27：电商套件（主图/局部图/细节图/详情长图 + 方案）
+    "ecom": lambda: exec_ecom,
 }
 
 #: install() 里装失败的工种 -> 原因（供自检/面板显示，避免静默丢失能力）
@@ -500,7 +566,7 @@ def _selftest() -> int:
         WF.EXECUTORS.clear()
         got = install(WF)
         need = ["image", "video", "audio", "manga", "browser", "kb", "doc",
-                "code", "payment", "ad", "ppt", "xls", "copy"]
+                "code", "payment", "ad", "ppt", "xls", "copy", "ecom"]
         miss = [k for k in need if k not in got]
         check("install 注册 %d 个工种" % len(need), not miss, miss)
         check("install 无静默失败", not INSTALL_ERRORS, INSTALL_ERRORS)
@@ -521,6 +587,10 @@ def _selftest() -> int:
                   callable(WF.executor_for(_k)))
         check("payment 工种已有真执行器",
               callable(WF.executor_for("payment")))
+        # v0.31.27：电商套件必须**真接上**（否则"做一套电商图"的步骤只会回
+        #   no_executor —— 那正是"广告"当年积下的同款毛病）
+        check("ecom 工种已有真执行器（不再是 no_executor）",
+              callable(WF.executor_for("ecom")))
 
         # 端到端：跑一步真活，进度要真的动
         rid = WF.plan_workflow("整理一份资料清单", dir="测试")

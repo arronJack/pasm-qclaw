@@ -207,6 +207,33 @@ def _low_head(text: str) -> str:
     return head_of(text).lower()
 
 
+#: 电商套件的高置信词（认的是「上架物料」，不是「画一张图」）
+_ECOM_WORDS = ("主图", "白底图", "局部图", "细节图", "详情页", "详情图", "详情长图",
+               "商品图", "产品图", "上架图", "电商图", "sku图")
+
+
+def _detect_ecom(text: str) -> bool:
+    """电商上架物料：主图 / 详情页 / 白底图 / 局部图 / 细节图 …
+
+    两道排除（与 `pasm_companion._looks_like_ecom` 同源，两处必须一致）：
+      ① 导航类「打开淘宝」不是做图；
+      ② 「开发一个商品详情页」是写代码，不是做图。
+    """
+    h = _low_head(text)
+    if not h:
+        return False
+    if any(w in h for w in ("打开", "进入", "访问", "浏览", "逛逛")) and \
+            not any(w in h for w in _ECOM_WORDS):
+        return False
+    if any(w in h for w in ("开发", "网站", "网页", "前端", "后端", "代码", "程序")):
+        return False
+    if any(w in h for w in _ECOM_WORDS):
+        return True
+    return bool(any(w in h for w in ("淘宝", "天猫", "京东", "拼多多", "电商", "店铺"))
+                and any(w in h for w in ("出图", "做图", "生成", "制作", "设计",
+                                         "一套", "整套", "图片")))
+
+
 def _detect_image(text: str) -> bool:
     """「出图动词 + 图像名词」；显式排除表格/文档/PPT/漫画等非图像交付物。
 
@@ -317,6 +344,19 @@ def _reg_builtin():
              prefeed="这是广告设计请求：按「标题 / 卖点 / 行动号召 + 主视觉提示词」"
                      "四件套产出，并记入工作台账（目录=广告设计）。")
     # image：模糊动词全部下沉到 detect，triggers 只留高置信词（见模块头 ④）
+    # v0.31.27 🛒 电商套件：order=7 让它排在 manga(8) / ad(9) / image(10) **之前** ——
+    #   否则「帮我做淘宝主图」会被 image 抢走（它含"图"字），做成"AI 画一张图"。
+    register("ecom", "🛒 电商图集", "ecom", order=7,
+             # ⚠️「详情页」**故意不放进 triggers**：触发词在 detect 之前判定，
+             #   放这里会让「帮我开发一个商品详情页」被抢成电商套件 ——
+             #   detect 里的"排除开发"根本没机会跑（技能坑 22 ①）。
+             triggers=("电商主图", "淘宝主图", "京东主图", "商品主图", "白底图",
+                       "详情长图", "局部图", "细节图", "上架图"),
+             detect=_detect_ecom,
+             prefeed="这是电商上架物料请求：**用用户喂的实拍图真实裁切合成**主图/"
+                     "局部图/细节图/详情长图（绝不 AI 重画产品——平台会判「图文不符」），"
+                     "并给出标题关键词、5 条卖点、参数表、详情文案与违禁词体检；"
+                     "尺寸按平台规格（淘宝主图 800×800·详情 750，京东详情 790）。")
     register("image", "🎨 生成图片", "image", order=10,
              triggers=("生成图片", "出图", "配图", "插画", "画张图"),
              detect=_detect_image,
@@ -402,6 +442,8 @@ def selftest() -> int:
         ("写一份季度总结报告", "doc"),
         ("生成一段产品演示视频", "video"),
         ("画一只在月球上钓鱼的猫", "image"),
+        ("帮我做淘宝主图，白底加场景", "ecom"),
+        ("京东商品详情页配图", "ecom"),
     ]
     for text, want in pos:
         got = best(text).get("id")
@@ -416,10 +458,19 @@ def selftest() -> int:
         "这个功能挺好的",
         "这个文档我看了，写得不错",
         "刚才那个表格有点问题",
+        "打开淘宝逛逛",              # 导航意图 ≠ 做图
     ]
     for text in neg:
         got = best(text).get("id")
         check("反例「%s」→ chat" % text, got == "chat", "实际 %s" % got)
+
+    # ★ 反例（v0.31.27）：**「详情页」只在 detect 里判、不在 triggers 里** ——
+    #   因为触发词先于 detect 判定，放 triggers 会让下面这句被 ecom 抢走。
+    #   注意：它仍会被 `code`（triggers 含「开发一个」）命中，**那是正确的**
+    #   （"开发一个详情页"就是写代码），所以这里只断言"不许是 ecom"。
+    check(best("帮我开发一个商品详情页").get("id") != "ecom",
+          "反例：开发商品详情页 ≠ 电商套件（别被触发词抢走）",
+          best("帮我开发一个商品详情页").get("id"))
 
     # ---------- 触发词只在句首窗口，不在任意位置 ----------
     mid = "我昨天在路上看到一张宣传海报挺好看，你觉得呢"

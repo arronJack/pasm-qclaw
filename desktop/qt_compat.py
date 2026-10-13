@@ -19,7 +19,12 @@ from PySide6.QtCore import (QEvent, QLockFile, QPoint, QPointF, QRect,  # noqa: 
                             QUrl)
 from PySide6.QtGui import (QAction, QBrush, QColor, QConicalGradient, QCursor,  # noqa: F401
                            QFont, QIcon, QLinearGradient, QPainter, QPainterPath,
-                           QPen, QPixmap, QRadialGradient, QTextCursor)
+                           QPen, QPixmap, QRadialGradient, QTextCursor,
+                           # v0.31.27 电商套件（ecom_render）的真实像素合成：
+                           # 裁切/缩放/叠字/拼长图全部走 QImage + QPainter，
+                           # 零新依赖（不引 Pillow）；QFontMetrics 度量文字；
+                           # QGuiApplication 供模块独立 selftest 时建最小应用。
+                           QImage, QFontMetrics, QGuiApplication)
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog,
                                QFileDialog, QFrame,
                                QGraphicsOpacityEffect, QHBoxLayout, QInputDialog,

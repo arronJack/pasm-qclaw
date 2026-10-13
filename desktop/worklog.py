@@ -70,6 +70,7 @@ _KIND_LAB = {
     "weblearn": "🌐 自学", "skill": "🧩 技能", "copy": "✍️ 文案",
     "sysops_clean": "🧹 清理", "sysops_del": "🗑 删除", "sysops_del_paths": "🗑 删除",
     "websearch": "🔍 搜索", "secchk": "🛡 体检", "general": "🛠 工作", "ad": "📣 广告", "workflow": "🔗 工作流",
+    "ecom": "🛒 电商",          # v0.31.27：电商套件
     # v0.28.x 新增能力
     "remind_add": "⏰ 定时提醒", "remind_del": "⏰ 取消提醒",
     "mail_send": "📧 发邮件", "cal_add": "📅 加日程", "cal_del": "📅 删日程",

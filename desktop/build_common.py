@@ -190,6 +190,13 @@ HIDDEN_IMPORTS = [
     'aiohttp',
     'workflow_engine',
     'ad_design',
+    # v0.31.27 电商套件：四个模块都是**函数内懒加载**，不登记就会在
+    # frozen 版静默失效（点「🛒 电商」什么也不发生，一个字不报错）
+    'ecom',
+    'ecom_render',
+    # 专业去底（numpy + QImage）与主图视频（ffmpeg 编排）
+    'imgmatte',
+    'ecom_video',
     'capability',
     'capability_bus',
     'autopilot',

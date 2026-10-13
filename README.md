@@ -17,8 +17,8 @@
 | `pasm-mcp-server` | MCP 接入层：给任意 AI 客户端装长期记忆（`PASM2=1` 切 V2） | 公开 | 0.2.1 |
 | `pasm-domain-advisor` · `pasm-medical` · `pasm-customer-service` | 领域智能体：领域顾问引擎 / 医疗辅助 / 专业客服 | 公开 | 0.1.1 · 0.1.0 · 0.2.0 |
 | `PASM-Lite` | 教学版 + 认知引擎接口（不接 V2，保持纯净） | 公开 | — |
-| `PASM` | 核心引擎（七层仿生 / 世界模型，含 `pasm2/`；桌面源码 0.31.20） | 私有 | 0.7.2 |
-| **`pasm-qclaw`（本仓）** | **桌面应用发行通道（安装包 + `latest.json` 升级源）** | **公开** | **0.31.20（已发行）** |
+| `PASM` | 核心引擎（七层仿生 / 世界模型，含 `pasm2/`；桌面源码 0.31.27） | 私有 | 0.7.2 |
+| **`pasm-qclaw`（本仓）** | **桌面应用发行通道（安装包 + `latest.json` 升级源）** | **公开** | **0.31.27（已发行）** |
 
 本仓**现在包含 PASM Studio 桌面端的开源源码**（[`desktop/`](desktop/README.md) 目录，基于 PySide6 的 Windows 桌面应用 UI/外壳层），
 同时仍是安装包与更新清单 `latest.json` 的**发行通道**。
@@ -49,7 +49,28 @@
 **无需任何 API Key 也能用**：自动接入你本机已装的 Ollama（qwen/llama 等模型），
 本机就是你的服务器；填一个 DeepSeek Key 则更强（见下文「设置语言脑」）。
 
-## 最新：v0.31.26（2026-10-10）· 修「问天气查错城市」
+## 最新：v0.31.27（2026-10-13）· 新增「🛒 电商」—— 喂图即出整套淘宝/京东物料
+
+- **① 新工种「🛒 电商」**：把产品实拍图拖进对话框（或点「＋」选图片），再补一句产品信息
+  （例：`加厚保暖外套，防水面料，品牌：XX，价格：199；要京东的`），一整套上架物料直接落盘。
+- **② 一套出 12 件**：主图 **5 张**（白底 / 场景 / 卖点 / 细节 / 参数，800×800）·
+  局部图与细节图 **3 张**（800×800）· **750 宽详情长图** · **主图视频**（1:1，带字幕与配音）·
+  详情文案（标题 / 关键词 / 5 条卖点 / 短·长文案 / 直播话术）· 方案文档。
+- **③ 主图去底做到专业级**：渐变底也能抠干净，边缘**不残留白边**，还会**保留产品的落地投影**；
+  浅色产品自动加极细描边，不会在白底上"消失"。
+- **④ 主图视频**：白底推近 → 场景横移 → 卖点 → 细节快切 → 参数收尾，带转场与字幕 +
+  讲解配音。电脑上没装视频工具的会先给**零依赖预览播放器**（运镜与字幕与成片一致），
+  不会"说做了视频却什么都没有"。
+- **⑤ 详情页从 7 屏扩到 12 屏**：补上专业详情页真正有的结构（利益点 / 使用步骤 / 常见问题 /
+  物流 / 资质），另给 **SEO 三层关键词**、**3 版标题可 A/B**、**直播话术四段**；
+  标题会**自动做进平台字数控**（1 汉字 = 2 字符）。
+- **⑥ 违禁词体检**：极限词 / 虚假承诺 / 医疗功效 / 金融收益四类，命中逐条给改稿建议。
+
+> **一条纪律**：产品画面**绝不用 AI 重画**（会被平台判「图文不符」）——
+> 主图 / 局部图 / 细节图一律用你的实拍图**真实合成**，AI 只用于可选的场景底图；
+> **没有实拍图就只交方案与文案，不凭空造图**。
+
+### v0.31.26（2026-10-10）· 修「问天气查错城市」
 
 - **① 说「广东省佛山市」不再报北京**：以前城市名解析失败就**默默兜底成北京**，
   看起来像在瞎报。现在提了地名却查不到会如实说「没找到城市」，只有**完全没提地名**
@@ -483,7 +504,7 @@ Gitee 侧为**分卷版**（`-gitee.exe` + `.bin` 切片）：**全部下到同�
 安装程序会自己找分卷，不需要手动合并。
 **macOS / Linux 本版未重出**（需 CI 跑 PyInstaller，本机不能交叉编译）。
 
-> 后续版本见上方 **v0.31.26**（最新）。
+> 后续版本见上方 **v0.31.27**（最新）。
 
 ---
 
@@ -898,10 +919,10 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 
 ## 下载与安装
 
-最新版见仓库 **Releases**（v0.31.26）：
+最新版见仓库 **Releases**（v0.31.27）：
 
-1. 下载安装包。**GitHub / GitCode** 上下载 `PASMStudio-Setup-0.31.26.exe`（单文件整包）；
-   **Gitee** 上是**分卷版** `PASMStudio-Setup-0.31.26-gitee.exe` + `.bin` 切片 ——
+1. 下载安装包。**GitHub / GitCode** 上下载 `PASMStudio-Setup-0.31.27.exe`（单文件整包）；
+   **Gitee** 上是**分卷版** `PASMStudio-Setup-0.31.27-gitee.exe` + `.bin` 切片 ——
    请把 `.exe` 与**全部 `.bin` 分卷下到同一个目录**，然后直接运行 exe 即可
    （安装程序会自己找同目录的分卷，**不需要手动合并**）。
 2. 双击安装 → 打开 PASM Studio → 点右上「设置」填 LLM Key（或留空用本地 Ollama）
@@ -963,7 +984,32 @@ PASM Studio 是 **双脑结构 + 认知执行皮层**：
 > **It never loses what you typed, and never claims to have done something it didn't** — Chat right out of the box: it thinks,
 **Works with zero API keys**: it auto-detects a local [Ollama](https://ollama.com) install (qwen/llama models) — your machine *is* the server. A DeepSeek key unlocks even better conversations (see *LLM setup* below).
 
-## Latest: v0.31.26 (2026-10-10) · Fix: weather lookup picked the wrong city
+## Latest: v0.31.27 (2026-10-13) · New "🛒 E-commerce" — one product photo in, a full Taobao/JD listing out
+
+- **① New "🛒 E-commerce" work mode**: drop a real product photo into the chat (or use + → image),
+  add one line of product info (e.g. `padded warm jacket, waterproof fabric, brand: XX, price: 199; for JD`),
+  and a full set of listing assets lands on disk.
+- **② 12 assets per run**: **5 main images** (white-bg / scene / selling-point / detail / spec, 800×800) ·
+  **3 close-up & detail crops** (800×800) · a **750px-wide detail long image** ·
+  a **main-image video** (1:1, subtitled, narrated) · listing copy (title / keywords / 5 selling points /
+  short & long copy / live-stream script) · a plan document.
+- **③ Professional background removal**: gradient backgrounds are cleanly cut, no white fringe left behind,
+  and the product's **drop shadow is preserved**; light-coloured products get a hairline outline so they
+  don't "vanish" on white.
+- **④ Main-image video**: white-bg push-in → scene pan → selling point → detail cut → spec outro, with
+  transitions, burned-in subtitles and narration. If the machine has no video tool, you get a
+  **zero-dependency preview player** first (same motion and captions) — never "I made a video" with nothing there.
+- **⑤ Detail page grows from 7 to 12 screens**: benefits / how-to-use steps / FAQ / logistics / qualifications,
+  plus **3-layer SEO keywords**, **3 title variants for A/B**, and a **4-part live-stream script**;
+  titles are **auto-fitted to the platform character limit** (1 CJK glyph = 2 chars).
+- **⑥ Prohibited-word check**: extreme claims, false promises, medical efficacy, financial returns —
+  each hit comes with a rewrite suggestion.
+
+> **One rule**: the product itself is **never redrawn by AI** (marketplaces flag it as "image-text mismatch").
+> Main / close-up / detail images are **composited from your real photo**; AI is only used for optional
+> scene backdrops. **No real photo → no images at all**, only the plan and copy.
+
+### v0.31.26 (2026-10-10) · Fix: weather lookup picked the wrong city
 
 - **① "Guangdong, Foshan" no longer reports Beijing.** City parsing used to fall back to a
   hard-coded default silently — which looks like the assistant is making things up. Now, if you

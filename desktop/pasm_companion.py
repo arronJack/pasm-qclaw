@@ -180,6 +180,8 @@ _HEAVY_KINDS = frozenset({"project", "script", "genppt", "gendoc", "genxls",
                           "weblearn", "skill", "image", "video", "manga",
                           # v0.30.13：广告会真落盘（方案 + 主视觉），与图像同级
                           "ad",
+                          # v0.31.27：电商套件会真落盘一整套上架物料，与广告同级
+                          "ecom",
                           # v0.28.x 新增：会改动本地状态或对外发东西的，一律先确认
                           "remind_add", "remind_del", "mail_send",
                           "cal_add", "cal_del", "evolve_save", "team_auto"})
@@ -3589,12 +3591,14 @@ class CompanionWindow(QMainWindow):
         "project": "🚀 开发与创作", "video": "🚀 开发与创作",
         "image": "🚀 开发与创作", "manga": "🚀 开发与创作",
         "ad": "🚀 开发与创作",
+        # v0.31.27：电商套件（喂图 → 主图/局部图/细节图/详情长图 + 文案）
+        "ecom": "🚀 开发与创作",
     }
     WORK_CHIPS = [
         ("chat", "💬 聊天"),                 # 普通对话，绝不自动开工
         ("copy", "✍️ 文案"), ("xls", "📊 表格"), ("ppt", "📽 PPT"), ("doc", "📄 Word"),
         ("project", "🖥 开发"), ("video", "🎬 视频"), ("image", "🎨 图像"),
-        ("manga", "📖 漫剧"), ("ad", "📣 广告设计"),
+        ("manga", "📖 漫剧"), ("ecom", "🛒 电商"), ("ad", "📣 广告设计"),
     ]
     # 各工种「强制开工」的规范种子句（确保意图规则一定命中，不再弹能力清单）
     CHIP_SEED = {
@@ -3607,6 +3611,8 @@ class CompanionWindow(QMainWindow):
               "再出主视觉画面）",
         "image": "请把下面这个画面需求写成可直接交给文生图模型的英文提示词包"
                  "（含 主体/风格/构图/光线/镜头，一段话可直接出图）：\n{要求}",
+        # v0.31.27：电商套件（喂图 → 一整套淘宝/京东上架物料）
+        "ecom": "帮我做一套电商商品图与详情：{要求}",
     }
 
     # ── 栏目整合（v0.29）：文档类 4 个工种在**界面上**收进一个入口 ──────────
@@ -3624,6 +3630,7 @@ class CompanionWindow(QMainWindow):
         ("project", "🖥 开发"),
         ("video", "🎬 视频"),
         ("image", "🎨 图像"),
+        ("ecom", "🛒 电商"),
         ("ad", "📣 广告设计"),
         ("manga", "📖 漫剧"),
     ]
@@ -4332,6 +4339,11 @@ class CompanionWindow(QMainWindow):
         self.input.textChanged.connect(self._at_sync)
         self.input.images_given.connect(self._on_img_given)   # v0.27 Phase B 看图
         self._pending_imgs = []         # [{"path","desc"}] 下条消息注入的图片理解
+        # v0.31.27：上一次喂过的图（`_drain_img_ctx` 清空前留档）——
+        #   「🛒 电商」要的是图片**路径**本身，而 send() 在栏目分发之前
+        #   就把 _pending_imgs 清空了。没有这份留档，"拖图 + 说做淘宝主图"
+        #   会得到"没有实拍图"（真机必踩，端到端用例抓到过）。
+        self._last_fed_imgs = []
         self._pending_files = []        # v0.29 [{"path","text"}] 下条消息注入的附件正文
         self._copy_store = {}           # v0.30.6 「📋 复制」内容仓（token → 原文）
         self._right_open = True         # v0.30.6 右侧工作侧栏开合状态
@@ -4435,6 +4447,13 @@ class CompanionWindow(QMainWindow):
         "project": "开发模式：直接说要做什么系统/网站/应用，生成完整项目",
         "video": "视频模式：说主题直接出「图文配音短片」成片（脚本→分镜图→配音→播放器/MP4），首次使用会先让你接入出图引擎",
         "image": "图像模式：描述想要的画面，直接调用你接入的出图引擎生成图片（首次会先让你配置引擎，之后免配置）",
+        "ecom": "电商套件（喂图即出整套）：把产品实拍图拖进来（或点「＋」选图片），"
+                 "再说一句「这是什么 + 卖点」（例：加厚保暖外套，防水面料，"
+                 "品牌：XX，价格：199）→ 按平台规格出：主图 5 张 / 局部图·细节图 / "
+                 "详情长图 + 标题·关键词·卖点·参数表·详情文案 + 违禁词体检。"
+                 "淘宝说「淘宝」、京东说「京东」。产品画面取自你的实拍图"
+                 "**真实合成**，绝不用 AI 重画（平台判「图文不符」）。"
+                 "提一句「加场景」且已配出图引擎时，才会额外生成场景底图。",
         "ad": "广告设计模式（专业流程）：说清「产品 + 卖点 + 风格」→ 自动产出"
               "① 标题/卖点/行动号召文案 ② 主视觉提示词 ③ 真出图；"
               "每版都记进工作面板，可按目录复盘、可续做下一步",
@@ -8991,6 +9010,11 @@ class CompanionWindow(QMainWindow):
         imgs = getattr(self, "_pending_imgs", [])
         if not imgs:
             return ""
+        # ★ v0.31.27：**清空前留一份档**。「喂图干活」的工种（🛒 电商）要的是
+        #   图片**路径**本身，而本函数是在 send() 里、栏目分发**之前**跑的 ——
+        #   不留档的话，用户"拖图 + 说做淘宝主图"会得到"没有实拍图"，
+        #   而图明明刚拖进来（端到端用例抓到，编译与模块自检全看不见）。
+        self._last_fed_imgs = list(imgs)
         self._pending_imgs = []
         parts = ["【图片理解 · 你之前发过 %d 张图】" % len(imgs)]
         for it in imgs:
@@ -9421,7 +9445,7 @@ class CompanionWindow(QMainWindow):
             except Exception:                                    # noqa: BLE001
                 _d = None
             _MAKE = ("project", "gendoc", "skill", "copy", "image", "video", "manga",
-                     "ad", "cando", "caps", "askhelp", "")
+                     "ad", "ecom", "cando", "caps", "askhelp", "")
             if _d and _d[0] not in _MAKE:
                 _pre = _d
         direct_copy = False
@@ -9447,6 +9471,15 @@ class CompanionWindow(QMainWindow):
             # v0.31.3：指代型指令（"再画一张""就用刚才那个"）要把**上一轮的画面需求**
             #   带进来 —— 创作栏目只认同栏目上下文（见 `_inherit_requirement`）。
             agent = (chip, self._inherit_req or text)   # 直连创作引擎：真出图/真成片
+        elif chip == "ecom":
+            # v0.31.27 🛒 电商套件：直连。产品画面用**实拍图真实合成**、不走 AI 出图，
+            #   所以**不需要图像引擎门** —— 没配任何引擎也能出全套物料。
+            try:
+                self._chip_req["ecom"] = text[:600]
+                self._save_work_state()
+            except Exception:
+                logging.exception("remember ecom req failed")
+            agent = ("ecom", text)
         elif chip == "ad":
             # 广告设计版（v0.30.4；v0.30.13 重做）：
             # 以前这里只调 `AD.design()` —— 它**只建一条空台账**（永远 running、0%），
@@ -9662,7 +9695,8 @@ class CompanionWindow(QMainWindow):
                 except Exception:
                     pass            # v0.26.1：重活开工前给一句可见提示——期间可切页/看别的会话，结果不会丢
             if agent[0] in ("project", "script", "genppt", "gendoc", "genxls",
-                            "skill", "weblearn", "video", "image", "manga", "ad"):
+                            "skill", "weblearn", "video", "image", "manga", "ad",
+                            "ecom"):
                 try:
                     _tip = ("⏳ 正在干活（可能要几十秒到几分钟）——完成会自动显示在这里；"
                             "期间你可以随便切页或查看别的会话，结果不会丢。")
@@ -12604,6 +12638,30 @@ class CompanionWindow(QMainWindow):
         return (f"{body}\n\n直接说要做什么就能开工（例如：帮我做一份 xx 的 PPT / "
                 f"开发一个记账小工具 / 读一下 D:\\xx 文件）。")
 
+    # ---------- v0.31.27：🛒 电商套件（喂图 → 一整套上架物料） ----------
+    def _looks_like_ecom(self, text: str) -> bool:
+        """是不是「电商上架物料」需求（主图 / 详情页 / 白底图 / 局部图 / 细节图…）。
+
+        与「🎨 图像」「📣 广告设计」的分界：这里认的是**平台上架物料**，
+        既不是"画一张图"，也不是"广告创意"。
+        两道排除：①「打开淘宝 / 去京东逛逛」是导航意图（走 openapp / browser）；
+                 ②「开发一个商品详情页」是**写代码**（走 project），不是做图。
+        """
+        t = str(text or "")
+        if not t:
+            return False
+        if re.search(r"(?:打开|进入|访问|浏览|逛逛|去|上)\s*[^，。]{0,6}"
+                      r"(?:淘宝|天猫|京东|拼多多)", t) and \
+                not re.search(r"主图|详情|白底|局部图|细节图|商品图|产品图|上架图", t):
+            return False
+        if re.search(r"开发|网站|网页|前端|后端|代码|程序|系统|小程序|接口", t):
+            return False
+        if re.search(r"主图|白底图|局部图|细节图|详情长图|详情页|商品图|产品图|"
+                      r"sku图|SKU图|上架图|电商图", t):
+            return True
+        return bool(re.search(r"淘宝|天猫|京东|拼多多|电商|店铺|listing|上架", t) and
+                    re.search(r"出图|做图|生成|制作|设计|一套|整套|图片|图集|素材", t))
+
     def _detect_agent(self, text, allow_cap=True):
         import re as _re
         # ★疑问句拦截：问"能不能/会吗/可以吗" = 询问能力，不等于下令干活。
@@ -13172,6 +13230,11 @@ class CompanionWindow(QMainWindow):
                 return ("dirscan", text)
             return ("analyzectx", "")
         # 2a) 出图/出片/漫剧成片指令（创作引擎直连；区别于“写脚本/文案”类需求）
+        # ★2a-前置（v0.31.27）电商套件：主图 / 详情页 / 白底图 / 局部图 / 细节图
+        #   必须排在下面的「出图」**之前** —— 否则「帮我做淘宝主图」会被 image 抢走
+        #   （它含"图"字），交付的会是"AI 画一张图"而不是"用实拍图出整套上架物料"。
+        if self._looks_like_ecom(text) and not self._askish(text):
+            return ("ecom", text)
         if not re.search(r"脚本|剧本|文案|分镜|代码|python|编程|网页|网站|前端|后端|系统|"
                          r"应用|接口|程序", text, _re.I):
             if re.search(r"漫剧|漫画剧|动态漫画|有声漫画", text) and \
@@ -14978,6 +15041,8 @@ class CompanionWindow(QMainWindow):
             name = agent[1] if len(agent) > 1 else ""
             req = agent[2] if len(agent) > 2 else ""
             return self._skill_run(name, req)
+        if kind == "ecom":                # v0.31.27：电商套件（喂图 → 整套上架物料）
+            return self._create_ecom(agent[1] if len(agent) > 1 else "")
         if kind == "ad":                  # v0.30.13：广告 = 方案 + 主视觉（≠ 图像栏目）
             return self._create_ad(agent[1] if len(agent) > 1 else "")
         if kind == "image":
@@ -16505,6 +16570,218 @@ class CompanionWindow(QMainWindow):
         if kind == "image":
             return ("image_pack", text)
         return ("skill", "manga-pipeline" if kind == "manga" else "video-script", text)
+
+    # ---------- v0.31.27：🛒 电商套件（喂图 → 一整套上架物料） ----------
+    def _create_ecom(self, req: str) -> str:
+        """🛒 电商套件：喂一张实拍图 + 一句话 → 一整套淘宝 / 京东上架物料。
+
+        与另外两个最容易混的工种的区别（用户一定会问"这仨有啥不一样"）：
+          · 🎨 图像 = 一个提示词、一张（或几张）**AI 画**的图；
+          · 📣 广告 = 创意策略 + 文案 + 主视觉提示词 + 一张主视觉；
+          · 🛒 电商 = **用你喂的实拍图真实裁切合成**主图 5 张 / 局部图 / 细节图 /
+                    详情长图，另加标题关键词、5 条卖点、参数表、详情文案、
+                    违禁词体检，尺寸全按平台规格（淘宝 800×800·详情 750，
+                    京东 800×800·详情 790）。
+
+        **产品画面绝不 AI 重画** —— 平台按「图文不符」判罚，这是纪律不是偏好。
+        因此本工种**离线可跑**：不配任何图像引擎也能出全套；只有"场景底图"是
+        可选增强（用户明确说要场景、且引擎可用时才做，产品仍真实贴上去的那张）。
+        """
+        try:
+            import ecom as EC
+            import ecom_render as ER
+        except Exception as ex:                          # noqa: BLE001
+            return "⚠ 电商套件没加载成功：%s" % ex
+
+        def say(m):
+            self._ui(lambda m=m: self._append("系统", m))
+
+        # ① 取「喂给我的图」（拖动 / 粘贴 / 「＋图片」都进 `_pending_imgs`）
+        # 当轮喂的优先；已被 `_drain_img_ctx` 清空则读留档（上一轮喂的那张）
+        imgs = (list(getattr(self, "_pending_imgs", []) or []) or
+                list(getattr(self, "_last_fed_imgs", []) or []))
+        vision = " ".join(str(it.get("desc") or "") for it in imgs)[:600]
+        src = str(imgs[-1]["path"]) if imgs else ""
+        if not src:
+            src = str(getattr(self, "_ses_ecom_src", "") or "")
+            if src and os.path.isfile(src):
+                say("（这轮没喂新图，沿用上次那张实拍图：%s）" % os.path.basename(src))
+        if not (src and os.path.isfile(src)):
+            src = ""
+        else:
+            self._ses_ecom_src = src
+
+        platform = EC.norm_platform(req)
+        plan = EC.build_plan(req, vision=vision, photos=[src] if src else [],
+                             platform=platform, llm_fn=self._work_llm())
+        out_dir = EC.out_dir_for(self.cfg, plan["product"])
+        try:
+            os.makedirs(out_dir, exist_ok=True)
+        except Exception as ex:                          # noqa: BLE001
+            return "⚠ 建产出目录失败：%s" % ex
+        say("🛒 电商套件开工：%s · 类目「%s」→ 主图 %d 张 / 局部图·细节图 / 详情长图 "
+            "/ 方案 + 文案（产品画面用你的实拍图**真实合成**，不重画）"
+            % (plan["platform_label"], plan["category"], len(plan["main_images"])))
+
+        # ② 可选：AI 场景底图（用户明确要 + 引擎可用才做；产品仍是真实贴上去的那张）
+        images = {}
+        _img_conf = CRE.get_engine(self.cfg, "image") or {}
+        if src and re.search(r"场景|氛围|背景|实景|模特", req) and _img_conf:
+            try:
+                _bg = os.path.join(out_dir, "场景底图.png")
+                say("🎨 正在生成**场景底图**（只出背景，产品仍用你的实拍图贴上去）…")
+                _p = CRE.generate_image(
+                    _img_conf,
+                    "empty lifestyle interior scene as product photo backdrop, "
+                    "soft natural daylight, minimal clean composition, shallow "
+                    "depth of field, no product, no person, no text, no watermark",
+                    _bg, size="1024x1024")
+                if _p and os.path.isfile(_p):
+                    images["scene"] = _p
+            except Exception as ex:                      # noqa: BLE001
+                say("（场景底图没生成成功，改用本地浅色底：%s）" % ex)
+
+        # ③ 真渲染（本方法跑在后台线程 → 渲染层只用 QImage，线程安全）
+        if src:
+            # 真机路径允许自动下 ffmpeg（视频栏目一直是这个行为）；
+            # 自检里绝不带这个开关，免得偷偷拉 90MB
+            r = ER.render_all(plan, src, out_dir, images=images,
+                              allow_video_download=True)
+        else:
+            r = {"ok": False, "files": {"main": [], "crops": [], "detail_long": ""},
+                 "notes": [], "reason": "没有可用的产品实拍图"}
+
+        # ④ 方案 md + 详情页 html：**有没有图都给**（图缺了如实写「待生成」）
+        md_p, html_p = EC.md_path_for(out_dir), EC.html_path_for(out_dir)
+        try:
+            with open(md_p, "w", encoding="utf-8") as f:
+                f.write(EC.render_plan_md(plan))
+        except Exception:                                # noqa: BLE001
+            logging.exception("电商方案 md 落盘失败")
+            md_p = ""
+        try:
+            EC.render_detail_html(plan, images=dict(
+                images,
+                main=(r["files"]["main"][0] if r["files"]["main"] else ""),
+                crops=r["files"]["crops"]), out_path=html_p)
+        except Exception:                                # noqa: BLE001
+            logging.exception("电商详情页 html 落盘失败")
+            html_p = ""
+
+        # ⑤ 汇报（每一栏都对应一个真交付物；没做的明说）
+        t = plan["title"]
+        _mw, _mh = tuple(plan["spec"]["main_size"])
+        L = ["🛒 **%s** · %s 规格已产出（类目：%s）"
+             % (plan["product"], plan["platform_label"], plan["category"]),
+             "📁 产物目录：`%s`" % out_dir]
+        if r["ok"]:
+            _mnote = next((x for x in (r.get("notes") or [])
+                           if ("去底" in x or "背景抠" in x)), "")
+            L.append("\n**① 主图 %d 张（%d×%d）**%s"
+                     % (len(r["files"]["main"]), _mw, _mh,
+                        ("　—　" + _mnote) if _mnote else ""))
+            L += ["![%s](%s)" % (os.path.basename(p), CRE._as_uri(p))
+                  for p in r["files"]["main"]]
+            L.append("\n**② 局部图 / 细节图 %d 张**（从你的实拍图裁切放大，带编号标注）"
+                     % len(r["files"]["crops"]))
+            L += ["![%s](%s)" % (os.path.basename(p), CRE._as_uri(p))
+                  for p in r["files"]["crops"]]
+            if r["files"]["detail_long"]:
+                L.append("\n**③ 详情长图**（%d px 宽，可整张上传）"
+                         % plan["spec"]["detail_width"])
+                L.append("![详情长图](%s)" % CRE._as_uri(r["files"]["detail_long"]))
+            L.append("")
+        else:
+            L.append("\n⚠️ **这次只出了方案，没有出图**：%s\n"
+                     "把一张产品实拍图拖进来（或点「＋」选图片）再发一次这句话，"
+                     "我就用你的图真合成主图 / 局部图 / 细节图 / 详情长图。" % r["reason"])
+        if r["files"].get("video"):
+            L.append("\n**⑧ 主图视频**（1:1，可直接上传）：`%s`"
+                     % r["files"]["video"])
+        elif r["files"].get("video_preview"):
+            L.append("\n**⑧ 主图视频**：这次没出成片 → 已给 HTML 预览播放器：`%s`\n"
+                     "（运镜与字幕与成片一致；装上 ffmpeg 后同一批图直接合成 mp4）"
+                     % r["files"]["video_preview"])
+        L.append("\n**⑨ 专业增补**：利益点 %d 条 · FAQ %d 条 · "
+                 "使用步骤 %d 步 · 资质清单 %d 项 · SEO 三层 · "
+                 "3 版标题可 A/B · 直播话术 4 段\n"
+                 "（细节在方案 md 与详情页里）"
+                 % (len(plan.get("benefits") or []), len(plan.get("faq") or []),
+                    len(plan.get("steps") or []),
+                    len(plan.get("qualification") or [])))
+        L.append("**④ 标题**（%d/%d 字符%s）：`%s`"
+                 % (t["len"], t["limit"], "，**超限**" if not t["ok"] else "", t["title"]))
+        if not t["ok"]:
+            L.append("　建议改短版：`%s`" % t["trimmed"])
+        L.append("**⑤ 关键词**：" + "、".join(plan["keywords"]))
+        L.append("")
+        L.append("**⑥ 卖点 %d 条**" % len(plan["selling_points"]))
+        L += ["%d. **%s** —— %s" % (i, s["head"], s["body"])
+              for i, s in enumerate(plan["selling_points"], 1)]
+        c = plan["copy"]
+        L.append("")
+        L.append("**⑦ 详情文案**（短描述 / 长描述 / 直播口播 全在方案 md 里）")
+        L.append("> %s" % c["short"])
+        L.append("")
+        if plan["violations"]:
+            L.append("⚠️ **违禁词体检：%d 处风险**（建议按提示改，避免被平台下架）"
+                     % len(plan["violations"]))
+            L += ["· `%s`（%s）→ %s" % (x["word"], x["group"], x["hint"])
+                  for x in plan["violations"][:6]]
+        else:
+            L.append("✅ **违禁词体检**：无风险（已过广告法极限词 / 虚假承诺 / "
+                     "医疗功效 / 金融收益 四组词表）")
+        if md_p:
+            L.append("")
+            L.append("📄 完整方案（标题 / 主图分工 / 裁切计划 / 参数表 / 长文案）：`%s`"
+                     % md_p)
+        if html_p:
+            L.append("🌐 详情页预览（双击用浏览器打开，所见即上传效果）：`%s`" % html_p)
+        if r.get("notes"):
+            L.append("")
+            L.append("ℹ️ " + "；".join(r["notes"]))
+        L.append("")
+        L.append("来源标注：标题=%s / 卖点=%s / 文案=%s（offline = 类目模板拼装，"
+                 "不是模型编的）" % (plan["sources"]["title"],
+                                    plan["sources"]["selling_points"],
+                                    plan["sources"]["copy"]))
+
+        # ★ 台账**显式记账**（v0.31.27）：`WORKLOG.extract_paths` 只从回复正文里取
+        #   **前 6 条**，而电商一轮有 11 件产物 —— 靠"从回复里抠路径"必然漏掉
+        #   详情长图 / 方案 md / 详情页 html（真机表现：工作台产物列表不全，
+        #   而右栏效果区因为走的是显式 paths 反而是全的，两边对不上最迷惑人）。
+        #   所以这里把**真在盘**的产物逐件记上（`add_artifact` 自带去重）。
+        _wid = str(getattr(self, "_cur_wid", "") or "")
+        _all_files = (list(r["files"]["main"]) + list(r["files"]["crops"]) +
+                      [x for x in (r["files"]["detail_long"], md_p, html_p,
+                                   r["files"].get("video", ""),
+                                   r["files"].get("video_preview", "")) if x])
+        if _wid and _all_files:
+            try:
+                for _f in _all_files:
+                    if _f and os.path.isfile(_f):
+                        WORKLOG.add_artifact(_wid, _f)
+            except Exception:                            # noqa: BLE001
+                logging.exception("电商产物记账失败")
+
+        # ⑥ 右栏效果区登记（一页一产物：同一商品多轮产出都落在这一页）
+        try:
+            _media = (r["files"].get("video")
+                      or r["files"]["detail_long"]
+                      or (r["files"]["main"][0] if r["files"]["main"] else ""))
+            self._mark_effect(
+                "ecom", media=_media, path=(md_p or html_p), copy=c,
+                paths=_all_files,
+                page=out_dir, title="🛒 " + str(plan["product"])[:12],
+                note=("产品画面取自你的实拍图**真实合成**，未 AI 重绘。"
+                      + ("；".join(r["notes"]) if r.get("notes") else "")))
+        except Exception:                                # noqa: BLE001
+            logging.exception("mark ecom effect failed")
+        try:
+            PLATFORM_OPS.startfile(out_dir)
+        except Exception:                                # noqa: BLE001
+            pass
+        return "\n".join(L)
 
     def _create_ad(self, req: str) -> str:
         """广告设计（v0.30.13）：**方案 + 主视觉**一起交，不再等于"出一张图"。
