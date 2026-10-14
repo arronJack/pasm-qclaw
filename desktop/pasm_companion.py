@@ -9016,6 +9016,10 @@ class CompanionWindow(QMainWindow):
         if not PERC:
             self._append("系统", "⚠ 感知层没加载成功，暂时看不了图。")
             return
+        # ★ v0.31.29：看图降级链 —— 本机视觉优先，没有则走云端（默认 SiliconFlow
+        #   Qwen-VL，自动复用已配的图像引擎 Key）。拖图前先算好，线程里少算一次。
+        cloud = PERC.resolve_vision_cloud(self.cfg)
+        local_vm = PERC.vision_models()
         for p in list(paths)[:3]:            # 一次最多带 3 张，省得刷屏
             name = os.path.basename(p)
             # v0.30.10：图片直接在用户气泡里可见（data URI 内联，无需视觉模型也能看）
@@ -9024,7 +9028,17 @@ class CompanionWindow(QMainWindow):
                 self._append("你", "📷 [图片：%s]<br>%s" % (html.escape(name), img_tag))
             else:
                 self._append("你", "📷 [图片：%s]" % html.escape(name))
-            self._append("系统", "📷 收到图片，我先用本机视觉模型看看…")
+            # 按"有本地/有云端/都没有"给不同提示，不再一律吓人
+            if local_vm:
+                self._append("系统", "📷 收到图片，我先用本机视觉模型看看…")
+            elif cloud:
+                self._append("系统",
+                             "📷 收到图片，本机没装视觉模型，改用云端视觉（%s）识别…"
+                             % cloud.get("model", "云端").split("/")[-1])
+            else:
+                self._append("系统",
+                             "📷 收到图片（本机与云端都暂无视觉模型，已记住这张图；"
+                             "电商等工种会用你的实拍像素直接合成，不影响出图）。")
             conv_id = self.conv_id
 
             def job(path=p, cid=conv_id):
@@ -9032,18 +9046,24 @@ class CompanionWindow(QMainWindow):
                 #   不可用（拿不到描述），这张图的**路径**也必须留住：电商套件要的
                 #   是像素本身，不是模型的文字描述。
                 remember_img(path)
-                desc = PERC.describe_image(path)
+                desc = PERC.describe_image(path, cloud=cloud)
+                # ★ v0.31.29：无论看没看成，**都**把路径记进 _pending_imgs
+                #   （描述为空字符串表示"没看清"，下游电商会靠像素兜底）。
+                #   这样"喂图干活"的所有工种一定拿得到这张图，第一步不再被视觉模型卡住。
+                real_desc = desc if not desc.startswith("⚠") else ""
                 def done():
                     if cid != self.conv_id:
                         return
-                    if desc.startswith("⚠"):
-                        self._append("系统", desc)
-                        return
                     self._pending_imgs = (getattr(self, "_pending_imgs", []) +
-                                          [{"path": path, "desc": desc}])[-3:]
-                    self._append("系统",
-                                 "📷 看完了（%s）：%s\n\n—— 下一条消息回我，我会带着这张图来理解。"
-                                 % (html.escape(os.path.basename(path)), html.escape(desc[:200])))
+                                          [{"path": path, "desc": real_desc}])[-3:]
+                    if desc.startswith("⚠"):
+                        self._append("系统",
+                                     desc + "\n（图片已记住，电商等工种会用你的实拍像素直接干活。）")
+                    else:
+                        self._append("系统",
+                                     "📷 看完了（%s）：%s\n\n—— 下一条消息回我，我会带着这张图来理解。"
+                                     % (html.escape(os.path.basename(path)),
+                                        html.escape(desc[:200])))
                 self._ui(done)
             threading.Thread(target=job, daemon=True).start()
 
