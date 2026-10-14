@@ -348,7 +348,18 @@ def exec_ecom(step: dict, ctx: dict = None):
         notes.append("方案 md 落盘失败：%s" % ex)
     files = {"main": [], "crops": [], "detail_long": ""}
     if src:
-        r = ER.render_all(plan, src, out_dir)
+        # ★ v0.31.30：先用云端视觉**定位产品**，再按产品实际位置裁局部/细节图。
+        #   真机事故（2026-10-14）：手托项链的实拍图，细节图裁出来全是手指皮肤
+        #   —— 因为"高频能量"判据选中了皮肤纹理和图片上的文字水印。
+        box = None
+        try:
+            from pasm.cognitive import percept as _P
+            _cloud = _P.resolve_vision_cloud(ctx.get("cfg") or {})
+            if _cloud:
+                box = _P.product_box(src, cloud=_cloud)
+        except Exception:                                    # noqa: BLE001
+            box = None
+        r = ER.render_all(plan, src, out_dir, product_box=box)
         files = r.get("files") or files
         notes += list(r.get("notes") or [])
         arts += [p for p in files["main"] + files["crops"] if p]

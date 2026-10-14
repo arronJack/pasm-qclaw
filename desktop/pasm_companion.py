@@ -13350,6 +13350,14 @@ class CompanionWindow(QMainWindow):
         # ★2a-前置（v0.31.27）电商套件：主图 / 详情页 / 白底图 / 局部图 / 细节图
         #   必须排在下面的「出图」**之前** —— 否则「帮我做淘宝主图」会被 image 抢走
         #   （它含"图"字），交付的会是"AI 画一张图"而不是"用实拍图出整套上架物料"。
+        # ★⓪（v0.31.30）引导录入的回答轮：上一轮电商在问产品信息，这句像回答
+        #   （「材质S925银，链长42cm」「直接生成」）→ 继续走电商，别当普通聊天丢掉。
+        if getattr(self, "_ses_ecom_pend", None) \
+                and self._ecom_answerish(text) and not self._askish(text):
+            return ("ecom", text)
+        # ★⓪-b（v0.31.30）商品空间：「我有哪些产品」「打开商品目录」。
+        if re.search(r"商品目录|产品目录|有哪些产品|我的商品|商品列表", text):
+            return ("ecom_catalog", text)
         if self._looks_like_ecom(text) and not self._askish(text):
             return ("ecom", text)
         if not re.search(r"脚本|剧本|文案|分镜|代码|python|编程|网页|网站|前端|后端|系统|"
@@ -15160,6 +15168,8 @@ class CompanionWindow(QMainWindow):
             return self._skill_run(name, req)
         if kind == "ecom":                # v0.31.27：电商套件（喂图 → 整套上架物料）
             return self._create_ecom(agent[1] if len(agent) > 1 else "")
+        if kind == "ecom_catalog":        # v0.31.30：商品空间（目录查询/打开）
+            return self._ecom_catalog_reply(agent[1] if len(agent) > 1 else "")
         if kind == "ad":                  # v0.30.13：广告 = 方案 + 主视觉（≠ 图像栏目）
             return self._create_ad(agent[1] if len(agent) > 1 else "")
         if kind == "image":
@@ -16689,6 +16699,59 @@ class CompanionWindow(QMainWindow):
         return ("skill", "manga-pipeline" if kind == "manga" else "video-script", text)
 
     # ---------- v0.31.27：🛒 电商套件（喂图 → 一整套上架物料） ----------
+    def _ecom_ask_text(self, miss) -> str:
+        """引导录入的提问文案（v0.31.30）。缺什么问什么，一轮最多 4 个。"""
+        L = ["🛒 **生成前先把产品信息记全**——记全后我一次性出整套，"
+             "参数表 / 卖点 / 详情文案全部用真实值（不再写「待补充」）：",
+             ""]
+        L += ["%d. %s" % (i, f["ask"]) for i, f in enumerate(miss, 1)]
+        L += ["",
+              "直接回复就行，例如「材质S925银，链长42cm，重量3.2g」；"
+              "不知道的项写「不知道」，或说「**直接生成**」我就跳过提问。"]
+        return "\n".join(L)
+
+    def _ecom_answerish(self, text: str) -> bool:
+        """这句像不像「在回答产品属性提问」（材质S925银 / 链长42cm / 直接生成）。"""
+        t = str(text or "")
+        if re.search(r"直接生成|直接出|跳过提问|别问了|不用问|就这些|先这样|先出图", t):
+            return True
+        if re.search(r"(材质|材料|链长|长度|重量|克重|颜色|工艺|做工|尺寸|规格|型号|"
+                     r"面料|成分|容量|净含量|保质期|产地|尺码|承重|兼容|质保|功率|"
+                     r"配料|肤质|功效|适用年龄|礼盒|包装|证书)\s*[是为：:]?", t):
+            return True
+        if re.search(r"\d+(\.\d+)?\s*(cm|mm|ml|L|g|kg|克|毫升|升|厘米|毫米|英寸|寸|"
+                     r"mAh|瓦|W|w)\b", t, re.I):
+            return True
+        return False
+
+    def _ecom_catalog_reply(self, req: str) -> str:
+        """📚 商品空间：「我有哪些产品 / 打开商品目录」。"""
+        import ecom as EC
+        items = EC.catalog_load(self.cfg)
+        html = EC.catalog_html_path(self.cfg)
+        if re.search(r"打开|看一?下|浏览|网页", req or "") and os.path.isfile(html):
+            try:
+                os.startfile(html)                       # noqa: S606 本机打开
+                return "📚 商品目录已在浏览器打开（%d 个产品）。" % len(items)
+            except Exception:                            # noqa: BLE001
+                pass
+        if not items:
+            return ("📚 商品目录还是空的。做一套电商物料（例：拖产品图 + "
+                    "「出淘宝主图」），生成完会自动登记进目录。")
+        L = ["📚 **商品目录**（%d 个产品，新的在前）" % len(items), ""]
+        for it in items[:12]:
+            _spec = "；".join("%s=%s" % (k, v)
+                              for k, v in list((it.get("specs") or {}).items())[:3])
+            L.append("- **%s**（%s · %s）%s\n  `%s`"
+                     % (it.get("name") or "未命名", it.get("category") or "—",
+                        it.get("platform") or "—",
+                        ("　" + _spec) if _spec else "", it.get("dir") or ""))
+        if len(items) > 12:
+            L.append("…（其余 %d 个见网页版）" % (len(items) - 12))
+        L += ["", "网页版（带缩略图、可点进详情页）：`%s`" % html,
+              "说「打开商品目录」我直接帮你打开。"]
+        return "\n".join(L)
+
     def _create_ecom(self, req: str) -> str:
         """🛒 电商套件：喂一张实拍图 + 一句话 → 一整套淘宝 / 京东上架物料。
 
@@ -16738,9 +16801,50 @@ class CompanionWindow(QMainWindow):
         else:
             src = ""
 
+        # ⓪ 引导录入（v0.31.30）：先把产品信息问全，再一次性生成 ——
+        #    没有真实参数，参数表只能写「待补充」、卖点只能写模板话（真机教训：
+        #    7 行参数全「待补充」、5 条卖点同一句模板）。流程：
+        #    首次请求 → 建档 + 能填多少填多少 → 缺项就**停下来提问**（不出图）；
+        #    用户回答 → 回填 → 还缺就再问一轮；说「直接生成」或已无缺项 → 开工。
+        _SKIP_ASK = r"直接生成|直接出|跳过提问|别问了|不用问|不用问啦|就这些|先这样|先出图|别啰嗦"
+        profile = None
+        pend = getattr(self, "_ses_ecom_pend", None)
+        if pend and isinstance(pend, dict) and pend.get("profile"):
+            # —— 回答轮：把这句里能对上的属性回填进待补档案 ——
+            profile = pend["profile"]
+            cat0 = pend.get("category") or profile.get("category") or "通用"
+            profile, filled = EC.profile_apply_text(profile, req, cat0)
+            miss = EC.profile_missing(profile, cat0)
+            if filled:
+                say("📝 已记录：%s" % "、".join(filled))
+            if miss and not re.search(_SKIP_ASK, req):
+                self._ses_ecom_pend = {"profile": profile, "category": cat0}
+                if src:
+                    say("🖼 产品图已收到（%s），信息补全后一起出。" % os.path.basename(src))
+                return self._ecom_ask_text(miss)
+            profile["pending"] = False
+            self._ses_ecom_pend = None
+            _sum = EC.profile_summary(profile)
+            say("✅ 产品信息记齐（%s）→ 直接开工" % _sum if _sum else "✅ 开工")
+        else:
+            # —— 首次轮：从这句话里建档，能填多少填多少 ——
+            cat0 = EC.detect_category(req, vision)
+            profile = EC.new_profile(cat0, EC._pick_product_name(req, cat0))
+            profile, filled0 = EC.profile_apply_text(profile, req, cat0)
+            miss = EC.profile_missing(profile, cat0)
+            if miss and not re.search(_SKIP_ASK, req):
+                profile["pending"] = True
+                self._ses_ecom_pend = {"profile": profile, "category": cat0}
+                if src:
+                    say("🖼 产品图已收到（%s）。" % os.path.basename(src))
+                if filled0:
+                    say("📝 已从描述里记下：%s" % "、".join(filled0))
+                return self._ecom_ask_text(miss)
+
         platform = EC.norm_platform(req)
         plan = EC.build_plan(req, vision=vision, photos=[src] if src else [],
-                             platform=platform, llm_fn=self._work_llm())
+                             platform=platform, llm_fn=self._work_llm(),
+                             profile=profile)
         out_dir = EC.out_dir_for(self.cfg, plan["product"])
         try:
             os.makedirs(out_dir, exist_ok=True)
@@ -16773,9 +16877,21 @@ class CompanionWindow(QMainWindow):
             # 真机路径允许自动下 ffmpeg（视频栏目一直是这个行为）；
             # 自检里绝不带这个开关，免得偷偷拉 90MB
             # `parse_detail_count`：用户说「10 张详情图」时按他要的张数切
+            # ★ v0.31.30：先用云端视觉**定位产品**，再按产品实际位置裁局部/细节图。
+            #   真机事故（2026-10-14）：手托项链的实拍图，细节图裁出来全是手指皮肤
+            #   —— "高频能量"判据选中了皮肤纹理和图片上的「2克拉」文字水印。
+            _box = None
+            try:
+                from pasm.cognitive import percept as _PERC
+                _cloud = _PERC.resolve_vision_cloud(self.cfg or {})
+                if _cloud:
+                    _box = _PERC.product_box(src, cloud=_cloud)
+            except Exception:                                # noqa: BLE001
+                _box = None
             r = ER.render_all(plan, src, out_dir, images=images,
                               allow_video_download=True,
-                              detail_count=EC.parse_detail_count(req))
+                              detail_count=EC.parse_detail_count(req),
+                              product_box=_box)
         else:
             r = {"ok": False,
                  "files": {"main": [], "crops": [], "detail_long": "",
@@ -16798,6 +16914,33 @@ class CompanionWindow(QMainWindow):
         except Exception:                                # noqa: BLE001
             logging.exception("电商详情页 html 落盘失败")
             html_p = ""
+
+        # ④-b 商品空间（v0.31.30）：档案落盘 + 自动登记进商品目录 ——
+        #     电商不止一个产品，得有地方放、有地方查（「我有哪些产品」随时问）。
+        try:
+            with open(os.path.join(out_dir, "产品档案.json"), "w",
+                      encoding="utf-8") as f:
+                json.dump(profile or {}, f, ensure_ascii=False, indent=2)
+        except Exception:                                # noqa: BLE001
+            logging.exception("产品档案落盘失败")
+        try:
+            _thumb = ""
+            if r.get("ok") and (r["files"].get("main") or []):
+                try:
+                    _thumb = os.path.relpath(r["files"]["main"][0],
+                                             EC.ecom_root(self.cfg))
+                except Exception:                        # noqa: BLE001
+                    _thumb = r["files"]["main"][0]
+            EC.catalog_upsert(self.cfg, {
+                "name": plan["product"], "category": plan["category"],
+                "platform": plan["platform_label"],
+                "title": plan["title"]["title"], "dir": out_dir,
+                "thumb": _thumb, "detail_html": html_p,
+                "specs": EC.profile_known(profile) if profile else {},
+                "created": time.strftime("%Y-%m-%d %H:%M"),
+            })
+        except Exception:                                # noqa: BLE001
+            logging.exception("商品目录登记失败")
 
         # ⑤ 汇报（每一栏都对应一个真交付物；没做的明说）
         t = plan["title"]

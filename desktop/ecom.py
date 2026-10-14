@@ -38,6 +38,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import time
@@ -535,15 +536,20 @@ def optimize_title(product: str, keywords=None, category: str = "通用",
 
 def build_selling_points(text: str, vision: str, category: str,
                          llm_fn: Optional[Callable] = None,
-                         n: int = 5) -> List[dict]:
-    """5 条卖点。**有模型用模型，没有用「卖点词表 + 类目维度」模板**，并标来源。"""
+                         n: int = 5, facts: str = "") -> List[dict]:
+    """5 条卖点。**有模型用模型，没有用「卖点词表 + 类目维度」模板**，并标来源。
+
+    `facts`：产品档案摘要（"材质=S925银；链长=42cm"）。有它模型才写得具体，
+    没有它只能写"材质方面做了针对性优化"这种空话（v0.31.30 真机教训）。
+    """
     cat = CATEGORIES.get(category) or CATEGORIES["通用"]
     if callable(llm_fn):
         try:
             ask = ("你是电商资深文案。为下面的商品写 %d 条卖点，每条格式："
                    "`标题|一句话说明（20~40字，具体、可感知，禁止极限词）`，"
-                   "只输出 %d 行，不要编号：\n商品：%s\n图片内容：%s"
-                   % (n, n, text, vision or "（无）"))
+                   "只输出 %d 行，不要编号：\n商品：%s\n图片内容：%s\n%s"
+                   % (n, n, text, vision or "（无）",
+                      ("\n" + facts) if facts else ""))
             r = str(llm_fn(ask) or "")
             rows = []
             for ln in r.splitlines():
@@ -607,6 +613,467 @@ def build_spec_rows(category: str, text: str = "", brand: str = "",
     for k, v in (extra or {}).items():
         rows.append([str(k), str(v)])
     return rows
+
+
+# --------------------------------------------------------------------------
+# 产品档案（v0.31.30）：**先录信息，再生成**
+# --------------------------------------------------------------------------
+# 真机问题（2026-10-14）：用户只说一句话就开始生成，参数表 7 行全是「待补充」，
+# 5 条卖点是同一句模板话重复 5 遍（"材质方面做了针对性优化，具体参数见下方参数表"）。
+# 根因：**没有"先录产品信息"这个环节**。这里补上——按类目给出该录哪些属性、
+# 缺的先问（不生成），用户回答后回填档案，文案/参数表/详情页全部用真实信息。
+# 铁律：用户说「未知」就记「未知」，文案里**不写这一项**，绝不编数据。
+
+#: 类目 → 属性录入字段。`required=True` 是"没有就没法写文案/平台必填"的。
+PROFILE_FIELDS: Dict[str, List[dict]] = {
+    "饰品": [
+        {"key": "material", "label": "材质", "required": True,
+         "ask": "材质是什么？（如 S925银 / 18K金 / 钛钢 / 淡水珍珠）"},
+        {"key": "chain_len", "label": "链长", "required": True,
+         "ask": "链长多少？（如 42cm；手链报内径）"},
+        {"key": "weight", "label": "重量", "required": False,
+         "ask": "重量多少？（如 3.2g，没有可回「未知」）"},
+        {"key": "pendant_size", "label": "吊坠尺寸", "required": False,
+         "ask": "吊坠尺寸？（如 8×12mm，没有可回「未知」）"},
+        {"key": "color", "label": "颜色", "required": False,
+         "ask": "颜色/色调？（如 银色 / 玫瑰金）"},
+        {"key": "craft", "label": "工艺", "required": False,
+         "ask": "工艺特点？（如 爪镶 / 微镶 / 拉丝，没有可回「未知」）"},
+        {"key": "cert", "label": "证书", "required": False,
+         "ask": "有检测证书吗？（有 / 无）"},
+        {"key": "gift_box", "label": "包装", "required": False,
+         "ask": "包装什么样？（如 礼盒+贺卡，没有可回「未知」）"},
+    ],
+    "服装": [
+        {"key": "fabric", "label": "面料成分", "required": True,
+         "ask": "面料成分？（如 95%棉+5%氨纶）"},
+        {"key": "sizes", "label": "尺码", "required": True,
+         "ask": "有哪些尺码？（如 S/M/L/XL）"},
+        {"key": "color", "label": "颜色", "required": True,
+         "ask": "有哪些颜色？（如 黑 / 白 / 雾蓝）"},
+        {"key": "season", "label": "适用季节", "required": False,
+         "ask": "适合什么季节穿？（如 春秋）"},
+        {"key": "wash", "label": "洗涤方式", "required": False,
+         "ask": "怎么洗？（如 机洗冷水 / 手洗，没有可回「未知」）"},
+        {"key": "style", "label": "版型", "required": False,
+         "ask": "版型？（如 宽松 / 修身 / H型）"},
+    ],
+    "食品": [
+        {"key": "net_weight", "label": "净含量", "required": True,
+         "ask": "净含量多少？（如 500g/袋）"},
+        {"key": "ingredients", "label": "配料表", "required": True,
+         "ask": "主要配料？（如 巴旦木、海盐）"},
+        {"key": "shelf_life", "label": "保质期", "required": True,
+         "ask": "保质期多久？（如 180 天）"},
+        {"key": "storage", "label": "储存条件", "required": False,
+         "ask": "怎么储存？（如 阴凉干燥处密封保存）"},
+        {"key": "origin", "label": "产地", "required": False,
+         "ask": "产地？（如 新疆阿克苏）"},
+    ],
+    "美妆": [
+        {"key": "net_weight", "label": "净含量", "required": True,
+         "ask": "净含量？（如 30ml）"},
+        {"key": "ingredients", "label": "主要成分", "required": True,
+         "ask": "主要成分？（如 烟酰胺 5% / 玻尿酸）"},
+        {"key": "skin", "label": "适用肤质", "required": True,
+         "ask": "适用什么肤质？（如 干皮 / 油皮 / 敏感肌）"},
+        {"key": "efficacy", "label": "功效", "required": False,
+         "ask": "主要功效？（如 保湿 / 提亮，没有可回「未知」）"},
+        {"key": "shelf_life", "label": "保质期", "required": False,
+         "ask": "保质期？（如 未开封 3 年）"},
+    ],
+    "母婴": [
+        {"key": "age", "label": "适用年龄", "required": True,
+         "ask": "适用多大宝宝？（如 0-6 个月 / 1-3 岁）"},
+        {"key": "material", "label": "材质", "required": True,
+         "ask": "材质？（如 A类纯棉 / 食品级硅胶）"},
+        {"key": "spec", "label": "规格", "required": True,
+         "ask": "规格尺寸？（如 60×90cm）"},
+        {"key": "cert", "label": "安全认证", "required": False,
+         "ask": "有哪些认证？（如 3C / A类，没有可回「未知」）"},
+    ],
+    "宠物": [
+        {"key": "pet", "label": "适用宠物", "required": True,
+         "ask": "给什么宠物用？（如 猫 / 狗 / 通用）"},
+        {"key": "net_weight", "label": "规格", "required": True,
+         "ask": "规格/净含量？（如 2kg / 10L）"},
+        {"key": "ingredients", "label": "配料", "required": False,
+         "ask": "主要原料？（如 鸡肉+燕麦，没有可回「未知」）"},
+        {"key": "shelf_life", "label": "保质期", "required": False,
+         "ask": "保质期？（如 18 个月）"},
+    ],
+    "数码": [
+        {"key": "model", "label": "型号", "required": True,
+         "ask": "型号？（如 XX-Pro 2026款）"},
+        {"key": "spec", "label": "规格", "required": True,
+         "ask": "关键规格？（如 10000mAh / 65W / 蓝牙5.3）"},
+        {"key": "warranty", "label": "质保", "required": False,
+         "ask": "质保多久？（如 一年换新）"},
+        {"key": "compat", "label": "兼容性", "required": False,
+         "ask": "兼容哪些设备？（如 安卓/iOS/PC）"},
+    ],
+    "家居": [
+        {"key": "material", "label": "材质", "required": True,
+         "ask": "材质？（如 实木 / 304不锈钢 / 棉麻）"},
+        {"key": "size", "label": "尺寸", "required": True,
+         "ask": "尺寸？（如 30×20×15cm）"},
+        {"key": "color", "label": "颜色", "required": False,
+         "ask": "颜色？（如 原木色 / 白色）"},
+        {"key": "load", "label": "承重", "required": False,
+         "ask": "承重多少？（如 10kg，没有可回「未知」）"},
+    ],
+    "通用": [
+        {"key": "material", "label": "材质", "required": True,
+         "ask": "材质/主要成分？（如 不锈钢 / 棉 / PVC）"},
+        {"key": "size", "label": "规格", "required": True,
+         "ask": "规格尺寸？（如 20×15cm / 500ml）"},
+        {"key": "color", "label": "颜色", "required": False,
+         "ask": "颜色？（如 黑 / 白 / 原色）"},
+        {"key": "weight", "label": "重量", "required": False,
+         "ask": "重量？（如 350g，没有可回「未知」）"},
+        {"key": "origin", "label": "产地", "required": False,
+         "ask": "产地？（如 广东深圳）"},
+    ],
+}
+
+#: 属性别名 → key（用户不会照我们的 key 说话："链长"他会说"项链多长"）
+_PROFILE_ALIAS = {
+    "material": ("材质", "材料", "质地"),
+    "chain_len": ("链长", "项链长度", "长度", "多长"),
+    "weight": ("重量", "克重", "多重"),
+    "pendant_size": ("吊坠尺寸", "吊坠大小", "坠子尺寸"),
+    "color": ("颜色", "色调", "色系"),
+    "craft": ("工艺", "做工"),
+    "cert": ("证书", "检测证书", "认证", "安全认证"),
+    "gift_box": ("包装", "礼盒"),
+    "fabric": ("面料", "面料成分", "成分", "材质"),
+    "sizes": ("尺码", "尺寸规格", "大小"),
+    "season": ("季节", "适用季节"),
+    "wash": ("洗涤", "洗法", "清洗"),
+    "style": ("版型", "款式"),
+    "net_weight": ("净含量", "含量", "容量", "规格"),
+    "ingredients": ("配料", "配料表", "成分", "原料"),
+    "shelf_life": ("保质期", "保鲜期"),
+    "storage": ("储存", "保存", "存放"),
+    "origin": ("产地", "产地来源"),
+    "skin": ("肤质", "适用肤质"),
+    "efficacy": ("功效", "效果"),
+    "age": ("适用年龄", "年龄段", "多大"),
+    "spec": ("规格", "尺寸", "参数"),
+    "pet": ("适用宠物", "宠物", "适用对象"),
+    "model": ("型号", "款号"),
+    "warranty": ("质保", "保修", "售后保障"),
+    "compat": ("兼容", "兼容性", "适配"),
+    "size": ("尺寸", "大小", "规格"),
+    "load": ("承重", "承重力"),
+}
+
+#: 说"不知道"的表达 → 记「未知」，不再追问
+_UNKNOWN_WORDS = ("未知", "不知道", "不清楚", "不确定", "没有", "无", "暂无", "不详",
+                  "不确定的", "说不好", "不记得", "忘了", "skip", "跳过")
+
+#: 已知材质 → 一句**材料学常识级**的卖点（不是编造：S925 就是 92.5% 银，
+#: 比普通合金更不易致敏是公认属性）。不认识的材质一律走中性表述。
+_MATERIAL_FACTS = (
+    (("s925", "925银", "纯银", "足银"), "通体S925银，比普通合金更亲肤，久戴不易发黑"),
+    (("18k", "18K", "玫瑰金", "k金"), "18K金电镀工艺，色泽耐久不易褪"),
+    (("钛钢", "不锈钢316", "316l"), "钛钢/316L材质，防敏防汗，日常佩戴省心"),
+    (("淡水珍珠", "珍珠"), "天然淡水珍珠，光泽柔和不张扬"),
+    (("纯棉", "全棉", "精梳棉"), "纯棉面料，亲肤透气不闷热"),
+    (("304不锈钢", "不锈钢"), "304不锈钢，防锈耐用易清洁"),
+    (("食品级硅胶", "硅胶"), "食品级硅胶，无异味耐高温"),
+    (("实木", "橡木", "胡桃木"), "实木材质，纹理自然环保无甲醛添加"),
+    (("a类", "A类"), "A类安全标准，婴幼儿也可贴身接触"),
+)
+
+
+def profile_fields(category: str) -> List[dict]:
+    """类目对应的录入字段（未知类目走「通用」）。"""
+    return [dict(f) for f in PROFILE_FIELDS.get(category) or PROFILE_FIELDS["通用"]]
+
+
+def new_profile(category: str, name: str = "") -> dict:
+    """一份空档案。`values` 里**只有用户真给过的值**。"""
+    now = time.strftime("%Y-%m-%d %H:%M")
+    return {"name": str(name or ""), "category": str(category or "通用"),
+            "values": {}, "created": now, "updated": now}
+
+
+def _norm_val(v: str) -> str:
+    v = str(v or "").strip().strip("。；;，,、 ")
+    return v[:40]
+
+
+def profile_apply_text(profile: dict, text: str, category: str = "") -> dict:
+    """把用户这句话里能对上的属性**回填**进档案。返回 (profile, filled)。
+
+    认识「材质：S925银」「链长42cm」「重量3.2g」这些写法；也认「未知/不知道」
+    —— 记成「未知」，以后不再追问（追问会把人烦死）。
+    """
+    category = category or profile.get("category") or "通用"
+    filled = []
+    text = str(text or "")
+    low = text.lower()
+    is_unknown = any(w in text for w in _UNKNOWN_WORDS)
+    for f in profile_fields(category):
+        key, label = f["key"], f["label"]
+        aliases = _PROFILE_ALIAS.get(key) or (label,)
+        got = ""
+        for a in aliases:
+            # 「材质：S925银」「材质是S925银」「材质 S925银」「链长42cm」
+            m = re.search(re.escape(a) + r"\s*[是为：:的]?\s*([^\n；;，,。]{1,30})", text)
+            if m:
+                got = _norm_val(m.group(1))
+                break
+        if got:
+            if any(got.startswith(w) or w == got for w in _UNKNOWN_WORDS):
+                got = "未知"
+            if got and got not in ("的", "是", "了"):
+                profile.setdefault("values", {})[key] = got
+                filled.append(label)
+        elif is_unknown and key not in (profile.get("values") or {}):
+            # 用户笼统地说"不知道" → 这一轮问的全部记未知，别追第二轮
+            profile.setdefault("values", {})[key] = "未知"
+    if filled:
+        profile["updated"] = time.strftime("%Y-%m-%d %H:%M")
+    return profile, filled
+
+
+def profile_missing(profile: dict, category: str = "") -> List[dict]:
+    """还没录的字段。**必填优先**，一轮最多问 4 个。
+
+    ★「未知」**不算缺失** —— 它是用户明说"没有/不知道"的记号
+    （`profile_apply_text` 承诺过：记成「未知」，以后不再追问，追问会把人烦死）。
+    旧实现把「未知」又当缺失问回来，真机表现就是：用户答完"其他不知道"，
+    第二轮还揪着同样的问题问（v0.31.30 端到端验证抓到的）。
+    """
+    category = category or profile.get("category") or "通用"
+    vals = profile.get("values") or {}
+    req, opt = [], []
+    for f in profile_fields(category):
+        if str(vals.get(f["key"]) or "").strip():
+            continue
+        (req if f.get("required") else opt).append(f)
+    return (req + opt)[:4]
+
+
+def profile_known(profile: dict) -> Dict[str, str]:
+    """只取**真知道**的值（「未知」和空都不算）。"""
+    return {k: str(v) for k, v in (profile.get("values") or {}).items()
+            if str(v or "").strip() and str(v).strip() != "未知"}
+
+
+def profile_summary(profile: dict) -> str:
+    """一行摘要，给提示词/目录用。"""
+    vals = profile_known(profile)
+    if not vals:
+        return ""
+    labels = {}
+    for f in profile_fields(profile.get("category") or "通用"):
+        labels[f["key"]] = f["label"]
+    return "；".join("%s=%s" % (labels.get(k, k), v) for k, v in vals.items())
+
+
+def _key_of_label(labels: Dict[str, str], aliases: Dict[str, tuple],
+                  head) -> str:
+    """卖点标题（「长度」）→ 档案 key（`chain_len`）。认标签和别名。"""
+    h = str(head or "").strip()
+    for k, lab in labels.items():
+        if lab == h:
+            return k
+    for k, names in aliases.items():
+        if h in [str(x) for x in names]:
+            return k
+    return ""
+
+
+def profile_facts_for_llm(profile: dict) -> str:
+    """给大模型的**真实产品信息**（没有就返回空串，别把"未知"喂给它）。"""
+    s = profile_summary(profile)
+    return ("已知产品信息（必须用上，没有的项不要编）：%s" % s) if s else ""
+
+
+def apply_profile_to_plan(plan: dict, profile: Optional[dict]) -> dict:
+    """用档案里的真实值**升级**方案：参数表填实、卖点去模板化。
+
+    这是"录了信息"真正兑现的地方——不改这一步，录了也白发。
+    """
+    if not profile:
+        return plan
+    vals = profile_known(profile)
+    labels = {f["key"]: f["label"]
+              for f in profile_fields(profile.get("category") or plan.get("category") or "通用")}
+    # ---- ① 参数表：有真值就填，没有就保持「待补充」（诚实）----
+    for row in plan.get("spec_rows") or []:
+        for k, v in vals.items():
+            if labels.get(k) == row[0] and row[1] in ("", "待补充"):
+                row[1] = v
+    # ---- ② 卖点：把"材质方面做了针对性优化，具体参数见下方参数表"这种
+    #      模板话换成有信息量的句子 ----
+    # 匹配要认**别名**：类目维度叫「长度」，档案字段叫「链长」——不认别名
+    # 就会出现"链长=42cm 录了，长度那条卖点还是空话"（第一版就栽在这）。
+    head2val: Dict[str, str] = {}
+    for k, v in vals.items():
+        for name in ((labels.get(k),) + (_PROFILE_ALIAS.get(k) or ())):
+            if name:
+                head2val.setdefault(str(name), v)
+    for p in plan.get("selling_points") or []:
+        body = str(p.get("body") or "")
+        if "方面做了针对性优化" not in body:
+            continue
+        v = head2val.get(str(p.get("head") or ""))
+        if not v:
+            continue
+        fact = ""
+        for keys, sent in _MATERIAL_FACTS:
+            if any(x in v for x in keys):
+                fact = sent
+                break
+        if fact:
+            # 值里已含材质词（"S925银"）→ 直接用常识句，别把同一个词写两遍
+            p["body"] = fact if any(x in fact for x in v.split()) or v in fact \
+                else "%s，%s" % (v, fact)
+        else:
+            # 中性表述：只陈述录到的值，不额外编功效
+            _lead = {"craft": "采用%s工艺", "style": "%s版型",
+                     "wash": "%s，打理省心", "chain_len": "链长%s",
+                     "size": "尺寸%s", "sizes": "涵盖%s多个尺码",
+                     "weight": "整件约%s，轻盈不压身"}.get(
+                         _key_of_label(labels, _PROFILE_ALIAS, p.get("head")), "%s")
+            p["body"] = (_lead % v if "%s" in _lead else
+                         "%s（%s），具体见下方参数表" % (v, p.get("head")))
+        p["source"] = "profile"
+    # ---- ③ 详情页首屏：把真实材质/规格写进导语 ----
+    if vals:
+        plan["profile"] = dict(vals)
+        plan["profile_summary"] = profile_summary(profile)
+    return plan
+
+
+# --------------------------------------------------------------------------
+# 商品空间 / 目录（v0.31.30）：多个产品本地可查
+# --------------------------------------------------------------------------
+def ecom_root(cfg: dict) -> str:
+    """电商产物根目录：`<工作根>/图片/电商`（与 `out_dir_for` 同一套推导）。"""
+    try:
+        import workspace as WS
+        base = WS.cat_dir("image", cfg)
+    except Exception:                                    # noqa: BLE001
+        base = os.path.join(os.path.expanduser("~"), "PASM工作", "图片")
+    return os.path.join(base, "电商")
+
+
+def catalog_path(cfg: dict) -> str:
+    return os.path.join(ecom_root(cfg), "商品目录.json")
+
+
+def catalog_html_path(cfg: dict) -> str:
+    return os.path.join(ecom_root(cfg), "商品目录.html")
+
+
+def catalog_load(cfg: dict) -> List[dict]:
+    """读商品目录。文件不在/坏了都返回空列表（目录不是关键路径，绝不炸）。"""
+    p = catalog_path(cfg)
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            d = json.load(f)
+        items = d.get("items") if isinstance(d, dict) else d
+        return [x for x in (items or []) if isinstance(x, dict)]
+    except Exception:                                    # noqa: BLE001
+        return []
+
+
+def catalog_upsert(cfg: dict, entry: dict) -> List[dict]:
+    """按 `dir` 去重 upsert 一条产品，写回 json 并**顺手刷新 html**。"""
+    items = [x for x in catalog_load(cfg) if x.get("dir") != entry.get("dir")]
+    items.insert(0, dict(entry))
+    root = ecom_root(cfg)
+    try:
+        os.makedirs(root, exist_ok=True)
+        with open(catalog_path(cfg), "w", encoding="utf-8") as f:
+            json.dump({"items": items, "updated": time.strftime("%Y-%m-%d %H:%M")},
+                      f, ensure_ascii=False, indent=1)
+        with open(catalog_html_path(cfg), "w", encoding="utf-8") as f:
+            f.write(render_catalog_html(items))
+    except Exception:                                    # noqa: BLE001
+        logging.exception("商品目录写入失败")
+    return items
+
+
+def render_catalog_html(items: List[dict]) -> str:
+    """自包含的商品目录页（缩略图 + 属性 + 进目录链接），双击就能看。
+
+    ⚠️ 模板里 CSS 全是 `width:100%` 这种百分号，**绝不能用 `%` 格式化**
+    （第一版就这么崩的：`ValueError: unsupported format character ';'`）。
+    改用 `str.replace` 占位符，与内容里的 `%` 再无冲突。
+    """
+    def esc(s):
+        return (str(s or "").replace("&", "&amp;").replace("<", "&lt;")
+                .replace(">", "&gt;").replace('"', "&quot;"))
+    cards = []
+    for it in items:
+        specs = it.get("specs") or {}
+        sp = "".join("<tr><td>%s</td><td>%s</td></tr>" % (esc(k), esc(v))
+                     for k, v in list(specs.items())[:8])
+        thumb = it.get("thumb") or ""
+        link = it.get("detail_html") or ""
+        open_btn = ('<a class="btn" href="%s">打开详情页</a>' % esc(link)
+                    if link else "")
+        cards.append("""
+      <div class="card">
+        <div class="thumb">%s</div>
+        <div class="body">
+          <div class="nm">%s</div>
+          <div class="meta">%s · %s</div>
+          <table class="specs">%s</table>
+          <div class="acts">
+            <a class="btn" href="%s">打开文件夹</a>%s
+          </div>
+        </div>
+      </div>""" % (('<img src="%s" alt="">' % esc(thumb)) if thumb else "（无图）",
+                    esc(it.get("name") or "未命名"),
+                    esc(it.get("category") or ""), esc(it.get("platform") or ""),
+                    sp, esc(it.get("dir") or "."), open_btn))
+    body = "".join(cards) or '<div class="sub">还没有产品，去电商工种生成第一个吧。</div>'
+    return (_CATALOG_HTML
+            .replace("__COUNT__", str(len(items)))
+            .replace("__UPDATED__", esc(time.strftime("%Y-%m-%d %H:%M")))
+            .replace("__CARDS__", body))
+
+
+#: 目录页模板。占位符 `__COUNT__` / `__UPDATED__` / `__CARDS__` 用 replace 填，
+#: 这样 CSS 里的百分号可以随便写（见 render_catalog_html 的坑注）。
+_CATALOG_HTML = """<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>商品目录</title>
+<style>
+ body{font-family:"Microsoft YaHei",system-ui,sans-serif;background:#f6f7f9;
+      color:#222;margin:0;padding:24px}
+ h1{font-size:22px;margin:0 0 4px}
+ .sub{color:#777;font-size:13px;margin-bottom:20px}
+ .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));
+       gap:16px}
+ .card{background:#fff;border-radius:12px;overflow:hidden;
+       box-shadow:0 1px 4px rgba(0,0,0,.08);display:flex;flex-direction:column}
+ .thumb{height:180px;background:#eceff3;display:flex;align-items:center;
+        justify-content:center;color:#999;font-size:13px}
+ .thumb img{max-width:100%;max-height:100%;object-fit:contain}
+ .body{padding:14px 16px}
+ .nm{font-size:16px;font-weight:600;margin-bottom:4px}
+ .meta{font-size:12px;color:#888;margin-bottom:8px}
+ table.specs{width:100%;font-size:12px;border-collapse:collapse;margin-bottom:10px}
+ table.specs td{padding:3px 0;border-bottom:1px solid #f0f0f0}
+ table.specs td:first-child{color:#999;width:74px}
+ .acts{display:flex;gap:8px}
+ .btn{font-size:12px;padding:5px 12px;border-radius:6px;background:#2f6bff;
+      color:#fff;text-decoration:none}
+ .btn:hover{background:#1f56d6}
+</style></head><body>
+<h1>商品目录</h1>
+<div class="sub">共 __COUNT__ 个产品 · 由 PASM Studio 电商套件生成 · 更新于 __UPDATED__</div>
+<div class="grid">__CARDS__
+</div></body></html>"""
 
 
 def build_crops(category: str, n: int = 3) -> List[dict]:
@@ -814,17 +1281,22 @@ def build_detail_sections(product: str, category: str, points: List[dict],
 
 
 def build_copy(product: str, category: str, points: List[dict], kws: List[str],
-               price: str = "", llm_fn: Optional[Callable] = None) -> dict:
-    """详情文案四件套：短描述 / 长描述 / 直播口播 / SEO 关键词串。"""
+               price: str = "", llm_fn: Optional[Callable] = None,
+               facts: str = "") -> dict:
+    """详情文案四件套：短描述 / 长描述 / 直播口播 / SEO 关键词串。
+
+    `facts`：产品档案摘要。文案要想具体，就得把真实参数喂给模型。
+    """
     if callable(llm_fn):
         try:
             ask = ("你是电商详情页文案。为下面商品写 4 段，用下面的分隔标签输出，"
                    "不要违禁词（最/第一/顶级/根治等）：\n"
                    "[短]40~60字卖点概述\n[长]200~300字详情描述，分 2~3 小段\n"
                    "[口播]80~120字直播间口播稿，口语化\n[SEO]10 个搜索关键词，用空格分隔\n"
-                   "商品：%s\n类目：%s\n已知卖点：%s"
+                   "商品：%s\n类目：%s\n已知卖点：%s%s"
                    % (product, category,
-                      "；".join("%s-%s" % (p["head"], p["body"]) for p in points)))
+                      "；".join("%s-%s" % (p["head"], p["body"]) for p in points),
+                      ("\n" + facts) if facts else ""))
             r = str(llm_fn(ask) or "")
             got = {}
             cur = ""
@@ -974,11 +1446,14 @@ def build_plan(text: str = "", vision: str = "", photos=None,
                brand: str = "", price: str = "", core: str = "",
                n_main: int = 5, n_crops: int = 3,
                llm_fn: Optional[Callable] = None,
-               specs_extra=None) -> dict:
+               specs_extra=None, profile: Optional[dict] = None) -> dict:
     """一次生成完整电商方案（本模块的**唯一主入口**）。
 
     所有字段都是"可渲染"的结构；`sources` 里如实标注每块内容的来源
-    （`llm` = 大模型写的 / `offline` = 类目模板拼的）。
+    （`llm` = 大模型写的 / `offline` = 类目模板拼的 / `profile` = 用户录的产品档案）。
+
+    `profile`：产品档案（`new_profile` + `profile_apply_text` 攒出来的那份）。
+    传了就等于告诉方案"这些参数是真的"——参数表填实、卖点去模板化。
     """
     text = str(text or "")
     vision = str(vision or "")
@@ -998,16 +1473,19 @@ def build_plan(text: str = "", vision: str = "", photos=None,
     # ★ v0.31.28：关键词**走模型**产出（拿不到才用类目词表兜底）。
     #   旧实现是把用户原句按 2~6 字机械切片 → 真机产出「上述的图中项 / 我需要你帮我」
     #   这种完全不可用的碎片（回复的"来源标注"里唯独没有关键词，就是这条线索）。
+    # ★ v0.31.30：有产品档案时，把真实属性喂给模型（材质=S925银 这种），
+    #   它写出来的卖点/文案才是具体的，不再是同一句模板话重复 5 遍。
+    _pfacts = profile_facts_for_llm(profile) if profile else ""
     kws, kws_src = build_keywords(product, cat, text, vision, 8, llm_fn)
     t = optimize_title(product, kws, cat, brand, pid, core, llm_fn)
-    points = build_selling_points(text, vision, cat, llm_fn, n=5)
+    points = build_selling_points(text, vision, cat, llm_fn, n=5, facts=_pfacts)
     crops = build_crops(cat, n_crops)
     rows = build_spec_rows(cat, text, brand, price, specs_extra)
-    copy = build_copy(product, cat, points, kws, price, llm_fn)
+    copy = build_copy(product, cat, points, kws, price, llm_fn, facts=_pfacts)
     violations = check_forbidden(" ".join(
         [t["title"]] + ["%s%s" % (p["head"], p["body"]) for p in points] +
         [copy["short"], copy["long"], copy["live"]]))
-    return {
+    _plan = {
         "kind": "ecom",
         "platform": pid, "platform_label": spec["label"], "spec": spec,
         "category": cat, "brand": str(brand or ""), "price": str(price or ""),
@@ -1037,6 +1515,9 @@ def build_plan(text: str = "", vision: str = "", photos=None,
         ] + ([("%s：%s" % (v["group"], v["word"])) for v in violations] and
              ["⚠️ 文案里检测到违禁词风险，见下方「违禁词体检」，建议按提示替换。"] or []),
     }
+    # ★ v0.31.30：档案回填（参数表填实 + 卖点去模板化）——录了信息就得兑现
+    apply_profile_to_plan(_plan, profile)
+    return _plan
 
 
 # --------------------------------------------------------------------------
@@ -1630,10 +2111,75 @@ def selftest() -> int:
           "产出目录带时间戳（同标题不互相覆盖）", d)
 
     # ---------- 健壮性 ----------
+    _pu = new_profile("服装", "测试外套")
+    profile_apply_text(_pu, "面料：涤纶，尺码：L，颜色：黑，其他不知道", "服装")
+    check(profile_missing(_pu, "服装") == [],
+          "★ 用户答完「其他不知道」→ 无缺项不再追问（未知≠缺失，"
+          "旧实现会把未知问回来）")
     check(bool(build_plan("")["title"]["title"]), "空输入不炸且仍出方案")
     check(bool(build_plan("防水" * 3000)["product"]), "超长输入不炸")
     check(bool(build_plan("😀🎉" * 40)["product"]), "乱码/表情不炸")
     check(build_plan("x", photos=None)["photos"] == [], "photos 传 None 不炸")
+
+    # ---------- v0.31.30 产品档案：先录信息，再生成 ----------
+    # 真机事故：没说一句话就生成 → 参数表 7 行全「待补充」、5 条卖点同一句模板话。
+    prof = new_profile("饰品", "示范项链")
+    _miss = profile_missing(prof, "饰品")
+    check(_miss and _miss[0]["label"] == "材质",
+          "空档案先问必填项（材质第一）", [f["label"] for f in _miss])
+    prof, filled = profile_apply_text(prof, "材质：S925银，链长42cm", "饰品")
+    check(filled == ["材质", "链长"] and prof["values"]["material"] == "S925银",
+          "「材质：S925银」「链长42cm」两种写法都能回填", filled)
+    check(len(profile_missing(prof, "饰品")) >= 2,
+          "录了两项后仍缺项会继续问（不擅自开工）")
+    prof, _f2 = profile_apply_text(prof, "重量3.2g，其他不知道", "饰品")
+    check(prof["values"].get("pendant_size") == "未知",
+          "说「不知道」记未知，绝不追第二轮", prof["values"])
+    check("未知" not in str(profile_known(prof)),
+          "★ profile_known 只还真实值（未知不喂给文案）", profile_known(prof))
+    _p_plan = build_plan("S925银项链女锁骨链", platform="taobao", profile=prof)
+    _rows = {r[0]: r[1] for r in _p_plan["spec_rows"]}
+    check(_rows.get("材质") == "S925银" and _rows.get("重量") == "3.2g",
+          "★ 档案值真的填进参数表（不再是待补充）", _rows)
+    _mat = [p for p in _p_plan["selling_points"] if p["head"] == "材质"]
+    check(_mat and "S925银" in _mat[0]["body"] and "针对性优化" not in _mat[0]["body"],
+          "★ 材质卖点从模板话变成具体句", _mat[0]["body"] if _mat else None)
+    _len = [p for p in _p_plan["selling_points"] if p["head"] == "长度"]
+    check(_len and "42cm" in _len[0]["body"],
+          "★ 别名匹配：类目维度「长度」吃到档案「链长」的值", _len[0]["body"] if _len else None)
+    _no = build_plan("S925银项链女锁骨链", platform="taobao")
+    check(all("针对性优化" in p["body"]
+              for p in _no["selling_points"] if p["source"] == "offline"),
+          "★ 反例：**没录档案就不许编**，卖点保持模板话（诚实）")
+    check("S925" not in str(_no.get("spec_rows")),
+          "★ 反例：没录档案时参数表不许出现真实值")
+
+    # ---------- v0.31.30 商品空间/目录：多产品本地可查 ----------
+    import tempfile as _tf
+    _tmp = _tf.mkdtemp(prefix="ecom_selftest_")
+    _cfg = {"ws_dir": _tmp}                    # ★ 隔离：绝不碰用户真实目录
+    _root = EC_root = ecom_root(_cfg)
+    check(_root.startswith(_tmp), "目录根走隔离工作区（自检不落用户桌面）", _root)
+    for _n in ("产品甲", "产品乙"):
+        os.makedirs(os.path.join(_root, _n), exist_ok=True)
+    catalog_upsert(_cfg, {"name": "甲", "dir": os.path.join(_root, "产品甲"),
+                          "title": "甲-初版", "specs": {"材质": "S925"}})
+    catalog_upsert(_cfg, {"name": "乙", "dir": os.path.join(_root, "产品乙"),
+                          "title": "乙", "specs": {}})
+    catalog_upsert(_cfg, {"name": "甲", "dir": os.path.join(_root, "产品甲"),
+                          "title": "甲-改版", "specs": {"材质": "S925", "重量": "3g"}})
+    _items = catalog_load(_cfg)
+    check(len(_items) == 2, "同目录重复生成只算一个产品（按 dir 去重）", len(_items))
+    check(_items[0]["title"] == "甲-改版",
+          "★ 重新生成后条目被更新且置顶（不是留一条旧的）", _items[0]["title"])
+    check(os.path.isfile(catalog_path(_cfg)) and os.path.isfile(catalog_html_path(_cfg)),
+          "目录落盘 json + html 两个文件")
+    _html = open(catalog_html_path(_cfg), encoding="utf-8").read()
+    check(_html.count('class="card"') == 2 and "width:100%" in _html,
+          "★ 目录 html 每产品一张卡片（CSS 百分号不再炸格式化）")
+    check(len(render_catalog_html([])) > 100, "空目录也能渲染（不崩）")
+    check(catalog_load({"ws_dir": os.path.join(_tmp, "不存在")}) == [],
+          "目录文件不存在时返回空列表（不炸）")
 
     print("-" * 46)
     print("ecom 自检：%d 项，%s" % (passed + failed,

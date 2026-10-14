@@ -283,48 +283,173 @@ def pro_matte(src, keep_shadow: bool = True):
     return out, info
 
 
+def pro_matte_product(src, box=None, keep_shadow: bool = True):
+    """**手持 / 复杂底**实拍的专业去底（桥到 imgmatte.matte_product）。
+
+    与 `pro_matte` 的分工：`pro_matte` 走"四边多背景色建模 + shared matting"，
+    要求背景相对干净；手持图（手紧贴产品、底色不止一种、还有文字水印）会被它
+    判「背景过于复杂」整体拒绝，白底主图只能垫白画布——而淘宝/京东的搜索位与
+    放大镜要的是**真白底**。`matte_product` 改用「产品框 + 肤色排除 + 背景色
+    距离」三判据，并对不可靠的结果**诚实拒绝**。
+
+    返回 `(QImage, info)`，`info.mode = "product"`。不可用时返回 `(src, info)`
+    且 `info["applied"]=False`，`info["reason"]` 说清为什么不敢抠。
+    """
+    try:
+        import imgmatte as IM
+    except Exception:                                        # noqa: BLE001
+        IM = None
+    A = _to_np(src)
+    if IM is None or A is None or not IM.available():
+        return src, {"applied": False, "mode": "product",
+                     "reason": "numpy 不可用"}
+    h, w = A.shape[:2]
+    alpha, info = IM.matte_product(A.tobytes(), w, h, box,
+                                   keep_shadow=keep_shadow)
+    info = dict(info or {})
+    info["mode"] = "product"
+    if not info.get("applied"):
+        return src, info
+    # 与 pro_matte 同一套去色溢出：不除白边，白底图上产品周围永远一圈发白毛边
+    rgba = IM.decontaminate(A.tobytes(), alpha, w, h, bg=(255, 255, 255))
+    q = _qt()
+    out = q["QImage"](rgba, w, h, w * 4,
+                      q["QImage"].Format.Format_RGBA8888).copy()
+    try:
+        import numpy as n
+        al = n.frombuffer(alpha, n.uint8).reshape(h, w).astype(n.float32) / 255.0
+        solid = al > 0.85
+        if solid.any():
+            lum = (A[:, :, :3].astype(n.float32) @
+                   n.array([0.299, 0.587, 0.114], n.float32))
+            info["fg_luma"] = round(float(lum[solid].mean()), 1)
+    except Exception:                                        # noqa: BLE001
+        pass
+    return out, info
+
+
 # --------------------------------------------------------------------------
-# 自动挑细节区域（高频能量）
+# 自动挑细节区域
 # --------------------------------------------------------------------------
+def _energy_grid(src, grid: int = 3, sz: int = 96):
+    """把图缩到 sz×sz，按 grid×grid 网格算**高频能量**（相邻像素差之和）。
+
+    纯色格 ≈ 0，有纹理/文字/边缘的格明显更大。返回 grid×grid 的二维列表。
+    """
+    q = _qt()
+    small = src.scaled(sz, sz, q["Qt"].AspectRatioMode.IgnoreAspectRatio,
+                       q["Qt"].TransformationMode.SmoothTransformation)
+    g = max(2, sz // max(2, grid))
+    vals = [small.pixelColor(x, y).value() for y in range(sz) for x in range(sz)]
+    cells = []
+    for cy in range(grid):
+        row = []
+        for cx in range(grid):
+            e = 0
+            for y in range(cy * g, min((cy + 1) * g, sz - 1)):
+                base = y * sz
+                for x in range(cx * g, min((cx + 1) * g, sz - 1)):
+                    v = vals[base + x]
+                    e += abs(v - vals[base + x + 1]) + abs(v - vals[base + sz + x])
+            row.append(e)
+        cells.append(row)
+    return cells
+
+
 def pick_detail_boxes(src, n: int = 3, grid: int = 3, box_rel: float = 0.38) -> List[List[float]]:
     """按 3×3 网格算高频能量，挑信息量最大的 n 格 → 相对坐标框。
 
     判据：格内所有"右邻差 + 下邻差"之和。纯色格 ≈ 0，有纹理/文字的格明显更大。
     全图都平（纯色素材图）→ 返回空列表，调用方用 `ecom.build_crops` 的兜底值。
+
+    ⚠️ 这个判据**分不清"产品"和"杂讯"**：手指皮肤的纹理、图片上的文字水印
+    同样是高频。v0.31.30 起优先走 `pick_product_boxes`（视觉模型定位产品），
+    本函数只作"没有云端视觉"时的兜底。
     """
-    q = _qt()
     try:
-        small = src.scaled(96, 96, q["Qt"].AspectRatioMode.IgnoreAspectRatio,
-                           q["Qt"].TransformationMode.SmoothTransformation)
-        sz = 96
-        g = max(2, sz // max(2, grid))
-        vals = []
-        for gy in range(sz):
-            for gx in range(sz):
-                v = small.pixelColor(gx, gy).value()
-                vals.append(v)
-        cells = []
-        for cy in range(grid):
-            for cx in range(grid):
-                e = 0
-                for y in range(cy * g, min((cy + 1) * g, sz - 1)):
-                    for x in range(cx * g, min((cx + 1) * g, sz - 1)):
-                        v = vals[y * sz + x]
-                        e += abs(v - vals[y * sz + x + 1]) + abs(v - vals[(y + 1) * sz + x])
-                cells.append((e, cx, cy))
-        cells.sort(reverse=True)
-        if not cells or cells[0][0] <= 0:
-            return []
-        out = []
-        for _e, cx, cy in cells[:max(1, int(n))]:
-            cxp = (cx + 0.5) / grid
-            cyp = (cy + 0.5) / grid
-            x = min(max(0.0, cxp - box_rel / 2), 1.0 - box_rel)
-            y = min(max(0.0, cyp - box_rel / 2), 1.0 - box_rel)
-            out.append([round(x, 3), round(y, 3), box_rel, box_rel])
-        return out
-    except Exception:                            # noqa: BLE001
+        cells = _energy_grid(src, grid=grid)
+    except Exception:                                    # noqa: BLE001
         return []
+    flat = [(cells[cy][cx], cx, cy) for cy in range(grid) for cx in range(grid)]
+    flat.sort(reverse=True)
+    if not flat or flat[0][0] <= 0:
+        return []
+    out = []
+    for _e, cx, cy in flat[:max(1, int(n))]:
+        cxp = (cx + 0.5) / grid
+        cyp = (cy + 0.5) / grid
+        x = min(max(0.0, cxp - box_rel / 2), 1.0 - box_rel)
+        y = min(max(0.0, cyp - box_rel / 2), 1.0 - box_rel)
+        out.append([round(x, 3), round(y, 3), box_rel, box_rel])
+    return out
+
+
+def pick_product_boxes(src, n: int = 3, box=None,
+                       pad: float = 0.14) -> List[List[float]]:
+    """从**产品边界框**推导 n 个局部/细节图裁切区（v0.31.30，核心修复）。
+
+    `box` = [x, y, w, h]（归一化，由 `percept.product_box` 问视觉模型得来）。
+    为什么必须用它：真机实录（2026-10-14）用户喂了一张"手托项链"的实拍图，
+    细节图裁出来**全是手指和皮肤**——因为"高频能量"判据选中了皮肤纹理和
+    图片上的「2克拉」文字水印，产品本身一次都没入选。产品框直接从根上解决。
+
+    推导规则：
+      · 第 1 个 = 产品主体（框外扩 pad，保证轮廓与边缘工艺入镜）；
+      · 其余 n-1 个 = 在产品框**内部**按高频能量找子区（②工艺/标识、③结构/底部），
+        只收"中心落在产品框内"的格 → 不可能再拍到框外的手。
+    box 非法 / 拿不到 → 返回 []，调用方回退到 `pick_detail_boxes`。
+    """
+    if not box:
+        return []
+    try:
+        bx, by, bw, bh = [float(v) for v in list(box)[:4]]
+    except Exception:                                    # noqa: BLE001
+        return []
+    if not (0.0 <= bx <= 1.0 and 0.0 <= by <= 1.0) or bw < 0.03 or bh < 0.03:
+        return []
+    x0 = max(0.0, bx - pad * bw)
+    y0 = max(0.0, by - pad * bh)
+    x1 = min(1.0, bx + bw + pad * bw)
+    y1 = min(1.0, by + bh + pad * bh)
+    out = [[round(x0, 3), round(y0, 3), round(x1 - x0, 3), round(y1 - y0, 3)]]
+    n = int(n or 1)
+    if n <= 1:
+        return out
+    # ---- 其余 n-1 个：产品框内部的能量子区 ----
+    grid = 5
+    try:
+        cells = _energy_grid(src, grid=grid)
+    except Exception:                                    # noqa: BLE001
+        return out
+    sw = max(0.08, min(0.46, bw * 0.62))
+    sh = max(0.08, min(0.46, bh * 0.62))
+    picked: List[List[float]] = []
+    # 每行（grid 行）取"中心落在产品框内"的能量最大格 → 供下面按带微调
+    ebest: Dict[int, Tuple[float, int]] = {}
+    for cy in range(grid):
+        row = [(cells[cy][cx], cx) for cx in range(grid)
+               if bx - 0.01 <= (cx + 0.5) / grid <= bx + bw + 0.01
+               and by - 0.01 <= (cy + 0.5) / grid <= by + bh + 0.01]
+        if row:
+            ebest[cy] = max(row)
+    # ---- 其余 n-1 个：沿产品高度**等分带**打底，带内有高能量格就微调过去 ----
+    # 为什么必须用等分带打底：产品框一偏小，5×5 网格里"中心落在框内"的格就不够
+    # n-1 个。而等分带**永远凑得齐**，且天然分散（上部/中部/下部 → 工艺/标识/结构），
+    # 绝不会出现"②③ 两张几乎一样"。也**绝不**回退到方案默认坐标——那正是
+    # "细节图拍到框外的手"的根因（v0.31.30 真机事故）。
+    k = max(0, n - 1)
+    for i in range(k):
+        bc = by + bh * (i + 0.5) / k          # 本带中心（纵向）
+        bcx = bx + bw / 2                     # 默认产品水平中心
+        half = bh / k / 2 + 1e-6
+        for cy, (_e, cx) in sorted(ebest.items(), key=lambda kv: -kv[1][0]):
+            if abs((cy + 0.5) / grid - bc) <= half:
+                bcx = (cx + 0.5) / grid       # 带内细节更值得看 → 挪过去
+                break
+        sx = min(max(bx, bcx - sw / 2), 1.0 - sw)
+        sy = min(max(by, bc - sh / 2), 1.0 - sh)
+        picked.append([round(sx, 3), round(sy, 3), round(sw, 3), round(sh, 3)])
+    return out + picked
 
 
 # --------------------------------------------------------------------------
@@ -881,15 +1006,65 @@ def render_detail_slices(plan: dict, images: dict, out_dir: str,
 # --------------------------------------------------------------------------
 # 总入口
 # --------------------------------------------------------------------------
+def _auto_product_box(src_path: str):
+    """懒加载 percept，用云端视觉问出产品框；任何一步失败都返回 None（绝不炸）。
+
+    为什么要"自动"：调用方（executors / pasm_companion）不该被迫知道视觉配置的
+    细节——它们只要把实拍图路径传进来，定位由这里自己完成。
+
+    ★ 0.31.30：配置按**候选列表**找。源码运行时 `logsetup.data_dir()` 指向
+    `<repo>/.pasmstudio_dev`（里面没有 Key），只认它一条会让"自动定位"在源码
+    环境下永远失效（真机却是好的）——所以再兜一个 `%APPDATA%/PASMStudio`，
+    用户真实配置在哪都能读到。纯只读，绝不写任何文件。
+    """
+    if not src_path or not os.path.isfile(src_path):
+        return None
+    try:
+        from pasm.cognitive import percept as _P
+        import json as _json
+        try:
+            import logsetup as _LS
+            dirs = [_LS.data_dir()]
+        except Exception:                                # noqa: BLE001
+            dirs = []
+        if os.environ.get("PASMSTUDIO_DATA"):
+            dirs.append(os.environ["PASMSTUDIO_DATA"])
+        # 真实用户配置（源码运行时 data_dir 是仓库内的 dev 目录，没有 Key）
+        dirs.append(os.path.join(os.environ.get("APPDATA") or
+                                 os.path.expanduser("~"), "PASMStudio"))
+        cfg = {}
+        for d in dirs:
+            if not d:
+                continue
+            cp = os.path.join(d, "config.json")
+            if os.path.isfile(cp):
+                try:
+                    with open(cp, "r", encoding="utf-8") as f:
+                        cfg = _json.load(f) or {}
+                except Exception:                        # noqa: BLE001
+                    continue
+            if cfg:
+                cloud = _P.resolve_vision_cloud(cfg)
+                if cloud:
+                    return _P.product_box(src_path, cloud=cloud)
+        return None
+    except Exception:                                    # noqa: BLE001
+        return None
+
+
 def render_all(plan: dict, src_path: str, out_dir: str,
                images: Optional[dict] = None,
                allow_video_download: bool = False,
-               detail_count: Optional[int] = None) -> dict:
+               detail_count: Optional[int] = None,
+               product_box: Optional[list] = None) -> dict:
     """按方案产出整套图。
 
     返回 {ok, files:{main:[], crops:[], detail_long:""}, notes:[], reason:""}
     `ok=False` 的**唯一**原因是"没有可用的实拍图"—— 主图不能凭空捏，
     这时候只交出方案（md/HTML），图一张都不生成。
+
+    `product_box`: 归一化 [x,y,w,h] 产品框（percept.product_box 得来）。
+    传 None 时自动尝试云端视觉定位；定位不到才回退到高频能量启发式。
     """
     os.makedirs(out_dir, exist_ok=True)
     notes: List[str] = []
@@ -902,21 +1077,47 @@ def render_all(plan: dict, src_path: str, out_dir: str,
     if src is None:
         return {"ok": False, "files": files, "notes": notes,
                 "reason": "没有可用的产品实拍图（喂一张图给我，我就用你的图真合成）"}
-    # ---- 自动挑细节区域：覆盖方案里的兜底坐标 ----
-    boxes = pick_detail_boxes(src, n=len(plan.get("crops") or []))
+    # ---- 局部/细节图裁切区：**产品框优先**（v0.31.30）----
+    # 真机事故（2026-10-14）：手托项链的实拍图，细节图裁出来全是手指皮肤
+    #  —— "高频能量"选中了皮肤纹理和「2克拉」文字水印，产品一次都没入选。
+    if product_box is None:
+        product_box = _auto_product_box(src_path)
+    boxes: List[List[float]] = []
+    if product_box:
+        boxes = pick_product_boxes(src, n=len(plan.get("crops") or []),
+                                   box=product_box)
     if boxes:
         for c, b in zip(plan.get("crops") or [], boxes):
             c["box"] = b
-        notes.append("细节/局部图的裁切区域由图像高频能量自动挑选（%d 处）" % len(boxes))
+        notes.append("局部/细节图按**产品实际位置**裁切（视觉模型定位，%d 处）" % len(boxes))
     else:
-        notes.append("图像较为均匀，细节图沿用方案的默认裁切区域")
+        boxes = pick_detail_boxes(src, n=len(plan.get("crops") or []))
+        if boxes:
+            for c, b in zip(plan.get("crops") or [], boxes):
+                c["box"] = b
+            notes.append("细节/局部图的裁切区域由图像高频能量自动挑选（%d 处）%s"
+                         % (len(boxes),
+                            "；**未能定位产品位置**（无云端视觉或未答出坐标），"
+                            "裁切区可能拍到的不是产品主体" if not product_box else ""))
+        else:
+            notes.append("未能定位产品位置，细节图沿用方案的默认裁切区域")
     # ---- 去底（专业级；仅白底主图用）----
+    # 两条路：① pro_matte（四边多背景色建模）② pro_matte_product（产品框+肤色）
+    # 手持实拍①会判「背景过于复杂」整体拒绝 → 交给②；②也有质量闸门，不可靠时
+    # 同样老实拒绝（绝不把碎块贴白底当白底主图交出去）。
     matte, minfo = pro_matte(src, keep_shadow=True)
     applied = bool(minfo.get("applied"))
+    if not applied and product_box:
+        matte, minfo = pro_matte_product(src, box=product_box,
+                                         keep_shadow=True)
+        applied = bool(minfo.get("applied"))
     if applied:
         _bits = []
         if minfo.get("mode") == "pro":
-            _bits.append("多背景色建模(%s)" % minfo.get("mode"))
+            _bits.append("多背景色建模")
+            _bits.append("去色溢出(除白边)")
+        elif minfo.get("mode") == "product":
+            _bits.append("按产品框去底(手持实拍)")
             _bits.append("去色溢出(除白边)")
         else:
             _bits.append("简易法(四边同色)")
@@ -924,8 +1125,10 @@ def render_all(plan: dict, src_path: str, out_dir: str,
             _bits.append("保留投影")
         notes.append("白底主图已去底：%s" % "、".join(_bits))
     else:
-        notes.append("未去底（%s）→ 主图改用留白版式，绝不硬抠出白洞"
-                     % (minfo.get("reason") or "背景过于复杂"))
+        _why = minfo.get("reason") or "背景过于复杂"
+        if product_box and "不可靠" not in _why:
+            _why += "（手持/复杂底的自动去底判据不成立）"
+        notes.append("未去底（%s）→ 主图改用留白版式，绝不硬抠出白洞" % _why)
     size = tuple(plan.get("spec", {}).get("main_size") or (800, 800))
     # ---- 主图 ----
     for item in (plan.get("main_images") or []):
@@ -1069,6 +1272,49 @@ def selftest() -> int:
         check(pick_detail_boxes(uniform, n=3) == [],
               "★ 反例：纯色图挑不出细节区（返回空，交给兜底）")
 
+        # ---------- v0.31.30：按**产品框**裁切（修"细节图拍到手"）----------
+        # 本图的布局：蓝矩形=产品（0.25~0.74, 0.33~0.76），右上角那堆高频纹理=杂讯
+        #   （对应真机上的手指皮肤与「2克拉」文字水印）。
+        pb = [0.25, 0.33, 0.49, 0.42]
+        pboxes = pick_product_boxes(im, n=3, box=pb)
+        check(len(pboxes) == 3, "按产品框推出 3 个裁切区", pboxes)
+        check(all(len(b) == 4 and 0 <= b[0] and b[0] + b[2] <= 1.0001
+                  and 0 <= b[1] and b[1] + b[3] <= 1.0001 for b in pboxes),
+              "产品裁切区是相对坐标且不出界", pboxes)
+        check(abs(pboxes[0][0] - (0.25 - 0.14 * 0.49)) < 0.02
+              and abs(pboxes[0][1] - (0.33 - 0.14 * 0.42)) < 0.02,
+              "第 1 个裁切区就是产品主体（外扩 14% 收边工艺）", pboxes[0])
+        # ★ 核心断言：**不许**再选中右上角那片高频杂讯
+        #   —— 旧判据正是在这里失手，把细节图裁成了手指。
+        check(not any(b[0] >= 0.6 and b[1] <= 0.3 for b in pboxes),
+              "★ 产品框内的裁切区不会跑到框外的高频杂讯上（修「对着手」）", pboxes)
+        check(all(pb[0] - 0.02 <= b[0] + b[2] / 2 <= pb[0] + pb[2] + 0.02 and
+                  pb[1] - 0.02 <= b[1] + b[3] / 2 <= pb[1] + pb[3] + 0.02
+                  for b in pboxes),
+              "所有裁切区中心都落在产品框内", pboxes)
+        # 三个区必须**真的散开**（曾出现②③几乎重合 = 白送两张一样的图）
+        _cs = [(b[0] + b[2] / 2, b[1] + b[3] / 2) for b in pboxes]
+        check(all(abs(_cs[i][1] - _cs[j][1]) > 0.01 or
+                  abs(_cs[i][0] - _cs[j][0]) > 0.01
+                  for i in range(len(_cs)) for j in range(i + 1, len(_cs))),
+              "三个裁切区互不重合（不是复制同一张）", _cs)
+        # 产品框偏小（真机上视觉模型常给紧框）→ 仍要凑满 3 个、仍在框内、仍散开
+        tight = pick_product_boxes(im, n=3, box=[0.4, 0.45, 0.12, 0.10])
+        check(len(tight) == 3, "产品框偏小时仍凑满 3 个裁切区", tight)
+        check(all(0.4 - 0.02 <= b[0] + b[2] / 2 <= 0.4 + 0.12 + 0.02 and
+                  0.45 - 0.02 <= b[1] + b[3] / 2 <= 0.45 + 0.10 + 0.02
+                  for b in tight),
+              "产品框偏小时裁切区中心仍在框内（不会溜到框外拍手）", tight)
+        _tc = [(b[1] + b[3] / 2) for b in tight]
+        check(len({round(v, 3) for v in _tc}) == 3,
+              "产品框偏小时三个裁切区仍纵向散开", _tc)
+        check(pick_product_boxes(im, n=3, box=None) == [],
+              "★ 反例：拿不到产品框时返回空（交给高频能量兜底）")
+        check(pick_product_boxes(im, n=3, box=[0.5, 0.5, 0.001, 0.9]) == [],
+              "★ 反例：退化的产品框返回空")
+        check(pick_product_boxes(im, n=3, box="垃圾") == [],
+              "★ 反例：非法产品框返回空")
+
         # ---------- 裁切放大：真的放大了 ----------
         crop = crop_zoom(im, [0.3, 0.3, 0.3, 0.3], (400, 400), 2.0)
         check(crop.width() == 400 and crop.height() == 400, "裁切输出尺寸正确",
@@ -1081,7 +1327,8 @@ def selftest() -> int:
         plan = EC.build_plan("加厚保暖外套，防水面料，易清洗，品牌：示范，价格：199",
                              vision="一件深灰色连帽外套", platform="taobao")
         out_dir = os.path.join(tmp, "out")
-        r = render_all(plan, src_path, out_dir)
+        # product_box=[] → 显式关掉"自动问云端视觉定位产品"，自检不依赖网络
+        r = render_all(plan, src_path, out_dir, product_box=[])
         check(r["ok"], "render_all 成功", r.get("reason"))
         check(len(r["files"]["main"]) == 5, "主图 5 张落盘",
               r["files"]["main"])
