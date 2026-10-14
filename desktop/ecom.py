@@ -594,7 +594,12 @@ def build_selling_points(text: str, vision: str, category: str,
 
 def build_spec_rows(category: str, text: str = "", brand: str = "",
                     price: str = "", extra=None) -> List[List[str]]:
-    """参数表（不编数据：能从用户话里对上的就填，其余写「待补充」）。"""
+    """参数表：**只列真知道的项**，不知道的整行不出现。
+
+    ★ v0.31.31（小志定）：不要「待补充 / 待定」这类占位 —— "没有就不要"。
+    空行占位看着像没做完，也不像给客户看的东西。能从用户话里对上的就填，
+    对不上的直接不列；真的一条都没有 → 返回空表，调用方整块不渲染参数区。
+    """
     cat = CATEGORIES.get(category) or CATEGORIES["通用"]
     fields = list(cat["specs"])
     rows = []
@@ -607,11 +612,13 @@ def build_spec_rows(category: str, text: str = "", brand: str = "",
             v = str(brand)
         elif f in ("品牌",) and re.search(r"品牌\s*[:：]\s*(\S+)", str(text or "")):
             v = re.search(r"品牌\s*[:：]\s*(\S+)", str(text or "")).group(1)
-        rows.append([f, v or "待补充"])
+        if v and v not in ("待补充", "待定", "未知", "-", "无"):
+            rows.append([f, v])
     if price:
         rows.insert(0, ["价格", str(price)])
     for k, v in (extra or {}).items():
-        rows.append([str(k), str(v)])
+        if str(v or "").strip() and str(v).strip() not in ("待补充", "待定", "未知"):
+            rows.append([str(k), str(v)])
     return rows
 
 
@@ -903,11 +910,21 @@ def apply_profile_to_plan(plan: dict, profile: Optional[dict]) -> dict:
     vals = profile_known(profile)
     labels = {f["key"]: f["label"]
               for f in profile_fields(profile.get("category") or plan.get("category") or "通用")}
-    # ---- ① 参数表：有真值就填，没有就保持「待补充」（诚实）----
-    for row in plan.get("spec_rows") or []:
+    # ---- ① 参数表：把档案里的真值填进去（**没有的项整行不出现**，不做占位）----
+    #   v0.31.31：表里按类目模板预填的行若被档案填上真值就替换，否则不动；
+    #   `build_spec_rows` 已经不再产出「待补充」行，这里只需补上"档案有但表里没有"的项。
+    _rows = plan.get("spec_rows") or []
+    for row in _rows:
         for k, v in vals.items():
             if labels.get(k) == row[0] and row[1] in ("", "待补充"):
                 row[1] = v
+    _have = {r[0] for r in _rows}
+    for k, v in vals.items():
+        _lb = labels.get(k)
+        if _lb and _lb not in _have:
+            _rows.append([_lb, v])
+            _have.add(_lb)
+    plan["spec_rows"] = _rows
     # ---- ② 卖点：把"材质方面做了针对性优化，具体参数见下方参数表"这种
     #      模板话换成有信息量的句子 ----
     # 匹配要认**别名**：类目维度叫「长度」，档案字段叫「链长」——不认别名
@@ -1707,18 +1724,24 @@ def render_detail_html(plan: dict, images=None, out_path: str = "") -> str:
     for sec in (p.get("detail_sections") or []):
         st, title = sec.get("type"), sec.get("title", "")
         if st == "banner":
-            blocks.append("<section class='sec banner'>%s<h1>%s</h1><h2>%s</h2></section>"
+            blocks.append("<section class='hero'>%s<div class='cap'><h1>%s</h1><h2>%s</h2>"
+                          "<div class='hr'></div></div></section>"
                           % (_img_block(imgs.get("banner") or imgs.get("main"), "主视觉"),
                              _esc(title), _esc(sec.get("sub", ""))))
+            # ★ v0.31.31：AI 精修的主视觉大图（有就单独一屏，视觉冲击更接近设计稿）
+            if imgs.get("ai_cover"):
+                blocks.append("<section class='sec cover'>%s</section>"
+                              % _img_block(imgs["ai_cover"], "主视觉大图（AI 精修）"))
         elif st == "pain":
             items = "".join("<li>%s</li>" % _esc(x) for x in sec.get("items") or [])
             blocks.append("<section class='sec'><h3>%s</h3><ul class='pain'>%s</ul></section>"
                           % (_esc(title), items))
         elif st == "points":
             rows = []
-            for it in sec.get("items") or []:
-                rows.append("<div class='pt'><b>%s</b><p>%s</p></div>"
-                            % (_esc(it.get("head", "")), _esc(it.get("body", ""))))
+            for _i, it in enumerate(sec.get("items") or [], 1):
+                rows.append("<div class='pt'><i class='idx'>%02d</i>"
+                            "<div class='ptb'><b>%s</b><p>%s</p></div></div>"
+                            % (_i, _esc(it.get("head", "")), _esc(it.get("body", ""))))
             blocks.append("<section class='sec'><h3>%s</h3>%s</section>"
                           % (_esc(title), "".join(rows)))
         elif st == "detail":
@@ -1735,8 +1758,12 @@ def render_detail_html(plan: dict, images=None, out_path: str = "") -> str:
                           % (_img_block(imgs.get("scene"), "场景图"), _esc(title),
                              _esc(sec.get("body", ""))))
         elif st == "spec":
+            _ok_rows = [r for r in (sec.get("rows") or [])
+                        if str(r[1]).strip() and str(r[1]).strip() not in ("待补充", "待定", "未知")]
+            if not _ok_rows:
+                continue                      # ★ 一项参数都没有 → 整块不渲染（"没有就不要"）
             rows = "".join("<tr><th>%s</th><td>%s</td></tr>" % (_esc(r[0]), _esc(r[1]))
-                           for r in sec.get("rows") or [])
+                           for r in _ok_rows)
             blocks.append("<section class='sec'><h3>%s</h3>"
                           "<table class='spec'>%s</table></section>" % (_esc(title), rows))
         elif st == "service":
@@ -1775,37 +1802,58 @@ def render_detail_html(plan: dict, images=None, out_path: str = "") -> str:
     html = """<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
 <title>%(t)s</title><style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{background:#eef1f5;font-family:"Microsoft YaHei",system-ui,sans-serif;color:#1f2937}
-.wrap{width:%(W)dpx;margin:0 auto;background:#fff;box-shadow:0 6px 30px rgba(0,0,0,.10)}
-.sec{padding:22px 20px;border-bottom:1px solid #eef2f7}
-.banner{padding:0 0 18px;text-align:center}
-.banner h1{font-size:26px;padding:16px 16px 4px}
-.banner h2{font-size:14px;color:#64748b;font-weight:400}
-h3{font-size:19px;margin-bottom:12px;border-left:5px solid #0ea5e9;padding-left:10px}
-img{width:100%%;display:block;border-radius:6px}
+body{background:#eceef2;font-family:"Microsoft YaHei",system-ui,sans-serif;color:#111827;
+  -webkit-font-smoothing:antialiased}
+.wrap{width:%(W)dpx;margin:0 auto;background:#fff;box-shadow:0 8px 40px rgba(15,23,42,.12)}
+/* ---- 主视觉 ---- */
+.hero{background:linear-gradient(180deg,#fdfdff 0%%,#f1f4f9 100%%);padding-bottom:18px}
+.hero img{width:100%%;display:block;border-radius:0}
+.hero .cap{padding:24px 26px 6px;text-align:center}
+.hero h1{font-size:27px;line-height:1.42;font-weight:800;letter-spacing:.3px;color:#0f172a}
+.hero h2{font-size:14.5px;color:#6b7280;font-weight:400;margin-top:10px;line-height:1.7}
+.hr{width:56px;height:3px;border-radius:2px;margin:16px auto 0;
+  background:linear-gradient(90deg,#0ea5e9,#6366f1)}
+/* ---- 分区 ---- */
+.sec{padding:26px 24px;border-top:1px solid #f1f3f7}
+.sec.cover{padding:0;border-top:none}
+.sec.cover img{border-radius:0}
+h3{font-size:19px;font-weight:700;display:flex;align-items:center;gap:9px;
+  margin-bottom:16px;color:#0f172a;letter-spacing:.2px}
+h3:before{content:"";width:5px;height:19px;border-radius:3px;flex:0 0 5px;
+  background:linear-gradient(180deg,#0ea5e9,#4f46e5)}
+img{width:100%%;display:block;border-radius:12px}
 .ph{height:320px;display:flex;flex-direction:column;align-items:center;justify-content:center;
   background:repeating-linear-gradient(45deg,#f8fafc,#f8fafc 12px,#f1f5f9 12px,#f1f5f9 24px);
-  color:#94a3b8;border-radius:6px;font-size:15px}
+  color:#94a3b8;border-radius:12px;font-size:15px}
 .phi{font-size:12px}
-.pain li{margin:8px 0 8px 20px;color:#b91c1c}
-.pt{padding:12px 14px;margin-bottom:10px;background:#f8fafc;border-radius:8px;
-  border-left:4px solid #0ea5e9}
-.pt b{font-size:16px}
-.pt p{color:#475569;font-size:14px;margin-top:4px;line-height:1.7}
-.crops{display:flex;flex-wrap:wrap;gap:12px}
-.crop{flex:1 1 46%%;min-width:46%%}
-.crop p{font-size:13px;color:#475569;margin-top:6px;line-height:1.6}
-.anno{display:inline-block;background:#0ea5e9;color:#fff;border-radius:50%%;
-  width:20px;height:20px;line-height:20px;text-align:center;font-size:12px;margin-right:4px}
-table.spec{width:100%%;font-size:14px;border-collapse:collapse}
-table.spec th{width:32%%;text-align:left;padding:9px 10px;background:#f8fafc;color:#475569;
-  border:1px solid #eef2f7;font-weight:400}
-table.spec td{padding:9px 10px;border:1px solid #eef2f7}
-.service{background:#f0fdf4}
-.proof{color:#0ea5e9 !important;font-size:12px !important;margin-top:4px}
-.tag{display:inline-block;background:#fef9c3;color:#854d0e;border-radius:6px;
- padding:3px 10px;font-size:12px;margin-bottom:8px}
-.service li{margin:6px 0 6px 20px;color:#166534}
+/* ---- 卖点卡 ---- */
+.pt{display:flex;gap:13px;padding:15px 16px;margin-bottom:11px;background:#fbfcfe;
+  border:1px solid #eef2f7;border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.03)}
+.idx{font-style:normal;font-size:13px;font-weight:800;color:#4f46e5;flex:0 0 30px;
+  height:30px;line-height:30px;text-align:center;border-radius:9px;background:#eef1ff}
+.ptb{flex:1}
+.pt b{font-size:16px;display:block;margin-bottom:5px;color:#0f172a}
+.pt p{color:#4b5563;font-size:14px;line-height:1.78}
+.pain li{margin:8px 0 8px 20px;color:#b91c1c;line-height:1.7}
+/* ---- 细节图网格 ---- */
+.crops{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.crop{background:#fbfcfe;border:1px solid #eef2f7;border-radius:12px;padding:10px}
+.crop p{font-size:13px;color:#4b5563;margin-top:9px;line-height:1.65}
+.anno{display:inline-block;background:linear-gradient(135deg,#0ea5e9,#4f46e5);color:#fff;
+  border-radius:7px;padding:1px 8px;font-size:11.5px;margin-right:6px;font-weight:600}
+/* ---- 参数表 ---- */
+table.spec{width:100%%;font-size:14px;border-collapse:separate;border-spacing:0;
+  border:1px solid #eef2f7;border-radius:12px;overflow:hidden}
+table.spec th{width:34%%;text-align:left;padding:12px 14px;background:#f7f9fc;color:#6b7280;
+  font-weight:500;border-bottom:1px solid #eef2f7}
+table.spec td{padding:12px 14px;border-bottom:1px solid #eef2f7;color:#111827}
+table.spec tr:last-child th,table.spec tr:last-child td{border-bottom:none}
+/* ---- 服务 / 备注 ---- */
+.service{background:#f6fdf9}
+.service li{margin:7px 0 7px 20px;color:#15803d;line-height:1.7}
+.proof{color:#4f46e5 !important;font-size:12.5px !important;margin-top:6px}
+.tag{display:inline-block;background:#fef9c3;color:#854d0e;border-radius:8px;
+ padding:4px 11px;font-size:12px;margin-bottom:10px}
 </style></head><body><div class="wrap">%(b)s</div></body></html>""" % {
         "t": _esc(p.get("title", {}).get("title") or p.get("product", "详情页")),
         "W": W, "b": "".join(blocks)}
@@ -1988,8 +2036,14 @@ def selftest() -> int:
     check(_rp["category"] == "饰品",
           "★ 「项链」应判类目「饰品」（旧版落「通用」→ 规格/资质全走错模板）",
           _rp["category"])
-    check(any("链长" in r[0] for r in _rp["spec_rows"]),
-          "★ 饰品参数表含「链长」等真实字段", [r[0] for r in _rp["spec_rows"]])
+    # v0.31.31：表里不再有「待补充」占位 → 断言改成"类目真字段**有值时**才出现"
+    _rp2 = build_plan(_REAL + "，材质：S925银，链长：42cm，重量：3.2g")
+    check(any("链长" in r[0] for r in _rp2["spec_rows"]),
+          "★ 饰品参数表含「链长」等真实字段（有值时）",
+          [r[0] for r in _rp2["spec_rows"]])
+    check(not _rp["spec_rows"] or all(r[1] not in ("待补充", "待定")
+                                     for r in _rp["spec_rows"]),
+          "★ 没给参数时不摆空占位行", _rp["spec_rows"])
     check(any("检测证书" in x or "CMA" in x for x in _rp["qualification"]),
           "★ 饰品资质清单给的是检测证书这类真要求", _rp["qualification"])
     _junk = {"上述的图中项", "我需要你帮我", "出五张主图", "包括副图和细",
@@ -2022,11 +2076,16 @@ def selftest() -> int:
     check(_rp["sources"]["keywords"] in ("llm", "offline"),
           "关键词来源标注合法", _rp["sources"])
 
-    check({"面料成分", "尺码"} <= {r[0] for r in plan["spec_rows"]},
-          "参数表字段来自类目模板（服装含面料成分/尺码）",
-          [r[0] for r in plan["spec_rows"]])
-    check(any(r[1] == "待补充" for r in plan["spec_rows"]),
-          "参数表缺值写「待补充」而不是编数据", plan["spec_rows"])
+    _cloth = build_plan("加厚保暖外套，面料成分：95%棉+5%氨纶，尺码：S/M/L/XL")
+    check({"面料成分", "尺码"} <= {r[0] for r in _cloth["spec_rows"]},
+          "参数表字段来自类目模板（服装含面料成分/尺码，有值时）",
+          [r[0] for r in _cloth["spec_rows"]])
+    check(all(r[1] not in ("待补充", "待定") for r in plan["spec_rows"]),
+          "★ 参数表里没有任何「待补充/待定」占位（没有的项整行不出现）",
+          plan["spec_rows"])
+    _blank = build_plan("随便一句没有参数的话", platform="taobao")["spec_rows"]
+    check(all(r[1].strip() and r[1] not in ("待补充", "待定") for r in _blank),
+          "★ 一句话都没带参数时，表里也不留空占位行", _blank)
     check(any(r[0] == "价格" for r in plan["spec_rows"]), "价格进了参数表")
     check([s["type"] for s in plan["detail_sections"]] ==
           ["banner", "pain", "points", "detail", "benefit", "steps", "scene",
@@ -2100,6 +2159,25 @@ def selftest() -> int:
                                           "crops": [r"D:\c1.png", r"D:\c2.png",
                                                     r"D:\c3.png"]})
     check("file:///" in h2, "有图时引用真实路径（file URI）", h2[:200])
+    # ---------- ★ v0.31.31 详情页视觉与"没有就不要" ----------
+    check("class='hero'" in h2 and "class='cap'" in h2,
+          "★ 详情页改版：主视觉区（hero）在", h2[:160])
+    check(".pt{" in h2 and "idx" in h2.replace(".idx", ""),
+          "★ 卖点改成带编号徽章的卡片")
+    check("待补充" not in h2,
+          "★ 详情页里绝不出现「待补充」字样")
+    _hp = render_detail_html(plan, images={"main": r"D:.png"})
+    _spec_sec = [x for x in (plan.get("detail_sections") or [])
+                 if x.get("type") == "spec"]
+    check(bool(_spec_sec), "方案里仍有 spec 屏定义（模板保留）")
+    if _spec_sec:
+        _empty_plan = dict(plan)
+        _empty_plan["detail_sections"] = [
+            dict(x, rows=[]) if x.get("type") == "spec" else x
+            for x in _spec_sec and (plan.get("detail_sections") or [])]
+        _h3e = render_detail_html(_empty_plan, images={})
+        check("<table class='spec'>" not in _h3e,
+              "★ 参数一项都没有时 → 整块不渲染（没有就不要）")
     check("pain" in h2, "详情页正例：详情结构（痛点/卖点/参数表）都在 HTML 里",
           h2[:300])
 

@@ -3234,6 +3234,217 @@ def _con_mask(v, *_a, **_k) -> str:
     return s[:4] + "*" * max(4, len(s) - 6) + s[-2:]
 
 
+class EcomIntakeCard(QFrame):
+    """🛒 产品录入卡（v0.31.31）：**上传产品图 → 填信息 → 点一下就生成整套物料**。
+
+    为什么要有它（小志 2026-10-14 原话）：
+      「最开始的时候，最好是，在聊天框上方的聊天展示框中，上传产品图，
+        然后录入相关信息，点生成按钮，直接生成，参考 Accio work」
+
+    设计要点：
+      · **只图表单，不直接干活**：`submit(text, img)` 信号交给主窗口走既有的
+        电商流程（台账 / 进度 / 停止 / 右栏效果 全都复用，不另起一套）。
+      · 属性字段按**类目**动态生成（复用 `ecom.PROFILE_FIELDS`）：换类目就换字段，
+        用户看到的就是"这个类目该填什么"。
+      · 留空的项**不会**进参数表（v0.31.31 起参数表不再有「待补充」占位）。
+      · 图片支持**拖进来**（dragEnterEvent / dropEvent）与点按钮选。
+    """
+    submit = Signal(str, str)          # (需求文本, 产品图路径)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._img = ""
+        self._fields = []              # [(key, label, QLineEdit)]
+        self._open = False
+        self.setStyleSheet(
+            "EcomIntakeCard{background:#f8fbff;border:1px solid #dbeafe;border-radius:10px;}")
+        self.setAcceptDrops(True)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(10, 8, 10, 8)
+        lay.setSpacing(7)
+        # ---- 标题行 ----
+        head = QHBoxLayout()
+        head.setSpacing(8)
+        self.title = QPushButton("🛒 产品录入卡 · 传产品图 → 填信息 → 一键生成整套物料")
+        self.title.setCursor(Qt.PointingHandCursor)
+        self.title.setStyleSheet(
+            "QPushButton{border:none;background:transparent;color:#1d4ed8;font-size:13px;"
+            "font-weight:bold;text-align:left;padding:2px 0;}")
+        self.title.clicked.connect(lambda: self.set_open(not self._open))
+        head.addWidget(self.title, 1)
+        self.state = QLabel("")
+        self.state.setStyleSheet("color:#64748b;font-size:11px")
+        head.addWidget(self.state)
+        lay.addLayout(head)
+        # ---- 主体（可折叠）----
+        self.body = QWidget()
+        b = QVBoxLayout(self.body)
+        b.setContentsMargins(0, 2, 0, 0)
+        b.setSpacing(7)
+        r1 = QHBoxLayout()
+        r1.setSpacing(8)
+        self.pick = QPushButton("🖼 选择产品图（也可直接拖进来）")
+        self.pick.setCursor(Qt.PointingHandCursor)
+        self.pick.setStyleSheet(
+            "QPushButton{border:1px solid #93c5fd;border-radius:8px;padding:6px 12px;"
+            "background:#eff6ff;color:#1d4ed8;font-size:12px;}"
+            "QPushButton:hover{background:#dbeafe}")
+        self.pick.clicked.connect(self._pick_img)
+        r1.addWidget(self.pick)
+        self.imglab = QLabel("未选择产品图")
+        self.imglab.setStyleSheet("color:#94a3b8;font-size:12px")
+        r1.addWidget(self.imglab, 1)
+        self.clr = QPushButton("✕")
+        self.clr.setFixedWidth(26)
+        self.clr.setToolTip("清掉已选的产品图")
+        self.clr.clicked.connect(self._clear_img)
+        self.clr.setVisible(False)
+        r1.addWidget(self.clr)
+        b.addLayout(r1)
+        r2 = QHBoxLayout()
+        r2.setSpacing(8)
+        r2.addWidget(self._lab("产品名"))
+        self.name = QLineEdit()
+        self.name.setPlaceholderText("如：S925银项链")
+        r2.addWidget(self.name, 2)
+        r2.addWidget(self._lab("类目"))
+        self.cat = QComboBox()
+        try:
+            import ecom as _EC
+            for _c in (_EC.PROFILE_FIELDS.keys()):
+                self.cat.addItem(_c)
+        except Exception:                                        # noqa: BLE001
+            self.cat.addItem("通用")
+        r2.addWidget(self.cat, 1)
+        r2.addWidget(self._lab("平台"))
+        self.plat = QComboBox()
+        self.plat.addItems(["淘宝", "京东"])
+        r2.addWidget(self.plat, 1)
+        b.addLayout(r2)
+        self.attr_box = QVBoxLayout()
+        self.attr_box.setSpacing(6)
+        b.addLayout(self.attr_box)
+        self.cat.currentTextChanged.connect(lambda _=None: self._rebuild_fields())
+        self._rebuild_fields()
+        r3 = QHBoxLayout()
+        r3.setSpacing(10)
+        self.go = QPushButton("✨ 生成整套物料")
+        self.go.setCursor(Qt.PointingHandCursor)
+        self.go.setStyleSheet(
+            "QPushButton{border:none;border-radius:9px;padding:8px 20px;color:#fff;"
+            "font-size:13px;font-weight:bold;background:#2563eb;}"
+            "QPushButton:hover{background:#1d4ed8}")
+        self.go.clicked.connect(self._fire)
+        r3.addWidget(self.go)
+        tip = QLabel("留空的项不会出现在参数表里（没有就不写）；生成后还能在对话里让它改。")
+        tip.setStyleSheet("color:#94a3b8;font-size:11px")
+        r3.addWidget(tip, 1)
+        b.addLayout(r3)
+        lay.addWidget(self.body)
+        self.body.setVisible(False)
+
+    # ---- 小工具 ----
+    def _lab(self, text: str) -> QLabel:
+        lb = QLabel(text)
+        lb.setStyleSheet("color:#475569;font-size:12px")
+        return lb
+
+    def _rebuild_fields(self):
+        while self.attr_box.count():
+            it = self.attr_box.takeAt(0)
+            _w = it.widget()
+            if _w is not None:
+                _w.deleteLater()
+        self._fields = []
+        try:
+            import ecom as EC
+            fields = EC.profile_fields(self.cat.currentText() or "通用")
+        except Exception:                                        # noqa: BLE001
+            fields = []
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        for i, f in enumerate(fields[:6]):
+            if i and i % 3 == 0:
+                self.attr_box.addLayout(row)
+                row = QHBoxLayout()
+                row.setSpacing(8)
+            row.addWidget(self._lab(f["label"] + ("*" if f.get("required") else "")))
+            ed = QLineEdit()
+            ed.setPlaceholderText(str(f.get("ask") or "")[:18])
+            row.addWidget(ed, 1)
+            self._fields.append((f["key"], f["label"], ed))
+        if self._fields:
+            self.attr_box.addLayout(row)
+
+    def set_open(self, on: bool):
+        self._open = bool(on)
+        self.body.setVisible(self._open)
+        self.title.setText(("▾ " if self._open else "▸ ") +
+                           "🛒 产品录入卡 · 传产品图 → 填信息 → 一键生成整套物料")
+
+    def set_active(self, on: bool):
+        """切到「🛒 电商」栏目时自动展开；换走时收起（已填内容保留）。"""
+        self.set_open(bool(on))
+
+    # ---- 图片 ----
+    def _pick_img(self):
+        p, _f = QFileDialog.getOpenFileName(
+            self, "选择产品实拍图", "",
+            "图片 (*.png *.jpg *.jpeg *.webp *.bmp)")
+        if p:
+            self.set_image(p)
+
+    def set_image(self, path: str):
+        import os as _os
+        self._img = str(path or "")
+        self.imglab.setText(_os.path.basename(self._img) if self._img else "未选择产品图")
+        self.imglab.setStyleSheet("color:#0f172a;font-size:12px" if self._img
+                                  else "color:#94a3b8;font-size:12px")
+        self.clr.setVisible(bool(self._img))
+
+    def _clear_img(self):
+        self.set_image("")
+
+    def dragEnterEvent(self, ev):                                # noqa: N802
+        try:
+            if ev.mimeData().hasUrls():
+                ev.acceptProposedAction()
+        except Exception:                                        # noqa: BLE001
+            pass
+
+    def dropEvent(self, ev):                                     # noqa: N802
+        try:
+            for u in ev.mimeData().urls():
+                p = u.toLocalFile()
+                if p and p.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".bmp")):
+                    self.set_image(p)
+                    break
+        except Exception:                                        # noqa: BLE001
+            pass
+
+    # ---- 生成 ----
+    def build_text(self) -> str:
+        """把表单拼成一句"电商需求"（属性写成「字段：值」——下游档案解析吃得下）。"""
+        parts = []
+        nm = self.name.text().strip()
+        if nm:
+            parts.append("产品名：%s" % nm)
+        for _k, lb, ed in self._fields:
+            v = ed.text().strip()
+            if v:
+                parts.append("%s：%s" % (lb, v))
+        return "帮我做一套%s电商物料（主图/副图/局部图/细节图/详情图）：%s" % (
+            self.plat.currentText() or "淘宝", "，".join(parts) or (nm or "按我上传的图"))
+
+    def _fire(self):
+        import os as _os
+        if self._img and not _os.path.isfile(self._img):
+            self.state.setText("产品图路径失效，请重选")
+            return
+        self.state.setText("已提交，正在生成…")
+        self.submit.emit(self.build_text(), self._img)
+
+
 class ChatBrowser(QTextBrowser):
     """聊天正文浏览器：**永不导航**（v0.30.15 修，v0.30.16 换实现）。
 
@@ -4325,6 +4536,11 @@ class CompanionWindow(QMainWindow):
         # ⚠️ 必须用 ChatBrowser（见其文档）：原生 QTextBrowser 会在点锚点后
         #    `setSource(url)`，把整块聊天正文换成 "Cannot open pasm://copy/0" 错误页
         #    —— 真机表现就是"点复制后上面的文字全没了"。这里的子类把导航关掉。
+        # ★ v0.31.31 产品录入卡：**在聊天展示框上方**（小志要的 Accio work 式交互：
+        #   传产品图 → 填信息 → 点「生成整套物料」）。只图表单，干活走既有电商流程。
+        self.ecom_card = EcomIntakeCard()
+        self.ecom_card.submit.connect(self._on_ecom_card_submit)
+        lay.addWidget(self.ecom_card)
         self.chat = ChatBrowser()
         self.chat.setOpenExternalLinks(False)
         self.chat.anchorClicked.connect(self._on_anchor)
@@ -4574,6 +4790,10 @@ class CompanionWindow(QMainWindow):
             return self._open_docsuite(quiet)
         if key not in dict(self.WORK_CHIPS) and key not in ("chat", "work"):
             return
+        try:                                   # v0.31.31：录入卡跟着「🛒 电商」走
+            self.ecom_card.set_active(key == "ecom")
+        except Exception:                                        # noqa: BLE001
+            pass
         if key == self._slot_key():
             self._sync_mode_ui()
             self._sync_turn_ui()
@@ -16699,6 +16919,32 @@ class CompanionWindow(QMainWindow):
         return ("skill", "manga-pipeline" if kind == "manga" else "video-script", text)
 
     # ---------- v0.31.27：🛒 电商套件（喂图 → 一整套上架物料） ----------
+    def _on_ecom_card_submit(self, text: str, img: str):
+        """产品录入卡 → 复用既有电商流程（台账 / 进度 / 停止 / 右栏效果全一致）。
+
+        卡里已经把信息录全了 → 追加「直接生成」，**不再反问**（用户点的是生成按钮，
+        回头再来一轮提问就违背了这个交互的意义；缺的项按"没有就不写"处理）。
+        """
+        try:
+            if img and os.path.isfile(img):
+                try:
+                    self.remember_img(img)          # 跨重启留档（与拖图同一条通道）
+                except Exception:                    # noqa: BLE001
+                    pass
+                self._pending_imgs = [{"path": img, "desc": ""}]
+                self._last_fed_imgs = [{"path": img, "desc": ""}]
+                self._ses_ecom_src = img
+            self._ses_ecom_pend = None               # 表单已录 → 不走引导提问
+            self._set_chip("ecom")
+            self.input.setPlainText((text or "").strip() + "，直接生成")
+            self.send()
+        except Exception as ex:                      # noqa: BLE001
+            logging.exception("电商录入卡提交失败")
+            try:
+                self._append("系统", "⚠ 录入卡提交失败：%s" % ex)
+            except Exception:                        # noqa: BLE001
+                pass
+
     def _ecom_ask_text(self, miss) -> str:
         """引导录入的提问文案（v0.31.30）。缺什么问什么，一轮最多 4 个。"""
         L = ["🛒 **生成前先把产品信息记全**——记全后我一次性出整套，"
@@ -16891,7 +17137,10 @@ class CompanionWindow(QMainWindow):
             r = ER.render_all(plan, src, out_dir, images=images,
                               allow_video_download=True,
                               detail_count=EC.parse_detail_count(req),
-                              product_box=_box)
+                              product_box=_box,
+                              # ★ v0.31.31：AI 精修一套（去手/换底/换场景），
+                              #   与实拍合成版**并存**；没配引擎时它自己会跳过并说明
+                              cfg=self.cfg, ai_log=say)
         else:
             r = {"ok": False,
                  "files": {"main": [], "crops": [], "detail_long": "",
@@ -16956,6 +17205,19 @@ class CompanionWindow(QMainWindow):
                         ("　—　" + _mnote) if _mnote else ""))
             L += ["![%s](%s)" % (os.path.basename(p), CRE._as_uri(p))
                   for p in r["files"]["main"]]
+            # ★ v0.31.31：AI 精修一套（**与实拍版并存**）——
+            #   必须出现在回复里：①用户得知道有干净版可用 ②路径要进工作台账
+            _ai_files = list(r["files"].get("ai") or [])
+            if _ai_files:
+                _ai_note = next((x for x in (r.get("notes") or [])
+                                 if "AI 精修" in x and "张" in x), "")
+                L.append("\n**①-b AI 精修图 %d 张**（去掉手 / 换底换场景；"
+                         "**是 AI 生成不是实拍像素**，上架用哪张由你定）"
+                         % len(_ai_files))
+                L += ["![%s](%s)" % (os.path.basename(p), CRE._as_uri(p))
+                      for p in _ai_files]
+                if _ai_note:
+                    L.append("\u3000%s" % _ai_note)
             L.append("\n**② 局部图 / 细节图 %d 张**（从你的实拍图裁切放大，带编号标注）"
                      % len(r["files"]["crops"]))
             L += ["![%s](%s)" % (os.path.basename(p), CRE._as_uri(p))
@@ -17040,6 +17302,7 @@ class CompanionWindow(QMainWindow):
         #   所以这里把**真在盘**的产物逐件记上（`add_artifact` 自带去重）。
         _wid = str(getattr(self, "_cur_wid", "") or "")
         _all_files = (list(r["files"]["main"]) + list(r["files"]["crops"]) +
+                      list(r["files"].get("ai") or []) +   # ★ v0.31.31：AI 精修图也算真产物，要进台账与右栏
                       list(r["files"].get("detail_slices") or []) +
                       [x for x in (r["files"]["detail_long"], md_p, html_p,
                                    r["files"].get("video", ""),

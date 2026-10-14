@@ -196,6 +196,7 @@ HIDDEN_IMPORTS = [
     'ecom_render',
     # 专业去底（numpy + QImage）与主图视频（ffmpeg 编排）
     'imgmatte',
+    'imgai',          # v0.31.31 AI 商品图精修（去手/换底/换场景）
     'ecom_video',
     'capability',
     'capability_bus',

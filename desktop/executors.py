@@ -359,7 +359,8 @@ def exec_ecom(step: dict, ctx: dict = None):
                 box = _P.product_box(src, cloud=_cloud)
         except Exception:                                    # noqa: BLE001
             box = None
-        r = ER.render_all(plan, src, out_dir, product_box=box)
+        r = ER.render_all(plan, src, out_dir, product_box=box,
+                          cfg=ctx.get("cfg"))          # v0.31.31：AI 精修要用引擎配置
         files = r.get("files") or files
         notes += list(r.get("notes") or [])
         arts += [p for p in files["main"] + files["crops"] if p]

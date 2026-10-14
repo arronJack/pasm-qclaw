@@ -1052,11 +1052,83 @@ def _auto_product_box(src_path: str):
         return None
 
 
+# --------------------------------------------------------------------------
+# ★ v0.31.31 AI 精修一套（**双版本并存**：AI 版 + 实拍版，绝不覆盖实拍图）
+# --------------------------------------------------------------------------
+#: 默认出的 AI 图（顺序即优先级）。kind 对应 imgai.PROMPTS。
+AI_SPECS = (
+    ("白底", "主图1_白底主图_AI.png", "净白底主图（只有产品，无手无背景）"),
+    ("礼盒", "主图2_场景主图_AI.png", "礼盒场景副图"),
+    ("柔光", "主图3_柔光主图_AI.png", "柔光氛围副图"),
+    ("细节", "细节图_工艺特写_AI.png", "工艺特写细节图"),
+    ("详情封面", "详情图_主视觉_AI.png", "详情页主视觉封面"),
+)
+
+
+def render_ai_set(cfg: dict, src: str, plan: dict, out_dir: str,
+                  size=(800, 800), kinds=None, log=None) -> dict:
+    """用图像编辑模型出一套**干净商品图**（去手/换底/换场景），与实拍版并存。
+
+    为什么必须并存：平台对"图文不符"有判罚、AI 精修图不是实拍像素 ——
+    选哪张上架是用户的决定，我们只负责**如实标注**（`_AI` / 无后缀 双版本 + notes）。
+
+    任一张失败只影响那一张（该张不出，实拍版仍在），绝不阻断整套。
+    返回 `{ok, files, notes, done, skipped}`。
+    """
+    out = {"ok": False, "files": [], "notes": [], "done": [], "skipped": []}
+    if not (src and os.path.isfile(src)):
+        out["notes"].append("AI 精修跳过：没有可用的实拍图")
+        return out
+    try:
+        import imgai as IA
+    except Exception as ex:                                  # noqa: BLE001
+        out["notes"].append("AI 精修模块没加载成功：%s" % ex)
+        return out
+    if not IA.available(cfg or {}):
+        out["notes"].append("没配图像引擎 → AI 精修跳过（只出实拍合成版）")
+        return out
+    product = str(plan.get("product") or "产品")
+    want = set(kinds) if kinds else None
+    _t0 = time.time()
+    _model = IA.default_model(IA.resolve_conf(cfg) or {})
+    for kind, fname, desc in AI_SPECS:
+        if want and kind not in want:
+            continue
+        fp = os.path.join(out_dir, fname)
+        try:
+            got = IA.refine(cfg, src, fp, kind=kind, product=product,
+                            part="工艺细节", size=int(size[0]), log=log)
+        except Exception as ex:                              # noqa: BLE001
+            got = None
+            out["notes"].append("AI 精修「%s」出错（该张不出，实拍版仍在）：%s"
+                                % (desc, str(ex)[:100]))
+        if got and os.path.isfile(got):
+            out["files"].append(got)
+            out["done"].append(desc)
+        else:
+            out["skipped"].append(desc)
+    if out["done"]:
+        out["ok"] = True
+        out["notes"].append(
+            "AI 精修 %d/%d 张（%s，耗时 %.0fs）：%s —— **实拍合成版同时保留**，"
+            "上架用哪张由你定（AI 版更干净，实拍版是真实像素）"
+            % (len(out["done"]), len(AI_SPECS), _model, time.time() - _t0,
+               "、".join(out["done"])))
+    if out["skipped"]:
+        out["notes"].append("AI 没出的：%s（这几项保留实拍合成版）"
+                            % "、".join(out["skipped"]))
+    return out
+
+
 def render_all(plan: dict, src_path: str, out_dir: str,
                images: Optional[dict] = None,
                allow_video_download: bool = False,
                detail_count: Optional[int] = None,
-               product_box: Optional[list] = None) -> dict:
+               product_box: Optional[list] = None,
+               cfg: Optional[dict] = None,
+               use_ai: Optional[bool] = None,
+               ai_kinds=None,
+               ai_log=None) -> dict:
     """按方案产出整套图。
 
     返回 {ok, files:{main:[], crops:[], detail_long:""}, notes:[], reason:""}
@@ -1068,7 +1140,8 @@ def render_all(plan: dict, src_path: str, out_dir: str,
     """
     os.makedirs(out_dir, exist_ok=True)
     notes: List[str] = []
-    files = {"main": [], "crops": [], "detail_long": "", "detail_slices": []}
+    files = {"main": [], "crops": [], "detail_long": "", "detail_slices": [],
+             "ai": []}
     if not available():
         return {"ok": False, "files": files, "notes": notes,
                 "reason": "渲染环境不可用（PySide6 未就绪）"}
@@ -1149,10 +1222,30 @@ def render_all(plan: dict, src_path: str, out_dir: str,
         fp = os.path.join(out_dir, "%s_%s.png" % (c.get("kind", "局部图"), _nm))
         if save_image(im, fp):
             files["crops"].append(fp)
-    # ---- 详情长图 ----
+    # ---- ★ v0.31.31：AI 精修一套（与实拍版**并存**；失败只影响那一张）----
+    ai = {"ok": False, "files": [], "notes": [], "done": [], "skipped": []}
+    _use_ai = bool(cfg) if use_ai is None else bool(use_ai)
+    if _use_ai:
+        try:
+            ai = render_ai_set(cfg or {}, src_path, plan, out_dir, size=size,
+                               kinds=ai_kinds, log=ai_log)
+            files["ai"] = list(ai.get("files") or [])
+            notes += list(ai.get("notes") or [])
+        except Exception as ex:                              # noqa: BLE001
+            notes.append("AI 精修这一步失败（实拍合成版不受影响）：%s" % ex)
+    _ai_files = list(ai.get("files") or [])
+    _ai_white = next((p for p in _ai_files if "白底" in os.path.basename(p)), "")
+    _ai_scene = next((p for p in _ai_files if "场景" in os.path.basename(p)), "")
+    _ai_detail = [p for p in _ai_files if "细节" in os.path.basename(p)]
+    _ai_cover = next((p for p in _ai_files if "详情" in os.path.basename(p)), "")
+
+    # ---- 详情长图（主视觉优先用 AI 净白底图；没有就用实拍合成版）----
     imgs = dict(images or {})
-    imgs.setdefault("banner", files["main"][0] if files["main"] else "")
-    imgs["crops"] = files["crops"]
+    imgs.setdefault("banner", _ai_white or (files["main"][0] if files["main"] else ""))
+    if not imgs.get("scene") and _ai_scene:
+        imgs["scene"] = _ai_scene
+    imgs["ai_cover"] = _ai_cover
+    imgs["crops"] = _ai_detail + list(files["crops"])
     files["detail_long"] = render_detail_long(plan, imgs, out_dir)
     if render_detail_long.last_notes:
         notes.append("详情长图有占位屏（如实标注「待生成」）：" +
@@ -1172,7 +1265,9 @@ def render_all(plan: dict, src_path: str, out_dir: str,
     files.setdefault("video_preview", "")
     try:
         import ecom_video as EV
-        _vsrc = {"main": files["main"], "crops": files["crops"],
+        # 主图视频的首图优先用 AI 净白底图（画面更干净），再跟实拍合成版
+        _vsrc = {"main": ([_ai_white] if _ai_white else []) + files["main"],
+                 "crops": _ai_detail + files["crops"],
                  "scene": str(imgs.get("scene") or "")}
         _v = EV.render_shop_video(plan, _vsrc, out_dir,
                                   allow_download=allow_video_download)
@@ -1337,6 +1432,29 @@ def selftest() -> int:
         check(bool(r["files"]["detail_long"]) and
               os.path.getsize(r["files"]["detail_long"]) > 1000,
               "详情长图落盘且非空", r["files"]["detail_long"])
+        # ---------- ★ v0.31.31 AI 精修接线（**离线**：不配引擎就绝不出网） ----------
+        check(not r["files"].get("ai"),
+              "没传 cfg → 一张 AI 图都不生成（自检绝不联网）", r["files"].get("ai"))
+        check(all("AI" not in os.path.basename(x) for x in r["files"]["main"]),
+              "没传 cfg 时主图里没有 AI 版（只有实拍合成版）", r["files"]["main"])
+        _ai_off = render_ai_set({}, src_path, plan, out_dir)
+        check(_ai_off["ok"] is False and not _ai_off["files"],
+              "没配图像引擎 → render_ai_set 不产图", _ai_off["notes"])
+        check(any("没配图像引擎" in n for n in _ai_off["notes"]),
+              "★ 没引擎时的说明是可读中文（不是异常栈）", _ai_off["notes"])
+        _ai_noimg = render_ai_set({"engines": {"image": {"base_url": "http://x",
+                                                        "api_key": "k"}}},
+                                  os.path.join(tmp, "__没有这张图__.png"), plan, out_dir)
+        check(_ai_noimg["ok"] is False and any("实拍图" in n for n in _ai_noimg["notes"]),
+              "★ 没有实拍图 → AI 精修跳过并说明原因", _ai_noimg["notes"])
+        _kinds = [k for k, _f, _d in AI_SPECS]
+        check(_kinds == ["白底", "礼盒", "柔光", "细节", "详情封面"],
+              "AI 清单覆盖：净白底 / 礼盒场景 / 柔光 / 工艺特写 / 详情封面", _kinds)
+        check(all(f.endswith("_AI.png") for _k, f, _d in AI_SPECS),
+              "AI 版文件名统一带 _AI 后缀（与实拍版一眼可分）",
+              [f for _k, f, _d in AI_SPECS])
+        check(all(k in __import__("imgai").PROMPTS for k in _kinds),
+              "AI 清单里每个 kind 都有对应提示词模板")
         for f in r["files"]["main"]:
             _i = load_image(f)
             check(_i is not None and _i.width() == 800 and _i.height() == 800,
